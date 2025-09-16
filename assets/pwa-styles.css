@@ -1,0 +1,446 @@
+/* PWA styly pro Dobitý Baterky */
+
+/* WordPress Admin Bar detekce a přizpůsobení */
+.admin-bar .pwa-fullscreen-button,
+.admin-bar .pwa-install-button,
+.admin-bar .pwa-update-button {
+  top: calc(20px + 32px); /* 32px je výška WordPress admin baru */
+}
+
+.admin-bar .pwa-status-message {
+  top: calc(20px + 32px);
+}
+
+/* PWA tlačítka */
+.pwa-fullscreen-button,
+.pwa-install-button,
+.pwa-update-button {
+  position: fixed;
+  z-index: 10000;
+  background: #049FE8;
+  color: white;
+  border: none;
+  border-radius: 50px;
+  padding: 12px 20px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3);
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pwa-fullscreen-button {
+  top: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  padding: 0;
+  border-radius: 50%;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.pwa-install-button {
+  top: 20px;
+  right: 20px;
+  background: #FFACC4;
+  box-shadow: 0 4px 16px rgba(255, 172, 196, 0.4);
+}
+
+.pwa-update-button {
+  top: 80px;
+  right: 20px;
+  background: #FF6B6B;
+  box-shadow: 0 4px 16px rgba(255, 107, 107, 0.4);
+}
+
+.pwa-fullscreen-button:hover,
+.pwa-install-button:hover,
+.pwa-update-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(4, 159, 232, 0.4);
+}
+
+.pwa-install-button:hover {
+  box-shadow: 0 6px 20px rgba(255, 172, 196, 0.5);
+}
+
+.pwa-update-button:hover {
+  box-shadow: 0 6px 20px rgba(255, 107, 107, 0.5);
+}
+
+/* Status zprávy */
+.pwa-status-message {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+  padding: 12px 24px;
+  border-radius: 25px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  color: white;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  animation: slideDown 0.3s ease;
+}
+
+.pwa-status-online {
+  background: #4CAF50;
+}
+
+.pwa-status-offline {
+  background: #F44336;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateX(-50%) translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}
+
+/* PWA specifické styly pro mobilní zařízení */
+@media (max-width: 768px) {
+  .pwa-fullscreen-button,
+  .pwa-install-button,
+  .pwa-update-button {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+  
+  .pwa-fullscreen-button {
+    width: 45px;
+    height: 45px;
+    font-size: 18px;
+  }
+  
+  .pwa-status-message {
+    font-size: 13px;
+    padding: 10px 20px;
+  }
+}
+
+/* Fullscreen módy */
+.db-map-root:fullscreen {
+  background: #FEF9DF;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+  width: 100vw;
+  height: 100vh;
+}
+
+.db-map-root:fullscreen .db-map-wrap {
+  height: 100vh;
+}
+
+.db-map-root:fullscreen #db-map-list {
+  height: 100vh;
+}
+
+/* PWA instalace prompt */
+.pwa-install-prompt {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  right: 20px;
+  background: white;
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  z-index: 10002;
+  display: none;
+}
+
+.pwa-install-prompt.show {
+  display: block;
+  animation: slideUp 0.3s ease;
+}
+
+.pwa-install-prompt h3 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.pwa-install-prompt p {
+  margin: 0 0 15px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.pwa-install-prompt .pwa-install-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.pwa-install-prompt button {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pwa-install-prompt .pwa-install-accept {
+  background: #049FE8;
+  color: white;
+}
+
+.pwa-install-prompt .pwa-install-dismiss {
+  background: #f1f1f1;
+  color: #666;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* PWA offline indikátor */
+.pwa-offline-indicator {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #F44336;
+  color: white;
+  text-align: center;
+  padding: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 10003;
+  transform: translateY(-100%);
+  transition: transform 0.3s ease;
+}
+
+.pwa-offline-indicator.show {
+  transform: translateY(0);
+}
+
+/* PWA splash screen */
+.pwa-splash {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #FEF9DF;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10004;
+  opacity: 1;
+  transition: opacity 0.5s ease;
+}
+
+.pwa-splash.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.pwa-splash-logo {
+  width: 120px;
+  height: 120px;
+  margin-bottom: 20px;
+}
+
+.pwa-splash-text {
+  font-family: 'Montserrat', sans-serif;
+  font-size: 24px;
+  font-weight: 600;
+  color: #049FE8;
+  text-align: center;
+}
+
+.pwa-splash-loading {
+  margin-top: 20px;
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #049FE8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* ===== WORDPRESS ADMIN BAR PŘIZPŮSOBENÍ ===== */
+
+/* WordPress Admin Bar detekce */
+.admin-bar {
+  /* Přidá padding-top pro celou stránku když je admin bar viditelný */
+  padding-top: 32px;
+}
+
+/* PWA topbar přizpůsobení pro admin bar */
+/* Odstraněno: pozici topbaru řeší centrálně db-map.css přes safe-area + --wp-admin-bar-offset */
+/* .admin-bar .db-map-topbar { top: calc(2em + 32px) !important; } */
+
+/* PWA standalone módy s admin bar */
+@media (display-mode: standalone) {
+  /* Odstraněno – viz db-map.css */
+  /* .admin-bar .db-map-topbar { top: calc(env(safe-area-inset-top) + 32px) !important; } */
+}
+
+/* Mobilní admin bar přizpůsobení */
+@media (max-width: 782px) {
+  .admin-bar {
+    padding-top: 46px; /* Mobilní admin bar je vyšší */
+  }
+  
+  .admin-bar .pwa-fullscreen-button,
+  .admin-bar .pwa-install-button,
+  .admin-bar .pwa-update-button {
+    top: calc(20px + 46px);
+  }
+  
+  .admin-bar .pwa-status-message {
+    top: calc(20px + 46px);
+  }
+  
+  /* Odstraněno – viz db-map.css */
+  /* .admin-bar .db-map-topbar { top: calc(0.75rem + 46px) !important; } */
+  
+  /* PWA standalone módy s mobilním admin bar */
+  @media (display-mode: standalone) {
+    /* Odstraněno – viz db-map.css */
+    /* .admin-bar .db-map-topbar { top: calc(env(safe-area-inset-top) + 46px) !important; } */
+  }
+}
+
+/* Admin bar skrytí v PWA standalone módu */
+@media (display-mode: standalone) {
+  .admin-bar {
+    padding-top: 0;
+  }
+  
+  /* Odstraněno – viz db-map.css */
+  /* .admin-bar .db-map-topbar { top: env(safe-area-inset-top) !important; } */
+  
+  .admin-bar .pwa-fullscreen-button,
+  .admin-bar .pwa-install-button,
+  .admin-bar .pwa-update-button {
+    top: 20px;
+  }
+  
+  .admin-bar .pwa-status-message {
+    top: 20px;
+  }
+}
+
+/* Admin bar skrytí v fullscreen módu */
+@media (display-mode: fullscreen) {
+  .admin-bar {
+    padding-top: 0;
+  }
+  
+  /* Odstraněno – viz db-map.css */
+  /* .admin-bar .db-map-topbar { top: 0 !important; } */
+  
+  .admin-bar .pwa-fullscreen-button,
+  .admin-bar .pwa-install-button,
+  .admin-bar .pwa-update-button {
+    top: 20px;
+  }
+  
+  .admin-bar .pwa-status-message {
+    top: 20px;
+  }
+}
+
+/* ===== PWA STANDALONE OPTIMALIZACE ===== */
+
+/* PWA Standalone optimalizace */
+.pwa-standalone {
+  /* Skrýt WordPress admin bar */
+  #wpadminbar {
+    display: none !important;
+  }
+  
+  /* Skrýt WordPress footer */
+  #wp-footer, .wp-footer, footer {
+    display: none !important;
+  }
+  
+  /* Skrýt WordPress sidebar */
+  #sidebar, .sidebar, aside {
+    display: none !important;
+  }
+  
+  /* Optimalizace pro PWA */
+  .db-map-root {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    height: 100vh !important;
+    width: 100vw !important;
+  }
+  
+  .db-map-wrap {
+    height: 100vh !important;
+  }
+  
+  #db-map {
+    height: 100vh !important;
+  }
+  
+  #db-map-list {
+    height: 100vh !important;
+  }
+}
+
+/* PWA Mode detekce */
+.pwa-mode {
+  /* CSS custom properties pro PWA */
+  --pwa-safe-area-top: env(safe-area-inset-top);
+  --pwa-safe-area-bottom: env(safe-area-inset-bottom);
+  --pwa-safe-area-left: env(safe-area-inset-left);
+  --pwa-safe-area-right: env(safe-area-inset-right);
+}
+
+/* PWA Mobile optimalizace */
+.pwa-mobile .db-map-root {
+  padding: var(--pwa-safe-area-top) var(--pwa-safe-area-right) var(--pwa-safe-area-bottom) var(--pwa-safe-area-left) !important;
+}
+
+/* PWA Standalone detekce pomocí CSS */
+@media (display-mode: standalone) {
+  body {
+    /* Skrýt WordPress elementy v standalone módu */
+    padding-top: 0 !important;
+  }
+  
+  /* Skrýt admin bar */
+  #wpadminbar {
+    display: none !important;
+  }
+  
+  /* Optimalizace pro PWA */
+  .db-map-root {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    height: 100vh !important;
+    width: 100vw !important;
+  }
+}

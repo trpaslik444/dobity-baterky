@@ -1,0 +1,157 @@
+/* WordPress Admin Bar Fix pro Dobitý Baterky PWA */
+
+/* Detekce WordPress admin baru */
+.admin-bar {
+  /* Základní padding pro admin bar */
+  padding-top: var(--wp-admin-bar-height, 32px);
+}
+
+/* Desktop admin bar (32px) */
+@media (min-width: 783px) {
+  .admin-bar {
+    padding-top: 32px;
+  }
+  
+  /* PWA tlačítka přizpůsobení */
+  .admin-bar .pwa-fullscreen-button,
+  .admin-bar .pwa-install-button,
+  .admin-bar .pwa-update-button {
+    top: calc(20px + 32px) !important;
+  }
+  
+  /* PWA status zprávy */
+  .admin-bar .pwa-status-message {
+    top: calc(20px + 32px) !important;
+  }
+  
+  /* Odstraněno – topbar pozici řídí db-map.css přes safe-area a --wp-admin-bar-offset */
+  /* .admin-bar .db-map-topbar { top: calc(2em + 32px) !important; } */
+  
+  /* PWA offline indikátor */
+  .admin-bar .pwa-offline .db-map-root::before {
+    top: calc(env(safe-area-inset-top) + 32px) !important;
+  }
+}
+
+/* Mobilní admin bar (46px) */
+@media (max-width: 782px) {
+  .admin-bar {
+    padding-top: 46px;
+  }
+  
+  /* PWA tlačítka přizpůsobení */
+  .admin-bar .pwa-fullscreen-button,
+  .admin-bar .pwa-install-button,
+  .admin-bar .pwa-update-button {
+    top: calc(20px + 46px) !important;
+  }
+  
+  /* PWA status zprávy */
+  .admin-bar .pwa-status-message {
+    top: calc(20px + 46px) !important;
+  }
+  
+  /* Odstraněno – topbar pozici řídí db-map.css */
+  /* .admin-bar .db-map-topbar { top: calc(0.75rem + 46px) !important; } */
+  
+  /* PWA offline indikátor */
+  .admin-bar .pwa-offline .db-map-root::before {
+    top: calc(env(safe-area-inset-top) + 46px) !important;
+  }
+}
+
+/* PWA standalone módy - admin bar se skryje */
+@media (display-mode: standalone) {
+  .admin-bar {
+    padding-top: 0 !important;
+  }
+  
+  .admin-bar .pwa-fullscreen-button,
+  .admin-bar .pwa-install-button,
+  .admin-bar .pwa-update-button {
+    top: 20px !important;
+  }
+  
+  .admin-bar .pwa-status-message {
+    top: 20px !important;
+  }
+  
+  /* Odstraněno – topbar pozici řídí db-map.css */
+  /* .admin-bar .db-map-topbar { top: env(safe-area-inset-top) !important; } */
+  
+  .admin-bar .pwa-offline .db-map-root::before {
+    top: env(safe-area-inset-top) !important;
+  }
+}
+
+/* PWA fullscreen módy - admin bar se skryje */
+@media (display-mode: fullscreen) {
+  .admin-bar {
+    padding-top: 0 !important;
+  }
+  
+  .admin-bar .pwa-fullscreen-button,
+  .admin-bar .pwa-install-button,
+  .admin-bar .pwa-update-button {
+    top: 20px !important;
+  }
+  
+  .admin-bar .pwa-status-message {
+    top: 20px !important;
+  }
+  
+  /* Odstraněno – topbar pozici řídí db-map.css */
+  /* .admin-bar .db-map-topbar { top: 0 !important; } */
+  
+  .admin-bar .pwa-offline .db-map-root::before {
+    top: 0 !important;
+  }
+}
+
+/* WordPress admin bar skrytí v PWA módech */
+@media (display-mode: standalone),
+       (display-mode: fullscreen) {
+  #wpadminbar {
+    display: none !important;
+  }
+}
+
+/* Dynamické přizpůsobení pomocí JavaScript */
+.admin-bar .pwa-dynamic-adjust {
+  transition: top 0.3s ease;
+}
+
+/* Safe area podpora pro notchy s admin bar */
+@media (max-width: 782px) {
+  .admin-bar .db-map-topbar {
+    padding-top: max(calc(0.75rem + 46px), calc(env(safe-area-inset-top) + 46px));
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+}
+
+/* Admin bar hover efekty */
+.admin-bar .pwa-fullscreen-button:hover,
+.admin-bar .pwa-install-button:hover,
+.admin-bar .pwa-update-button:hover {
+  transform: translateY(-2px);
+}
+
+/* Admin bar focus stavy pro přístupnost */
+.admin-bar .pwa-fullscreen-button:focus,
+.admin-bar .pwa-install-button:focus,
+.admin-bar .pwa-update-button:focus {
+  outline: 2px solid #049FE8;
+  outline-offset: 2px;
+}
+
+/* Print styly - admin bar skrytí */
+@media print {
+  .admin-bar {
+    padding-top: 0 !important;
+  }
+  
+  #wpadminbar {
+    display: none !important;
+  }
+}

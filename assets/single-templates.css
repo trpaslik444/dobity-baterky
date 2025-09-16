@@ -1,0 +1,499 @@
+/**
+ * Konzistentní styly pro single template šablony
+ * Dobitý Baterky Plugin
+ */
+
+/* Import Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap');
+
+/* Základní styly */
+.db-single * { box-sizing: border-box; }
+.db-single { 
+    max-width: 1200px; 
+    margin: 0 auto; 
+    padding: 2rem; 
+    font-family: 'Montserrat', sans-serif; 
+    line-height: 1.6; 
+    color: #1e293b; 
+}
+
+/* Hero sekce */
+.db-hero { 
+    display: flex; 
+    gap: 3rem; 
+    align-items: stretch; 
+    margin-bottom: 3rem; 
+    background: linear-gradient(135deg, #FEF9DF 0%, #FFACC4 100%); 
+    border-radius: 20px; 
+    padding: 2rem; 
+    box-shadow: 0 4px 20px rgba(4, 159, 232, 0.1); 
+}
+
+.db-hero-content { flex: 1; }
+.db-hero-header { margin-bottom: 1.5rem; }
+.db-title { 
+    font-size: 2.5rem; 
+    font-weight: 700; 
+    margin: 0 0 1rem 0; 
+    color: #049FE8; 
+    line-height: 1.2; 
+}
+
+.db-badges { 
+    display: flex; 
+    gap: 0.5rem; 
+    flex-wrap: wrap; 
+    margin-top: 1rem; 
+}
+
+.db-badge { 
+    padding: 0.5rem 1rem; 
+    border-radius: 25px; 
+    font-size: 0.9rem; 
+    font-weight: 600; 
+    text-transform: uppercase; 
+    letter-spacing: 0.5px; 
+}
+
+.db-badge-charger { background: #049FE8; color: white; }
+.db-badge-poi { background: #FF8DAA; color: white; }
+.db-badge-rv { background: #10b981; color: white; }
+
+.db-hero-meta { 
+    display: flex; 
+    flex-direction: column; 
+    gap: 0.75rem; 
+}
+
+.db-meta-item { 
+    display: flex; 
+    align-items: center; 
+    gap: 0.5rem; 
+    font-size: 1rem; 
+    color: #64748b; 
+}
+
+.db-icon { 
+    font-size: 1.2rem; 
+    width: 1.5rem; 
+    text-align: center; 
+}
+
+.db-hero-image { 
+    flex: 0 0 300px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+}
+
+.db-featured-image { 
+    width: 100%; 
+    height: auto; 
+    border-radius: 15px; 
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15); 
+}
+
+.db-placeholder-image { 
+    width: 100%; 
+    height: 200px; 
+    background: linear-gradient(135deg, #FCE67D 0%, #FFACC4 100%); 
+    border-radius: 15px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    font-size: 4rem; 
+    color: #049FE8; 
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1); 
+}
+
+/* Navigace */
+.db-navigation { 
+    margin-bottom: 2rem; 
+    text-align: center; 
+}
+
+.db-nav-dropdown { 
+    position: relative; 
+    display: inline-block; 
+}
+
+.db-nav-button { 
+    background: #049FE8; 
+    color: white; 
+    border: none; 
+    padding: 1rem 2rem; 
+    border-radius: 50px; 
+    font-size: 1rem; 
+    font-weight: 600; 
+    cursor: pointer; 
+    display: flex; 
+    align-items: center; 
+    gap: 0.5rem; 
+    transition: all 0.3s ease; 
+    box-shadow: 0 4px 15px rgba(4, 159, 232, 0.3); 
+}
+
+.db-nav-button:hover { 
+    background: #0378b8; 
+    transform: translateY(-2px); 
+    box-shadow: 0 6px 20px rgba(4, 159, 232, 0.4); 
+}
+
+.db-nav-menu { 
+    position: absolute; 
+    top: 100%; 
+    left: 50%; 
+    transform: translateX(-50%); 
+    background: white; 
+    border-radius: 15px; 
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15); 
+    padding: 1rem 0; 
+    min-width: 200px; 
+    opacity: 0; 
+    visibility: hidden; 
+    transition: all 0.3s ease; 
+    z-index: 1000; 
+    margin-top: 0.5rem; 
+}
+
+.db-nav-dropdown:hover .db-nav-menu { 
+    opacity: 1; 
+    visibility: visible; 
+}
+
+.db-nav-item { 
+    display: block; 
+    padding: 0.75rem 1.5rem; 
+    color: #1e293b; 
+    text-decoration: none; 
+    transition: all 0.2s ease; 
+    border-radius: 8px; 
+    margin: 0 0.5rem; 
+}
+
+.db-nav-item:hover { 
+    background: #FEF9DF; 
+    color: #049FE8; 
+    text-decoration: none; 
+}
+
+/* Sekce */
+.db-section { 
+    margin-bottom: 3rem; 
+    background: white; 
+    border-radius: 15px; 
+    padding: 2rem; 
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); 
+    border: 1px solid #f1f5f9; 
+}
+
+.db-section-title { 
+    font-size: 1.5rem; 
+    font-weight: 600; 
+    margin: 0 0 1.5rem 0; 
+    color: #049FE8; 
+    display: flex; 
+    align-items: center; 
+    gap: 0.75rem; 
+}
+
+.db-content { 
+    color: #475569; 
+    line-height: 1.7; 
+    font-size: 1.1rem; 
+}
+
+/* Konektory */
+.db-connectors-grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+    gap: 1.5rem; 
+}
+
+.db-connector-card { 
+    background: #FEF9DF; 
+    border: 2px solid #FCE67D; 
+    border-radius: 12px; 
+    padding: 1.5rem; 
+    transition: all 0.3s ease; 
+}
+
+.db-connector-card:hover { 
+    transform: translateY(-3px); 
+    box-shadow: 0 8px 25px rgba(252, 230, 125, 0.3); 
+    border-color: #FCE67D; 
+}
+
+.db-connector-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 1rem; 
+}
+
+.db-connector-type { 
+    font-weight: 600; 
+    color: #049FE8; 
+    font-size: 1.1rem; 
+}
+
+.db-connector-status { 
+    padding: 0.25rem 0.75rem; 
+    border-radius: 20px; 
+    font-size: 0.8rem; 
+    font-weight: 600; 
+    text-transform: uppercase; 
+}
+
+.db-status-available { background: #10b981; color: white; }
+.db-status-unavailable { background: #ef4444; color: white; }
+
+.db-connector-power { 
+    display: flex; 
+    align-items: center; 
+    gap: 0.5rem; 
+    color: #FF8DAA; 
+    font-weight: 600; 
+}
+
+/* Služby */
+.db-services-grid { 
+    display: grid; 
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+    gap: 1.5rem; 
+}
+
+.db-service-card { 
+    background: #FEF9DF; 
+    border: 2px solid #FFACC4; 
+    border-radius: 12px; 
+    padding: 1.5rem; 
+    transition: all 0.3s ease; 
+}
+
+.db-service-card:hover { 
+    transform: translateY(-3px); 
+    box-shadow: 0 8px 25px rgba(255, 172, 196, 0.3); 
+    border-color: #FF8DAA; 
+}
+
+.db-service-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 1rem; 
+}
+
+.db-service-name { 
+    font-weight: 600; 
+    color: #049FE8; 
+    font-size: 1.1rem; 
+}
+
+.db-service-status { 
+    padding: 0.25rem 0.75rem; 
+    border-radius: 20px; 
+    font-size: 0.8rem; 
+    font-weight: 600; 
+    text-transform: uppercase; 
+}
+
+.db-service-description { 
+    color: #64748b; 
+    font-size: 0.95rem; 
+    line-height: 1.6; 
+}
+
+/* Kontakt */
+.db-contact-buttons { 
+    display: flex; 
+    gap: 1rem; 
+    flex-wrap: wrap; 
+}
+
+.db-button { 
+    display: inline-flex; 
+    align-items: center; 
+    gap: 0.5rem; 
+    padding: 1rem 2rem; 
+    border-radius: 50px; 
+    text-decoration: none; 
+    font-weight: 600; 
+    transition: all 0.3s ease; 
+    font-size: 1rem; 
+}
+
+.db-button-call { 
+    background: #10b981; 
+    color: white; 
+}
+
+.db-button-call:hover { 
+    background: #059669; 
+    color: white; 
+    transform: translateY(-2px); 
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3); 
+}
+
+.db-button-web { 
+    background: #FF6A4B; 
+    color: white; 
+}
+
+.db-button-web:hover { 
+    background: #e55a3f; 
+    color: white; 
+    transform: translateY(-2px); 
+    box-shadow: 0 6px 20px rgba(255, 106, 75, 0.3); 
+}
+
+/* Otevírací doba */
+.db-opening-hours { 
+    display: flex; 
+    flex-direction: column; 
+    gap: 0.75rem; 
+}
+
+.db-day-row { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    padding: 0.75rem 1rem; 
+    background: #FEF9DF; 
+    border-radius: 8px; 
+    border-left: 4px solid #FCE67D; 
+}
+
+.db-day-name { 
+    font-weight: 600; 
+    color: #049FE8; 
+}
+
+.db-day-hours { 
+    color: #64748b; 
+    font-weight: 500; 
+}
+
+.db-day-status { 
+    padding: 0.25rem 0.75rem; 
+    border-radius: 20px; 
+    font-size: 0.8rem; 
+    font-weight: 600; 
+    text-transform: uppercase; 
+}
+
+.db-status-closed { background: #ef4444; color: white; }
+
+/* Mapa */
+.db-map-container { 
+    position: relative; 
+    height: 400px; 
+    border-radius: 15px; 
+    overflow: hidden; 
+    border: 2px solid #FCE67D; 
+    background: #FEF9DF; 
+}
+
+.db-map-loading { 
+    position: absolute; 
+    top: 50%; 
+    left: 50%; 
+    transform: translate(-50%, -50%); 
+    color: #049FE8; 
+    font-weight: 600; 
+    font-size: 1.1rem; 
+}
+
+/* Licence */
+.db-license { 
+    background: #FEF9DF; 
+    border-left: 4px solid #FCE67D; 
+    padding: 1rem 1.5rem; 
+    border-radius: 8px; 
+    color: #64748b; 
+    font-style: italic; 
+    margin: 0; 
+}
+
+/* Ikonky */
+.db-icon-location::before { content: "📍"; }
+.db-icon-coordinates::before { content: "🎯"; }
+.db-icon-operator::before { content: "🏢"; }
+.db-icon-navigation::before { content: "🧭"; }
+.db-icon-google::before { content: "🔍"; }
+.db-icon-apple::before { content: "🍎"; }
+.db-icon-mapy::before { content: "🗺️"; }
+.db-icon-connector::before { content: "🔌"; }
+.db-icon-power::before { content: "⚡"; }
+.db-icon-description::before { content: "📝"; }
+.db-icon-map::before { content: "🗺️"; }
+.db-icon-license::before { content: "📜"; }
+.db-icon-services::before { content: "🛠️"; }
+.db-icon-contact::before { content: "📞"; }
+.db-icon-time::before { content: "⏰"; }
+.db-icon-phone::before { content: "📱"; }
+.db-icon-website::before { content: "🌐"; }
+.db-icon-rating::before { content: "⭐"; }
+.db-icon-price::before { content: "💰"; }
+.db-icon-charger::before { content: "🔋"; }
+.db-icon-rv::before { content: "🚐"; }
+.db-icon-poi::before { content: "🎯"; }
+
+/* Responzivita */
+@media (max-width: 768px) {
+    .db-single { padding: 1rem; }
+    
+    .db-hero { 
+        flex-direction: column; 
+        gap: 2rem; 
+        padding: 1.5rem; 
+    }
+    
+    .db-hero-image { 
+        flex: none; 
+        width: 100%; 
+    }
+    
+    .db-title { font-size: 2rem; }
+    
+    .db-connectors-grid,
+    .db-services-grid { 
+        grid-template-columns: 1fr; 
+    }
+    
+    .db-contact-buttons { 
+        flex-direction: column; 
+    }
+    
+    .db-button { 
+        width: 100%; 
+        justify-content: center; 
+    }
+    
+    .db-nav-menu { 
+        left: 0; 
+        transform: none; 
+        min-width: 100%; 
+    }
+}
+
+@media (max-width: 480px) {
+    .db-single { padding: 0.5rem; }
+    
+    .db-hero { 
+        padding: 1rem; 
+        border-radius: 15px; 
+    }
+    
+    .db-title { font-size: 1.75rem; }
+    
+    .db-section { 
+        padding: 1.5rem; 
+        border-radius: 12px; 
+    }
+    
+    .db-nav-button { 
+        padding: 0.75rem 1.5rem; 
+        font-size: 0.9rem; 
+    }
+}

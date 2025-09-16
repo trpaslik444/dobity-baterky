@@ -1,0 +1,33 @@
+{
+  "name": "Dobitý Baterky – Mapa",
+  "short_name": "DB Mapa",
+  "description": "Interaktivní mapa nabíjecích stanic a RV míst",
+  "start_url": "/?pwa=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FFFFFF",
+  "theme_color": "#049FE8",
+  "lang": "cs",
+  "dir": "ltr",
+  "categories": ["travel", "utilities", "navigation"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/wp-content/uploads/pwa/db-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/wp-content/uploads/pwa/db-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "screenshots": [
+    {
+      "src": "/wp-content/uploads/pwa/db-screenshot-mobile.png",
+      "sizes": "390x844",
+      "type": "image/png",
+      "form_factor": "narrow"
+    },
+    {
+      "src": "/wp-content/uploads/pwa/db-screenshot-desktop.png", 
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ]
+}

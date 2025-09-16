@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Test - Dobitý Baterky</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#049FE8">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Dobitý Baterky">
+    <link rel="apple-touch-icon" href="DB_bez(2160px).svg">
+    <meta name="mobile-web-app-capable" content="yes">
+    <style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #FEF9DF;
+            color: #333;
+        }
+        .test-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(4, 159, 232, 0.1);
+        }
+        .test-item {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        .test-item.success {
+            border-color: #4CAF50;
+            background: #f1f8e9;
+        }
+        .test-item.error {
+            border-color: #F44336;
+            background: #ffebee;
+        }
+        .test-item.warning {
+            border-color: #FF9800;
+            background: #fff3e0;
+        }
+        .status {
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .status.success { color: #4CAF50; }
+        .status.error { color: #F44336; }
+        .status.warning { color: #FF9800; }
+        button {
+            background: #049FE8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #0386c7;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo img {
+            width: 120px;
+            height: 120px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <div class="logo">
+            <img src="DB_bez(2160px).svg" alt="Dobitý Baterky Logo">
+            <h1>PWA Test</h1>
+        </div>
+        
+        <div class="test-item" id="manifest-test">
+            <div class="status">Manifest</div>
+            <div id="manifest-status">Kontroluji...</div>
+        </div>
+        
+        <div class="test-item" id="sw-test">
+            <div class="status">Service Worker</div>
+            <div id="sw-status">Kontroluji...</div>
+        </div>
+        
+        <div class="test-item" id="install-test">
+            <div class="status">PWA Instalace</div>
+            <div id="install-status">Kontroluji...</div>
+            <button id="install-btn" style="display: none;">Nainstalovat PWA</button>
+        </div>
+        
+        <div class="test-item" id="fullscreen-test">
+            <div class="status">Fullscreen API</div>
+            <div id="fullscreen-status">Kontroluji...</div>
+            <button id="fullscreen-btn">Přepnout Fullscreen</button>
+        </div>
+        
+        <div class="test-item" id="offline-test">
+            <div class="status">Offline Detekce</div>
+            <div id="offline-status">Online</div>
+        </div>
+        
+        <div class="test-item" id="touch-test">
+            <div class="status">Touch Podpora</div>
+            <div id="touch-status">Kontroluji...</div>
+        </div>
+    </div>
+
+    <script>
+        // Test manifest
+        async function testManifest() {
+            try {
+                const response = await fetch('manifest.json');
+                if (response.ok) {
+                    const manifest = await response.json();
+                    document.getElementById('manifest-status').innerHTML = 
+                        `✅ Manifest načten: ${manifest.name}`;
+                    document.getElementById('manifest-test').className = 'test-item success';
+                } else {
+                    throw new Error('Manifest nenalezen');
+                }
+            } catch (error) {
+                document.getElementById('manifest-status').innerHTML = 
+                    `❌ Chyba: ${error.message}`;
+                document.getElementById('manifest-test').className = 'test-item error';
+            }
+        }
+
+        // Test Service Worker
+        async function testServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    const registration = await navigator.serviceWorker.register('sw.js');
+                    document.getElementById('sw-status').innerHTML = 
+                        `✅ Service Worker registrován`;
+                    document.getElementById('sw-test').className = 'test-item success';
+                } catch (error) {
+                    document.getElementById('sw-status').innerHTML = 
+                        `❌ Chyba: ${error.message}`;
+                    document.getElementById('sw-test').className = 'test-item error';
+                }
+            } else {
+                document.getElementById('sw-status').innerHTML = 
+                    `❌ Service Worker není podporován`;
+                document.getElementById('sw-test').className = 'test-item error';
+            }
+        }
+
+        // Test PWA instalace
+        function testPWAInstall() {
+            let deferredPrompt;
+            
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                document.getElementById('install-status').innerHTML = 
+                    `✅ PWA instalace dostupná`;
+                document.getElementById('install-btn').style.display = 'inline-block';
+                document.getElementById('install-test').className = 'test-item success';
+            });
+
+            window.addEventListener('appinstalled', () => {
+                document.getElementById('install-status').innerHTML = 
+                    `✅ PWA nainstalována`;
+                document.getElementById('install-btn').style.display = 'none';
+            });
+
+            document.getElementById('install-btn').addEventListener('click', async () => {
+                if (deferredPrompt) {
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    if (outcome === 'accepted') {
+                        document.getElementById('install-status').innerHTML = 
+                            `✅ Uživatel přijal instalaci`;
+                    }
+                    deferredPrompt = null;
+                }
+            });
+
+            if (!deferredPrompt) {
+                document.getElementById('install-status').innerHTML = 
+                    `⚠️ PWA instalace není dostupná`;
+                document.getElementById('install-test').className = 'test-item warning';
+            }
+        }
+
+        // Test Fullscreen API
+        function testFullscreen() {
+            if (document.fullscreenEnabled || document.webkitFullscreenEnabled) {
+                document.getElementById('fullscreen-status').innerHTML = 
+                    `✅ Fullscreen API podporován`;
+                document.getElementById('fullscreen-test').className = 'test-item success';
+                
+                document.getElementById('fullscreen-btn').addEventListener('click', async () => {
+                    try {
+                        if (!document.fullscreenElement) {
+                            await document.documentElement.requestFullscreen();
+                        } else {
+                            await document.exitFullscreen();
+                        }
+                    } catch (error) {
+                        console.error('Fullscreen selhal:', error);
+                    }
+                });
+            } else {
+                document.getElementById('fullscreen-status').innerHTML = 
+                    `❌ Fullscreen API není podporován`;
+                document.getElementById('fullscreen-test').className = 'test-item error';
+            }
+        }
+
+        // Test offline detekce
+        function testOffline() {
+            const offlineStatus = document.getElementById('offline-status');
+            
+            window.addEventListener('online', () => {
+                offlineStatus.innerHTML = '🟢 Online';
+                offlineStatus.parentElement.className = 'test-item success';
+            });
+            
+            window.addEventListener('offline', () => {
+                offlineStatus.innerHTML = '🔴 Offline';
+                offlineStatus.parentElement.className = 'test-item warning';
+            });
+        }
+
+        // Test touch podpory
+        function testTouch() {
+            if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+                document.getElementById('touch-status').innerHTML = 
+                    `✅ Touch podporován (${navigator.maxTouchPoints || 'unlimited'} bodů)`;
+                document.getElementById('touch-test').className = 'test-item success';
+            } else {
+                document.getElementById('touch-status').innerHTML = 
+                    `❌ Touch není podporován`;
+                document.getElementById('touch-test').className = 'test-item error';
+            }
+        }
+
+        // Spustit všechny testy
+        document.addEventListener('DOMContentLoaded', () => {
+            testManifest();
+            testServiceWorker();
+            testPWAInstall();
+            testFullscreen();
+            testOffline();
+            testTouch();
+        });
+    </script>
+</body>
+</html>

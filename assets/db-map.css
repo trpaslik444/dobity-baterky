@@ -1,0 +1,2385 @@
+.db-map-card { scroll-margin: 80px; }
+/* Import Google Fonts pro typografii z brandbooku */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Patrick+Hand&display=swap');
+
+html, body {
+  height: 100%;
+  min-height: 100vh;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-map-root {
+  width: 90vw;
+  max-width: 1400px;
+  margin: 2rem auto;
+  padding: 1.5rem;
+  background: #FEF9DF; /* Béžová z brandbooku */
+  border-radius: 18px;
+  box-shadow: 0 4px 20px rgba(4, 159, 232, 0.1); /* Modrý stín */
+  height: 80vh;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-map-wrap {
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+  height: 100%;
+}
+
+#db-map-list {
+  width: 400px;
+  min-width: 320px;
+  max-width: 480px;
+  height: 100%;
+  overflow-y: auto;
+  background: #049FE8; /* Primární modrá z brandbooku */
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(4, 159, 232, 0.2);
+  margin-right: 2rem;
+  padding: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#db-map {
+  flex: 1 1 0%;
+  min-width: 0;
+  height: 100%;
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+  transition: pointer-events 0.2s ease;
+}
+
+/* Když jsou filtry otevřené, mapa nechytá pointer events */
+#db-map.filters-open {
+  pointer-events: none;
+  touch-action: none;
+}
+
+/* Karty míst s brandbook barvami */
+.db-map-card {
+  background: #FEF9DF; /* Béžová z brandbooku */
+  border-radius: 16px;
+  box-shadow: 0 2px 12px rgba(255, 172, 196, 0.3); /* Světle růžová stín */
+  margin: 0.5rem 0.84rem 0 0.84rem;
+  padding: 0.5rem 0.7rem 0.4rem 0.7rem;
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  border: 2px solid transparent;
+  position: relative;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-map-card:hover {
+  background: #FFACC4; /* Světle růžová z brandbooku */
+  box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3);
+  border: 2px solid #049FE8;
+  transform: translateY(-2px);
+}
+
+.db-map-card.active {
+  background: #fff;
+  border: 2px solid #049FE8;
+  box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3);
+}
+
+.db-map-card .db-map-card-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #f1f1f1;
+  flex-shrink: 0;
+  display: block;
+}
+
+.db-map-card .db-map-card-icon {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.db-map-card-content {
+  flex: 1 1 0%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.db-map-card-title {
+  font-weight: 600; /* Montserrat SemiBold */
+  font-size: 1rem;
+  margin-bottom: 0.15em;
+  color: #049FE8; /* Primární modrá */
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-map-card-distance {
+  color: #049FE8;
+  font-size: 0.7em;
+  margin: 0.2em 0 0.5em 0;
+  font-weight: 500;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-map-card-label {
+  color: #FF6A4B; /* Oranžová CTA z brandbooku */
+  font-size: 1em;
+  margin-bottom: 0.3em;
+  font-weight: 500;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-map-card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+  margin: 0.5em 0 0.5em 0;
+}
+
+.db-map-card-action-btn {
+  background: none;
+  border: none;
+  padding: 0.2em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  color: #049FE8;
+  font-size: 1.3em;
+  transition: color 0.15s;
+}
+
+.db-map-card-action-btn:hover {
+  color: #FF6A4B; /* Oranžová CTA */
+}
+
+.db-map-card-desc {
+  font-size: 0.9em;
+  color: #444;
+  margin-bottom: 0.4em;
+  margin-top: 0.4em;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 400;
+}
+
+.db-map-card-rating {
+  font-size: 0.8em;
+  color: #FF6A4B;
+  font-weight: 500;
+}
+
+.db-map-card-connectors {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 0.3em;
+}
+
+.db-map-card-amenities {
+  margin-top: 0.4em;
+  padding-top: 0.4em;
+  border-top: 1px solid #f0f0f0;
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 6px;
+  padding-bottom: 6px;
+  max-width: 100%;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.db-map-card-amenities > div {
+  flex-shrink: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.db-map-card-amenities > div:last-child {
+  margin-right: 0;
+}
+
+.db-map-card-amenities::-webkit-scrollbar {
+  height: 3px;
+}
+
+.db-map-card-amenities::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 2px;
+}
+
+.db-map-card-amenities::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 2px;
+}
+
+.db-map-card-amenities::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Responzivní počet amenities podle šířky karty */
+@media (max-width: 480px) {
+  .db-map-card-amenities > div {
+    min-width: 22px;
+    max-width: 22px;
+    flex-shrink: 0;
+  }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+  .db-map-card-amenities > div {
+    min-width: 24px;
+    max-width: 24px;
+    flex-shrink: 0;
+  }
+}
+
+@media (min-width: 769px) {
+  .db-map-card-amenities > div {
+    min-width: 26px;
+    max-width: 26px;
+    flex-shrink: 0;
+  }
+}
+
+/* Skrytí labelu sort by */
+#db-map-list label[for="db-map-list-sort"] {
+  display: none;
+}
+
+#db-map-list-search {
+  width: 90%;
+  margin: 1em auto 0.5em auto;
+  padding: 0.5em 1em;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 1em;
+  font-family: 'Montserrat', sans-serif;
+}
+
+/* Topbar s vyhledáváním */
+.db-map-topbar {
+  display: flex;
+  align-items: center;
+  background: #049FE8; /* Primární modrá */
+  color: #fff;
+  border-radius: 2em;
+  box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3);
+  padding: 0.5em 1.5em 0.5em 0.5em;
+  gap: 1em;
+  position: absolute;
+  top: calc(1em + env(safe-area-inset-top, 0px));
+  right: 2em;
+  z-index: 1000;
+}
+
+/* Mobilní topbar - fullscreen mapa s ovládacími prvky */
+/* Admin bar výška proměnně; 46px mobil, 32px desktop, jinak 0 */
+:root { --wp-admin-bar-offset: 0px; }
+@media (max-width: 782px) { .admin-bar { --wp-admin-bar-offset: 46px; } }
+@media (min-width: 783px) { .admin-bar { --wp-admin-bar-offset: 32px; } }
+
+@media (max-width: 900px) {
+  .db-map-topbar {
+    position: fixed !important;
+    top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px) + 8px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    background: #049FE8 !important; /* Primární modrá z brandbooku */
+    color: #fff !important;
+    border-radius: 0 !important;
+    box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3) !important;
+    padding: 0.75rem 1rem !important;
+    gap: 0 !important; /* Odstranění gap pro rovnoměrné rozmístění */
+    z-index: 9999 !important; /* Zvýšený z-index */
+    /* PWA safe area pro notchy */
+    padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
+    padding-left: max(1rem, env(safe-area-inset-left)) !important;
+    padding-right: max(1rem, env(safe-area-inset-right)) !important;
+    /* Rovnoměrné rozmístění tlačítek */
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+  }
+  
+  /* WordPress Admin Bar přizpůsobení pro mobilní topbar - odstraněno */
+  /* .admin-bar .db-map-topbar {
+    top: 46px;
+  } */
+  
+  /* Mapa na mobilu - fullscreen */
+  #db-map {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 1 !important;
+    padding-top: 0 !important;
+  }
+  
+  /* Root element na mobilu */
+  .db-map-root {
+    padding-top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px) + 64px) !important;
+  }
+  
+  /* Wrap na mobilu */
+  .db-map-wrap {
+    padding-top: 0 !important;
+  }
+  
+  /* Topbar tlačítka na mobilu - rovnoměrné rozmístění */
+  .db-map-topbar .db-map-topbar-btn {
+    background: transparent !important;
+    color: #fff !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    width: 2.5rem !important;
+    height: 2.5rem !important;
+    flex: 1 !important; /* Rovnoměrné roztažení */
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  
+  .db-map-topbar .db-map-topbar-btn:hover {
+    background: rgba(255, 255, 255, 0.1) !important;
+    transform: none !important;
+  }
+}
+
+/* Mobilní topbar styly pro desktop - skryto, nahrazeno novým vyhledáváním */
+.db-map-searchbox {
+  display: none; /* Skryto, nahrazeno novým vyhledáváním */
+}
+
+#db-map-search-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 1.2em;
+  flex: 1 1 auto;
+  padding: 0.5em 0.5em 0.5em 0;
+  color: #049FE8;
+  font-family: 'Montserrat', sans-serif;
+}
+
+#db-map-search-input::placeholder {
+  color: #049FE8;
+  opacity: 0.7;
+  font-family: 'Montserrat', sans-serif;
+}
+
+#db-map-search-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.2em;
+  height: 2.2em;
+  border-radius: 50%;
+  background: none;
+  border: none;
+  margin-left: 0.2em;
+  transition: background 0.15s;
+}
+
+#db-map-search-btn:hover, #db-map-search-btn:focus {
+  background: rgba(255, 172, 196, 0.2); /* Světle růžová s průhledností */
+}
+
+#db-map-search-btn svg {
+  width: 0.8em;
+  height: 1.3em;
+  color: #049FE8;
+}
+
+.db-map-topbar-btn {
+  width: 2.7em;
+  height: 2.7em;
+  border-radius: 50%;
+  background: #FFACC4; /* Světle růžová */
+  border: none;
+  box-shadow: 0 1px 4px rgba(255, 172, 196, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 0.3em;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  color: #049FE8;
+}
+
+.db-map-topbar-btn:hover, .db-map-topbar-btn:focus {
+  background: #FF8DAA; /* Tmavě růžová */
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 141, 170, 0.4);
+  transform: scale(1.05);
+}
+
+.db-map-topbar-btn svg {
+  width: 1.5em;
+  height: 1.5em;
+  color: inherit;
+}
+
+/* Hláška nenalezeno */
+#db-map-list .db-map-nores, .db-map-nores {
+  padding: 2em 1em;
+  text-align: center;
+  color: #888;
+  font-size: 1.1em;
+  font-family: 'Montserrat', sans-serif;
+}
+
+/* Moderní styl pro select řazení */
+#db-map-list-sort {
+  width: 95%;
+  padding: 0.5em 1.5em;
+  font-size: 0.6em;
+  border: 1px solid #e5e7eb;
+  border-radius: 1.5em;
+  background: #FEF9DF; /* Béžová */
+  color: #049FE8; /* Primární modrá */
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  outline: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  margin: auto;
+  display: block;
+  transition: all 0.15s ease;
+  height: 2.4em;
+  line-height: 1.2em;
+  background-image: url('data:image/svg+xml;utf8,<svg fill="%23049FE8" height="18" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 1.2em center;
+  background-size: 1.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 500;
+}
+
+#db-map-list-sort:focus, #db-map-list-sort:hover {
+  border: none;
+  outline: none;
+  background: #FFACC4; /* Světle růžová */
+  box-shadow: 0 2px 8px rgba(255, 172, 196, 0.4);
+  color: #049FE8;
+  background-image: url('data:image/svg+xml;utf8,<svg fill="%23049FE8" height="18" viewBox="0 0 24 24" width="18" xmlns="http://www.w3.org/2000/svg"><path d="M7 10l5 5 5-5z"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 1.2em center;
+  background-size: 1.2em;
+  transform: scale(0.97);
+}
+
+#db-map-list-sort option {
+  background: #fff;
+  color: #049FE8;
+  font-size: 1em;
+  padding: 0.7em 1.2em;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-map-list-sort-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #049FE8;
+  margin-bottom: 0.3em;
+}
+
+.db-map-card:first-of-type {
+  margin-top: 0.3rem;
+}
+
+/* Autocomplete dropdown */
+.db-map-ac-wrap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 9999;
+  background: #fff;
+  border-radius: 0 0 1em 1em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  display: none;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid #e6eef3;
+}
+
+.db-map-ac-item {
+  padding: 0.7em 1.2em;
+  cursor: pointer;
+  font-size: 1.05em;
+  color: #444;
+  border-bottom: 1px solid #f2f4f7;
+  background: #fff;
+  transition: all 0.13s ease;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-map-ac-item:last-child {
+  border-bottom: none;
+}
+
+.db-map-ac-item:hover, .db-map-ac-item:focus {
+  background: #FCE67D; /* Žlutá z brandbooku */
+  color: #049FE8;
+}
+
+/* Responsivní design */
+@media (max-width: 1100px) {
+  .db-map-root { max-width: 100vw; }
+  #db-map-list { width: 300px; min-width: 180px; margin-right: 1rem; }
+}
+
+@media (max-width: 900px) {
+  .db-map-root { 
+    padding: 0; 
+    min-height: 100vh; 
+    height: 100vh; 
+    width: 100vw; 
+    margin: 0; 
+    border-radius: 0; 
+    position: fixed; 
+    inset: 0; 
+    z-index: 10000;
+    transition: transform 0.3s ease;
+  }
+  .db-map-wrap { flex-direction: column; height: 100%; }
+  /* Výchozí: fullscreen mapa, list skrytý */
+  #db-map-list { display: none; width: 100vw; max-width: 100vw; margin: 0; height: auto; }
+  #db-map { min-height: 100%; flex-basis: auto; height: 100%; border-radius: 0; }
+  /* Režim „List": fullscreen seznam, mapa skrytá */
+  .db-list-mode #db-map { display: none; }
+  .db-list-mode #db-map-list {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: #049FE8;
+    border-radius: 0;
+    margin: 0;
+    padding-top: 0.5rem;
+    box-shadow: none;
+    z-index: 10001;
+  }
+  .db-list-mode .db-map-topbar { display: none; }
+  
+  /* Přidání padding-top pro kompenzaci fixed topbar */
+  .db-map-root { padding-top: 4rem; }
+  
+  /* Menu režim - mapa/list se odsunou do strany */
+  .db-menu-open .db-map-root {
+    transform: translateX(66.666%);
+  }
+  
+  /* Z-INDEX HIERARCHY:
+ * 1000-1999: Topbar, floating elements
+ * 2000-2999: Modals, overlays
+ * 5000-5999: Dropdowns, tooltips
+ * 8000-8999: Notifications, alerts
+ * 9000-10009: Other overlays, detail modals
+ * 10010-19999: Menu panels, sidebars
+ * 20000+: Critical overlays, loading screens
+ */
+
+/* Menu panel - mobilní fullscreen */
+  .db-menu-panel {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    background: #049FE8;
+    z-index: 10010;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    padding: 4rem 1rem 1rem 1rem;
+    /* Defaults to be overridden when opened */
+    visibility: hidden;
+    pointer-events: none;
+  }
+  
+  .db-menu-open .db-menu-panel,
+  .db-menu-panel.db-menu-panel--open {
+    transform: translateX(0) !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    z-index: 10010 !important;
+  }
+  
+  /* Force close when menu is not open */
+  .db-menu-panel:not(.db-menu-panel--open) {
+    transform: translateX(-100%) !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  
+  /* Menu header */
+  .db-menu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding: 1rem 1.5rem 1rem 1.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  }
+  
+  .db-menu-title {
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 700;
+  }
+  
+  .db-menu-close {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 50%;
+    transition: background 0.2s;
+    margin-right: 0.5rem;
+  }
+  
+  .db-menu-close:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  
+  .db-menu-close svg {
+    width: 20px;
+    height: 20px;
+  }
+  
+  /* Menu content */
+  .db-menu-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0 1.5rem;
+  }
+  
+  .db-menu-toggle-section {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .db-menu-toggle-item {
+    display: flex;
+    align-items: center;
+  }
+  
+  .db-menu-toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    color: white;
+    font-size: 1rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    transition: background-color 0.2s;
+    width: 100%;
+  }
+  
+  .db-menu-toggle-label:hover {
+    background-color: rgba(255,255,255,0.1);
+  }
+  
+  .db-menu-toggle-radio,
+  .db-menu-toggle-checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: white;
+    cursor: pointer;
+  }
+  
+  .db-menu-toggle-text {
+    flex: 1;
+  }
+  
+  .db-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    color: #fff;
+    text-decoration: none;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    transition: background 0.2s;
+  }
+  
+  .db-menu-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  
+  .db-menu-item svg {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+}
+
+/* Desktop menu - 30% šířka */
+@media (min-width: 901px) {
+  .db-menu-panel {
+    width: 30%;
+  }
+  
+  .db-menu-open .db-menu-panel {
+    transform: translateX(0) !important;
+  }
+  
+  .db-menu-open .db-map-root {
+    transform: translateX(30%);
+  }
+}
+
+/* Zámek stránky v imerzivním režimu */
+body.db-immersive { overflow: hidden !important; height: 100vh; }
+
+@media (max-width: 700px) {
+  .db-map-topbar {
+    padding: 0.5rem 0.75rem;
+  }
+  
+  .db-map-topbar .db-map-searchbox {
+    padding: 0.4rem 0.8rem;
+  }
+  
+  .db-map-topbar .db-map-topbar-btn {
+    width: 2.2rem;
+    height: 2.2rem;
+  }
+}
+
+/* Mobilní „bottom sheet" pro detail bodu - nový design jako plovoucí karta */
+#db-mobile-sheet {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 12px; /* Sníženo pro minimální zakrytí mapy */
+  background: #F5F1E8; /* Béžový background podle brandbooku */
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+  z-index: 10003;
+  width: calc(100% - 24px); /* Zmenšeno pro menší zakrytí */
+  max-width: 380px;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.3s ease;
+  padding-bottom: 0;
+}
+
+/* Zobrazení mobile sheet */
+#db-mobile-sheet.open { 
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* Obsah mobile sheet - nový design */
+#db-mobile-sheet .sheet-content {
+  padding: 12px;
+}
+
+#db-mobile-sheet .sheet-header { 
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#db-mobile-sheet .sheet-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* Barva se nastavuje dynamicky podle typu místa */
+}
+
+#db-mobile-sheet .sheet-icon img,
+#db-mobile-sheet .sheet-icon svg {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Speciální úprava pro nabíjecí ikony - menší velikost pro lepší proporce */
+#db-mobile-sheet .sheet-icon img[src*="charger_type"] {
+  width: 18px;
+  height: 18px;
+}
+
+#db-mobile-sheet .sheet-title { 
+  font-weight: 700; 
+  font-size: 1.1rem; 
+  color: #049FE8; /* Modrý text podle brandbooku */
+  line-height: 1.3;
+  flex: 1;
+}
+
+#db-mobile-sheet .sheet-subtitle { 
+  display: none; /* Skryto podle požadavku */
+}
+
+/* Společný řádek pro tlačítka a blízké body */
+#db-mobile-sheet .sheet-actions-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#db-mobile-sheet .btn-icon { 
+  width: 40px;
+  height: 40px;
+  background: #FF8DAA; /* Růžové tlačítko podle brandbooku */
+  color: #049FE8; /* Modrý symbol */
+  border: none; 
+  border-radius: 8px; 
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(255, 141, 170, 0.3);
+  flex-shrink: 0;
+}
+
+#db-mobile-sheet .btn-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: currentColor;
+}
+
+#db-mobile-sheet .btn-icon:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 141, 170, 0.4);
+}
+
+#db-mobile-sheet .btn-icon:active {
+  transform: translateY(0);
+}
+
+/* Blízké body - nový design */
+#db-mobile-sheet .sheet-nearby {
+  flex: 1;
+  min-width: 0;
+  margin-left: 12px;
+}
+
+#db-mobile-sheet .sheet-nearby-list {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+#db-mobile-sheet .nearby-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+}
+
+#db-mobile-sheet .nearby-item:hover {
+  background: rgba(4, 159, 232, 0.1);
+}
+
+#db-mobile-sheet .nearby-item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* Barva se nastavuje dynamicky podle typu místa */
+}
+
+#db-mobile-sheet .nearby-item-icon img,
+#db-mobile-sheet .nearby-item-icon svg {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Speciální úprava pro nabíjecí ikony v blízkých bodech */
+#db-mobile-sheet .nearby-item-icon img[src*="charger_type"] {
+  width: 16px;
+  height: 16px;
+}
+
+#db-mobile-sheet .nearby-item-icon span {
+  font-size: 16px;
+  color: white;
+}
+
+#db-mobile-sheet .nearby-item-info {
+  text-align: center;
+  color: #049FE8;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+#db-mobile-sheet .nearby-item-distance {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#db-mobile-sheet .nearby-item-time {
+  color: #FF8DAA;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Odstranění starých stylů */
+#db-mobile-sheet .grabber,
+#db-mobile-sheet .sheet-close-btn,
+#db-mobile-sheet .sheet-image {
+  display: none;
+}
+
+/* Responsivní design */
+@media (max-width: 480px) {
+  #db-mobile-sheet {
+    width: calc(100% - 16px);
+    bottom: 8px;
+    max-width: calc(100vw - 16px);
+  }
+  
+  #db-mobile-sheet .sheet-content {
+    padding: 10px;
+  }
+  
+  #db-mobile-sheet .nearby-item-info {
+    font-size: 0.65rem;
+  }
+  
+  #db-mobile-sheet .nearby-item-icon {
+    width: 36px;
+    height: 36px;
+  }
+  
+  #db-mobile-sheet .nearby-item-icon img,
+  #db-mobile-sheet .nearby-item-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+  
+  #db-mobile-sheet .nearby-item-icon span {
+    font-size: 14px;
+  }
+  
+  #db-mobile-sheet .btn-icon {
+    width: 36px;
+    height: 36px;
+  }
+  
+  #db-mobile-sheet .btn-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* List režim – header s ovládáním */
+#db-list-header { position: sticky; top: 0; z-index: 10002; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #049FE8; }
+#db-list-header .db-map-topbar-btn { margin-left: 0; }
+.db-map-topbar-btn.active { background: #FF8DAA; color: #fff; transform: scale(1.05); }
+
+/* Detail modal (80% výšky od spodní hrany) */
+#db-detail-modal { 
+  position: fixed; 
+  inset: 0; 
+  background: rgba(0,0,0,.4); 
+  display: none; 
+  align-items: flex-end; 
+  justify-content: center; 
+  z-index: 10004; 
+}
+#db-detail-modal.open { display: flex; }
+#db-detail-modal .modal-card { 
+  width: 100%; 
+  max-width: 720px; 
+  height: 80vh; /* 80% výšky obrazovky */
+  background: #F5F1E8; /* Béžový background podle brandbooku */
+  border-radius: 20px 20px 0 0; 
+  overflow-y: auto; 
+  box-shadow: 0 -10px 30px rgba(0,0,0,.35);
+  padding-bottom: 0;
+  box-sizing: border-box;
+}
+
+/* Fullscreen modal na mobilech */
+@media (max-width: 900px) {
+  #db-detail-modal .modal-card {
+    width: 100%;
+    max-width: 100%;
+    height: 80vh; /* 80% výšky obrazovky */
+    border-radius: 20px 20px 0 0;
+    padding-bottom: 0;
+  }
+}
+#db-detail-modal .close-btn { position: sticky; top: 0; margin-left: auto; margin-right: 8px; margin-top: 8px; z-index: 2; width: 40px; height: 40px; border-radius: 20px; border: none; background: #FF8DAA; color: #049FE8; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(255,141,170,.4); }
+#db-detail-modal .hero { position: relative; height: 240px; background: #e5e7eb; overflow: hidden; border-radius: 18px 18px 0 0; }
+#db-detail-modal .hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#db-detail-modal .hero .grad { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; background: linear-gradient(0deg, rgba(4,159,232,.95), rgba(4,159,232,0)); }
+
+/* Hero ikona v Detail Modal */
+#db-detail-modal .hero-icon {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+  /* Barva se nastavuje dynamicky podle typu místa */
+}
+
+#db-detail-modal .hero-icon img,
+#db-detail-modal .hero-icon svg {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  display: block;
+}
+
+/* Speciální úprava pro nabíjecí ikony v hero */
+#db-detail-modal .hero-icon img[src*="charger_type"] {
+  width: 24px;
+  height: 24px;
+}
+
+/* Detail modal - nový design s brandbookem */
+#db-detail-modal .title {
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: #049FE8; /* Modrý text podle brandbooku */
+  margin: 16px 16px 8px 16px;
+  line-height: 1.3;
+}
+
+#db-detail-modal .subtitle {
+  color: #666;
+  font-size: 0.9rem;
+  margin: 0 16px 16px 16px;
+  line-height: 1.4;
+}
+
+#db-detail-modal .desc {
+  color: #333;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  border-left: 4px solid #049FE8;
+}
+
+#db-detail-modal .actions { 
+  display: flex; 
+  gap: 12px; 
+  padding: 8px 16px; 
+  margin: 16px 0;
+}
+
+#db-detail-modal .actions .btn-primary { 
+  flex: 1; 
+  background: #049FE8; 
+  color: #fff; 
+  border: none; 
+  border-radius: 16px; 
+  padding: 12px 16px; 
+  font-weight: 700; 
+  text-align: center;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#db-detail-modal .actions .btn-outline { 
+  flex: 1; 
+  background: transparent; 
+  color: #049FE8; 
+  border: 2px solid #049FE8; 
+  border-radius: 16px; 
+  padding: 10px 16px; 
+  font-weight: 700; 
+  text-align: center;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Admin panel - zvýrazněný */
+#db-detail-modal .db-admin-panel {
+  background: #FF6A4B; /* Oranžový background pro admin panel */
+  color: white;
+  margin: 16px;
+  padding: 16px;
+  border-radius: 12px;
+  border-left: 4px solid #FF8DAA;
+}
+
+#db-detail-modal .db-admin-panel h3 {
+  color: white;
+  margin: 0 0 12px 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+#db-detail-modal .db-admin-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#db-detail-modal .db-btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+#db-detail-modal .db-btn:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+#db-detail-modal .db-admin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#db-detail-modal .db-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: white;
+  font-weight: 500;
+}
+
+#db-detail-modal .db-photo-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: white;
+  font-weight: 500;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+#db-detail-modal .db-photo-label:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Skrytí hamburger menu a list tlačítek na desktopu */
+@media (min-width: 901px) {
+  #db-menu-toggle,
+  #db-list-toggle,
+  #db-list-menu-toggle {
+    display: none !important;
+  }
+}
+
+/* Nové vyhledávací pole pod topbarem */
+.db-search-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 10005;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px; /* Pod topbarem */
+}
+
+.db-search-overlay.open {
+  display: flex;
+}
+
+.db-search-container {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  position: relative;
+}
+
+.db-search-input {
+  width: 100%;
+  padding: 16px 20px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.2s ease;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-search-input:focus {
+  border-color: #049FE8;
+}
+
+.db-search-input::placeholder {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.db-search-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.db-search-confirm {
+  background: #049FE8;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.db-search-confirm:hover {
+  background: #0384c7;
+}
+
+.db-search-cancel {
+  background: #f3f4f6;
+  color: #6b7280;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.db-search-cancel:hover {
+  background: #e5e7eb;
+}
+
+/* Speciální akcentní texty s Patrick Hand */
+.db-map-accent-text {
+  font-family: 'Patrick Hand', cursive;
+  font-size: 1.1em;
+  color: #FF6A4B; /* Oranžová CTA */
+}
+
+/* Call to action tlačítka */
+.db-map-cta-btn {
+  background: #FF6A4B; /* Oranžová CTA */
+  color: #fff;
+  border: none;
+  border-radius: 1.5em;
+  padding: 0.7em 1.5em;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(255, 106, 75, 0.3);
+}
+
+.db-map-cta-btn:hover {
+  background: #e55a3f;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 106, 75, 0.4);
+}
+
+/* Styly pro notifikace */
+.db-notification {
+  cursor: pointer;
+  user-select: none;
+}
+
+.db-notification:hover {
+  opacity: 0.9;
+}
+
+.db-notification-success {
+  background: #46b450 !important;
+  border-left: 4px solid #389a3f !important;
+}
+
+.db-notification-error {
+  background: #dc3232 !important;
+  border-left: 4px solid #a00 !important;
+}
+
+.db-notification-warning {
+  background: #ffb900 !important;
+  border-left: 4px solid #cc9200 !important;
+  color: #333 !important;
+}
+
+.db-notification-info {
+  background: #0073aa !important;
+  border-left: 4px solid #005a87 !important;
+}
+
+/* Responsivní design pro notifikace */
+@media (max-width: 768px) {
+  .db-notification {
+    right: 10px !important;
+    left: 10px !important;
+    max-width: none !important;
+  }
+} 
+
+/* Filtry - jezdec s 2 kuličkami */
+#db-map-filter-panel {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+#db-map-filter-panel::-webkit-scrollbar {
+  width: 6px;
+}
+
+#db-map-filter-panel::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+#db-map-filter-panel::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+#db-map-filter-panel::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Oprava problému s mapou v pozadí filtrů */
+#db-map-filter-panel {
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#db-map-filter-panel * {
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* Jezdec pozadí - každý range pokrývá svou polovinu */
+#db-power-min {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 50%;
+  height: 4px;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  transform: translateY(-50%);
+  z-index: 3;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#db-power-max {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  width: 50%;
+  height: 4px;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+  transform: translateY(-50%);
+  z-index: 3;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* Jezdec pozadí - Firefox */
+#db-power-min::-moz-range-track,
+#db-power-max::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
+/* Jezdec pozadí - Webkit */
+#db-power-min::-webkit-slider-track,
+#db-power-max::-webkit-slider-track {
+  background: transparent;
+  border: none;
+} 
+
+/* Tlačítko přepínání seznamu poskytovatelů */
+#db-provider-toggle {
+  background: none;
+  border: none;
+  color: #FF6A4B;
+  cursor: pointer;
+  font-size: 0.8em;
+  text-decoration: underline;
+  transition: all 0.2s ease;
+}
+
+#db-provider-toggle:hover {
+  color: #e55a3b;
+  text-decoration: none;
+}
+
+#db-provider-toggle:active {
+  transform: scale(0.95);
+} 
+
+/* Jezdec s vizuálním vyplněním pro výkon */
+#db-power-min::-webkit-slider-thumb,
+#db-power-max::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: #FF6A4B;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: all 0.2s ease;
+}
+
+#db-power-min::-webkit-slider-thumb:hover,
+#db-power-max::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+#db-power-min::-moz-range-thumb,
+#db-power-max::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: #FF6A4B;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: all 0.2s ease;
+}
+
+#db-power-min::-moz-range-thumb:hover,
+#db-power-max::-moz-range-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+/* Ikony konektorů */
+.db-connector-icon {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  margin: 4px;
+  border: 2px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: transparent;
+  vertical-align: top;
+}
+
+.db-connector-icon:hover {
+  border-color: #FF6A4B;
+  transform: scale(1.05);
+}
+
+.db-connector-icon.selected {
+  background: #FF6A4B !important;
+  border-color: #FF6A4B !important;
+  color: #fff !important;
+}
+
+/* Provider options */
+.db-provider-option {
+  padding: 8px 12px;
+  margin: 2px 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: #fff;
+  font-size: 0.9em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.db-provider-option:hover {
+  border-color: #FF6A4B;
+  background: #fff5f5;
+}
+
+.db-provider-option.selected {
+  background: #FF6A4B !important;
+  border-color: #FF6A4B !important;
+  color: #fff !important;
+}
+
+/* Tlačítka pro výběr všeho */
+.db-provider-select-all,
+.db-provider-clear-all {
+  width: 100%;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.8em;
+  color: #666;
+  transition: all 0.2s;
+}
+
+.db-provider-select-all:hover,
+.db-provider-clear-all:hover {
+  background: #e5e7eb;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.db-provider-select-all:active,
+.db-provider-clear-all:active {
+  transform: scale(0.98);
+}
+
+/* Checkbox indikátor */
+.db-provider-checkbox {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 3px;
+  background: #fff;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: transparent;
+}
+
+/* Custom multiple select pro poskytovatele */
+#db-filter-provider {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 0.9em;
+  background: #fff;
+  color: #333;
+  transition: border-color 0.2s ease;
+}
+
+#db-filter-provider:focus-within {
+  outline: none;
+  border-color: #FF6A4B;
+  box-shadow: 0 0 0 3px rgba(255, 106, 75, 0.1);
+}
+
+/* ===== PWA RESPONZIVNÍ STYLY ===== */
+
+/* WordPress Admin Bar CSS Custom Properties */
+:root {
+  --wp-admin-bar-height: 32px;
+  --wp-admin-bar-height-mobile: 46px;
+}
+
+/* PWA standalone módy */
+@media (display-mode: standalone) {
+  .db-map-root {
+    margin: 0;
+    border-radius: 0;
+    height: 100vh;
+    width: 100vw;
+  }
+  
+  .db-map-wrap {
+    height: 100vh;
+  }
+  
+  #db-map {
+    height: 100vh;
+  }
+  
+  #db-map-list {
+    height: 100vh;
+  }
+  
+  /* Skrýt scrollbary v PWA módu */
+  #db-map-list::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  #db-map-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  #db-map-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 3px;
+  }
+}
+
+/* PWA fullscreen módy */
+@media (display-mode: fullscreen) {
+  .db-map-root {
+    margin: 0;
+    border-radius: 0;
+    height: 100vh;
+    width: 100vw;
+    padding: 0;
+  }
+  
+  .db-map-wrap {
+    height: 100vh;
+  }
+  
+  #db-map {
+    height: 100vh;
+  }
+  
+  #db-map-list {
+    height: 100vh;
+  }
+}
+
+/* PWA mobilní optimalizace */
+@media (max-width: 768px) and (display-mode: standalone) {
+  .db-map-root {
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  
+  .db-map-topbar {
+    top: env(safe-area-inset-top);
+    left: env(safe-area-inset-left);
+    right: env(safe-area-inset-right);
+  }
+  
+  /* Optimalizace pro touch */
+  .db-map-card {
+    min-height: 60px;
+    padding: 12px 16px;
+  }
+  
+  .db-map-card .db-map-card-img {
+    width: 48px;
+    height: 48px;
+  }
+  
+  /* Větší touch targets */
+  .db-map-card-amenities > div {
+    min-width: 32px;
+    height: 32px;
+    margin: 2px;
+  }
+}
+
+/* PWA landscape orientace */
+@media (max-width: 768px) and (orientation: landscape) and (display-mode: standalone) {
+  .db-map-root {
+    flex-direction: row;
+  }
+  
+  .db-map-wrap {
+    flex-direction: row;
+  }
+  
+  #db-map-list {
+    width: 300px;
+    min-width: 250px;
+  }
+}
+
+/* PWA offline indikátor */
+.pwa-offline .db-map-root::before {
+  content: "🔴 Offline mód";
+  position: fixed;
+  top: env(safe-area-inset-top);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #F44336;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 10005;
+}
+
+/* PWA splash screen optimalizace */
+.pwa-splash {
+  background: #FEF9DF;
+  color: #049FE8;
+}
+
+.pwa-splash .pwa-splash-logo {
+  filter: drop-shadow(0 4px 16px rgba(4, 159, 232, 0.3));
+}
+
+/* PWA gesture navigace */
+@media (max-width: 768px) {
+  .db-map-root {
+    touch-action: pan-x pan-y;
+  }
+  
+  #db-map {
+    touch-action: pan-x pan-y pinch-zoom;
+  }
+  
+  #db-map-list {
+    touch-action: pan-y;
+  }
+}
+
+/* Navigační menu pro mobilní verzi */
+.db-nav-menu-mobile {
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Vylepšené styly pro mobile sheet s informacemi o nabíječkách */
+#db-mobile-sheet .sheet-content {
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+#db-mobile-sheet .connectors-info {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 12px 0;
+}
+
+#db-mobile-sheet .provider-info {
+  color: #666;
+  font-size: 0.9em;
+  margin: 8px 0;
+}
+
+/* Detail modal s rozšířenými informacemi */
+#db-detail-modal .modal-card {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+#db-detail-modal .connectors-detail {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px;
+}
+
+#db-detail-modal .provider-detail {
+  background: #e8f4fd;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 16px;
+  border-left: 4px solid #049FE8;
+}
+
+#db-detail-modal .additional-info {
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px;
+}
+
+#db-detail-modal .rating-info {
+  background: #fff3cd;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 16px;
+  border-left: 4px solid #ffc107;
+} 
+
+/* Dynamická plocha pro posunutí topbaru pod WP menu - odstraněno */
+
+/* Topbar s novou pozicí - odstraněno, používá se původní definice */ 
+
+/* Mapa s topbarem - odstraněno, používá se původní CSS */ 
+
+/* Desktop topbar - správné pozicování */
+@media (min-width: 901px) {
+  .db-map-topbar {
+    position: absolute !important;
+    top: 1em !important;
+    right: 2em !important;
+    left: auto !important;
+    width: auto !important;
+    border-radius: 2em !important;
+  }
+  
+  /* Mapa na desktopu */
+  #db-map {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: auto !important;
+    height: auto !important;
+    padding-top: 0 !important;
+  }
+  
+  /* Root element na desktopu */
+  .db-map-root {
+    padding-top: 0 !important;
+  }
+  
+  /* Wrap na desktopu */
+  .db-map-wrap {
+    padding-top: 0 !important;
+  }
+  
+  /* Zobrazení vyhledávací lišty na desktopu */
+  .db-map-searchbox {
+    display: flex !important;
+    align-items: center;
+    background: #FEF9DF; /* Béžová */
+    border-radius: 1.5em;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    padding: 0.25em 0.5em 0.25em 1.2em;
+    margin-right: 0.2em;
+    flex: 1 1 320px;
+    min-width: 220px;
+    max-width: 320px;
+  }
+  
+  /* Zobrazení Leaflet controls na desktopu */
+  .leaflet-control-zoom {
+    display: block !important;
+  }
+  
+  .leaflet-control-locate {
+    display: block !important;
+  }
+  
+  .leaflet-control {
+    display: block !important;
+  }
+} 
+
+/* Skrytí Leaflet ovládacích prvků na mobilu */
+@media (max-width: 900px) {
+  .leaflet-control-zoom {
+    display: none !important;
+  }
+  
+  .leaflet-control-locate {
+    display: none !important;
+  }
+  
+  .leaflet-control {
+    display: none !important;
+  }
+} 
+
+/* Mobilní vyhledávací pole pod topbarem */
+.db-mobile-search-field {
+  position: fixed;
+  top: 120px; /* 80px (topbar) + 40px (výška topbaru) */
+  /* left a width se nastavují dynamicky v JavaScriptu na 90% šířky displeje */
+  background: transparent; /* Průhledné pozadí */
+  padding: 1rem;
+  box-shadow: none; /* Bez stínu */
+  z-index: 10000; /* Vyšší než topbar (9999) */
+  display: block;
+  border-radius: 0 0 16px 16px;
+  /*animation: slideDown 0.3s ease;*/
+}
+
+/* Skrytí vyhledávacího pole */
+.db-mobile-search-field.hidden {
+  display: none;
+}
+
+.db-mobile-search-field input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-mobile-search-field input:focus {
+  border-color: #049FE8;
+}
+
+.db-mobile-search-field input::placeholder {
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* Animace pro vyhledávací pole */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Marker pro aktuální polohu uživatele */
+.db-map-search-marker {
+  z-index: 1000 !important;
+}
+
+.db-map-search-marker svg {
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+}
+
+/* Popup pro aktuální polohu */
+.db-map-search-marker .leaflet-popup-content {
+  font-size: 0.9em;
+  font-weight: 600;
+  color: #0074d9;
+  text-align: center;
+  margin: 8px 12px;
+}
+
+/* Tlačítko pro načtení bodů v aktuální lokalitě */
+.db-load-more-button {
+  position: fixed;
+  bottom: 30vh; /* cca 30 % od spodní hrany */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 99999 !important; /* nejvyšší z-index - nad vším */
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 25px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px;
+  transition: all 0.3s ease;
+}
+
+.db-load-more-button:hover {
+  background: rgba(255, 255, 255, 1);
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2);
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.db-load-more-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #049FE8;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 12px 20px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.db-load-more-btn:hover {
+  background: #0388c7;
+  transform: scale(1.02);
+}
+
+.db-load-more-btn svg {
+  flex-shrink: 0;
+}
+
+/* Responzivní úpravy pro tlačítko */
+@media (max-width: 768px) {
+  .db-load-more-button {
+    bottom: 15px;
+    padding: 6px;
+  }
+  
+  .db-load-more-btn {
+    padding: 10px 16px;
+    font-size: 13px;
+  }
+}
+
+/* Ultra-malé displeje - floating button výše, aby nekolidoval s Leaflet ovladači */
+@media (max-width: 480px) {
+  .db-load-more-button {
+    bottom: 25vh; /* Vyšší pozice na malých displejích */
+  }
+}
+
+/* Mobilní autocomplete styly */
+.db-mobile-autocomplete {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+.db-mobile-autocomplete::-webkit-scrollbar {
+  width: 4px;
+}
+
+.db-mobile-autocomplete::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 2px;
+}
+
+.db-mobile-autocomplete::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 2px;
+}
+
+.db-mobile-autocomplete::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.db-mobile-ac-item:hover {
+  background: #f8f9fa !important;
+}
+
+/* Mobilní potvrzení a chyby */
+.db-mobile-search-confirmation,
+.db-mobile-search-error {
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@media (max-width: 480px) {
+  .db-load-more-btn {
+    padding: 8px 14px;
+    font-size: 12px;
+  }
+  
+  .db-load-more-btn span {
+    display: none; /* Skrýt text na velmi malých obrazovkách */
+  }
+} 
+
+/* Fullscreen overlay při fetchi */
+body.db-loading::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.12);
+  z-index: 100000;
+  pointer-events: none; /* Nezachytávat gesta, ať se dál ovládá mapa */
+}
+
+/* Styly pro přepínač režimu */
+#db-mode-toggle:hover { 
+  filter: brightness(0.96); 
+  transform: scale(1.02);
+}
+
+#db-floating-search:hover { 
+  filter: brightness(1.1); 
+}
+
+body.db-loading::after {
+  content: 'Načítám body v okolí…';
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  background: #fff;
+  color: #049FE8;
+  font-weight: 700;
+  font-size: 16px; /* iOS nezoomuje při focusu na prvky >=16px */
+  padding: 12px 16px;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  z-index: 100001;
+  font-family: 'Montserrat', sans-serif;
+  pointer-events: none; /* Nezachytávat gesta */
+}
+
+/* ===== ADMIN PANEL STYLY ===== */
+
+.db-admin-panel {
+  margin-top: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border: 2px solid #049FE8;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(4, 159, 232, 0.1);
+}
+
+.db-admin-panel h3 {
+  margin: 0 0 16px 0;
+  color: #049FE8;
+  font-size: 16px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.db-admin-panel h3 i {
+  font-size: 18px;
+}
+
+.db-admin-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Admin tlačítko */
+.db-admin-actions .db-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #049FE8;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-admin-actions .db-btn:hover {
+  background: #0284c7;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(4, 159, 232, 0.3);
+}
+
+.db-admin-actions .db-btn i {
+  font-size: 16px;
+}
+
+/* Toggle switch pro DB doporučuje */
+.db-admin-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.db-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  user-select: none;
+}
+
+.db-toggle-label input[type="checkbox"] {
+  display: none;
+}
+
+.db-toggle-slider {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  background: #cbd5e1;
+  border-radius: 12px;
+  transition: background-color 0.3s ease;
+}
+
+.db-toggle-slider::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.3s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.db-toggle-label input:checked + .db-toggle-slider {
+  background: #049FE8;
+}
+
+.db-toggle-label input:checked + .db-toggle-slider::before {
+  transform: translateX(20px);
+}
+
+/* Nahrávání fotek */
+.db-admin-photos {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.db-photo-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #22c55e;
+  color: white;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-photo-label:hover {
+  background: #16a34a;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(34, 197, 94, 0.3);
+}
+
+.db-photo-label i {
+  font-size: 16px;
+}
+
+.db-photo-preview {
+  min-height: 20px;
+}
+
+.db-photo-loading {
+  color: #049FE8;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  padding: 8px;
+  background: #e0f2fe;
+  border-radius: 6px;
+}
+
+.db-photo-success {
+  color: #22c55e;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  padding: 8px;
+  background: #f0fdf4;
+  border-radius: 6px;
+}
+
+/* Responzivní úpravy pro admin panel */
+@media (max-width: 768px) {
+  .db-admin-panel {
+    margin-top: 16px;
+    padding: 12px;
+  }
+  
+  .db-admin-panel h3 {
+    font-size: 14px;
+  }
+  
+  .db-admin-actions {
+    gap: 12px;
+  }
+  
+  .db-admin-actions .db-btn,
+  .db-photo-label {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  
+  .db-toggle-label {
+    font-size: 13px;
+  }
+} 

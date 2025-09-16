@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress Admin Bar Test - Dobitý Baterky</title>
+    <style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #FEF9DF;
+            color: #333;
+        }
+        
+        /* Simulace WordPress Admin Bar */
+        #wpadminbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 32px;
+            background: #23282d;
+            color: white;
+            z-index: 99999;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            font-size: 14px;
+        }
+        
+        #wpadminbar.mobile {
+            height: 46px;
+        }
+        
+        .admin-bar-toggle {
+            position: fixed;
+            top: 40px;
+            right: 20px;
+            z-index: 100000;
+            background: #049FE8;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        
+        .admin-bar-toggle.mobile {
+            top: 54px;
+        }
+        
+        /* PWA test elementy */
+        .pwa-test-element {
+            position: fixed;
+            background: #049FE8;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 600;
+            z-index: 10000;
+        }
+        
+        .pwa-fullscreen-button {
+            top: 20px;
+            right: 20px;
+        }
+        
+        .pwa-install-button {
+            top: 80px;
+            right: 20px;
+        }
+        
+        .pwa-status-message {
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        .db-map-topbar {
+            position: fixed;
+            top: 2em;
+            right: 2em;
+            background: #FFACC4;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 600;
+            z-index: 1000;
+        }
+        
+        /* Test container */
+        .test-container {
+            max-width: 800px;
+            margin: 60px auto 20px;
+            padding: 30px;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 20px rgba(4, 159, 232, 0.1);
+        }
+        
+        .test-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+        }
+        
+        .test-section h3 {
+            margin: 0 0 15px 0;
+            color: #049FE8;
+        }
+        
+        .test-controls {
+            display: flex;
+            gap: 10px;
+            margin: 15px 0;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            background: #049FE8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #0386c7;
+        }
+        
+        button.secondary {
+            background: #6c757d;
+        }
+        
+        button.secondary:hover {
+            background: #5a6268;
+        }
+        
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .info-box h4 {
+            margin: 0 0 10px 0;
+            color: #0066cc;
+        }
+        
+        .info-box p {
+            margin: 0;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <!-- Simulace WordPress Admin Bar -->
+    <div id="wpadminbar">
+        <span>WordPress Admin Bar - Test</span>
+    </div>
+    
+    <!-- Admin Bar Toggle -->
+    <button class="admin-bar-toggle" onclick="toggleAdminBar()">
+        Přepnout Admin Bar
+    </button>
+    
+    <!-- PWA Test Elementy -->
+    <div class="pwa-test-element pwa-fullscreen-button">
+        ⛶ Fullscreen
+    </div>
+    
+    <div class="pwa-test-element pwa-install-button">
+        📱 Instalovat
+    </div>
+    
+    <div class="pwa-test-element pwa-status-message">
+        🟢 Online
+    </div>
+    
+    <div class="pwa-test-element db-map-topbar">
+        🔍 Vyhledávání
+    </div>
+    
+    <!-- Test Container -->
+    <div class="test-container">
+        <h1>WordPress Admin Bar Test</h1>
+        <p>Tento test simuluje WordPress admin bar a ověřuje správné přizpůsobení PWA elementů.</p>
+        
+        <div class="info-box">
+            <h4>Jak testovat:</h4>
+            <p>1. Použijte tlačítko "Přepnout Admin Bar" pro simulaci přihlášení/odhlášení</p>
+            <p>2. Změňte velikost okna pro testování desktop vs. mobilní admin bar</p>
+            <p>3. Zkontrolujte, zda se PWA elementy správně posunuly pod admin bar</p>
+        </div>
+        
+        <div class="test-section">
+            <h3>Admin Bar Stav</h3>
+            <div id="admin-bar-status" class="status success">
+                Admin Bar: Viditelný (32px)
+            </div>
+            <div class="test-controls">
+                <button onclick="toggleAdminBar()">Přepnout Admin Bar</button>
+                <button onclick="toggleMobileMode()">Přepnout Mobilní Mód</button>
+                <button onclick="resetTest()">Reset Test</button>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>PWA Elementy Pozice</h3>
+            <div id="element-positions">
+                <p><strong>Fullscreen Button:</strong> <span id="fullscreen-pos">top: 20px, right: 20px</span></p>
+                <p><strong>Install Button:</strong> <span id="install-pos">top: 80px, right: 20px</span></p>
+                <p><strong>Status Message:</strong> <span id="status-pos">top: 20px, center</span></p>
+                <p><strong>Topbar:</strong> <span id="topbar-pos">top: 2em, right: 2em</span></p>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>CSS Třídy</h3>
+            <div id="css-classes">
+                <p><strong>Body třídy:</strong> <span id="body-classes">admin-bar</span></p>
+                <p><strong>Admin Bar ID:</strong> <span id="admin-bar-id">wpadminbar</span></p>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>Responzivní Test</h3>
+            <div class="test-controls">
+                <button onclick="setViewport(1200, 800)">Desktop (1200x800)</button>
+                <button onclick="setViewport(768, 1024)">Tablet (768x1024)</button>
+                <button onclick="setViewport(375, 667)">Mobile (375x667)</button>
+            </div>
+            <div id="viewport-info">
+                <p><strong>Aktuální viewport:</strong> <span id="current-viewport">1200x800</span></p>
+                <p><strong>Admin Bar výška:</strong> <span id="admin-bar-height">32px</span></p>
+            </div>
+        </div>
+        
+        <div class="test-section">
+            <h3>PWA Módy Simulace</h3>
+            <div class="test-controls">
+                <button onclick="simulatePWAStandalone()">Simulovat PWA Standalone</button>
+                <button onclick="simulatePWAFullscreen()">Simulovat PWA Fullscreen</button>
+                <button onclick="resetPWAMode()">Reset PWA Mód</button>
+            </div>
+            <div id="pwa-mode-info">
+                <p><strong>Aktuální PWA mód:</strong> <span id="current-pwa-mode">Žádný</span></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let adminBarVisible = true;
+        let mobileMode = false;
+        let pwaMode = 'none';
+        
+        // Inicializace
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStatus();
+            updateElementPositions();
+            updateCSSClasses();
+            updateViewportInfo();
+            updatePWAModeInfo();
+        });
+        
+        // Přepnutí admin bar
+        function toggleAdminBar() {
+            const adminBar = document.getElementById('wpadminbar');
+            const toggleBtn = document.querySelector('.admin-bar-toggle');
+            
+            if (adminBarVisible) {
+                adminBar.style.display = 'none';
+                document.body.classList.remove('admin-bar');
+                adminBarVisible = false;
+                toggleBtn.textContent = 'Zobrazit Admin Bar';
+            } else {
+                adminBar.style.display = 'flex';
+                document.body.classList.add('admin-bar');
+                adminBarVisible = true;
+                toggleBtn.textContent = 'Skrýt Admin Bar';
+            }
+            
+            updateStatus();
+            updateCSSClasses();
+            updateElementPositions();
+        }
+        
+        // Přepnutí mobilního módu
+        function toggleMobileMode() {
+            const adminBar = document.getElementById('wpadminbar');
+            const toggleBtn = document.querySelector('.admin-bar-toggle');
+            
+            if (mobileMode) {
+                adminBar.classList.remove('mobile');
+                toggleBtn.classList.remove('mobile');
+                mobileMode = false;
+                adminBar.style.height = '32px';
+            } else {
+                adminBar.classList.add('mobile');
+                toggleBtn.classList.add('mobile');
+                mobileMode = true;
+                adminBar.style.height = '46px';
+            }
+            
+            updateStatus();
+            updateElementPositions();
+            updateViewportInfo();
+        }
+        
+        // Reset testu
+        function resetTest() {
+            adminBarVisible = true;
+            mobileMode = false;
+            pwaMode = 'none';
+            
+            const adminBar = document.getElementById('wpadminbar');
+            const toggleBtn = document.querySelector('.admin-bar-toggle');
+            
+            adminBar.style.display = 'flex';
+            adminBar.classList.remove('mobile');
+            toggleBtn.classList.remove('mobile');
+            adminBar.style.height = '32px';
+            
+            document.body.classList.add('admin-bar');
+            document.body.classList.remove('pwa-standalone', 'pwa-fullscreen');
+            
+            updateStatus();
+            updateElementPositions();
+            updateCSSClasses();
+            updateViewportInfo();
+            updatePWAModeInfo();
+        }
+        
+        // Nastavení viewportu
+        function setViewport(width, height) {
+            // Simulace viewportu změnou CSS
+            document.body.style.width = width + 'px';
+            document.body.style.height = height + 'px';
+            
+            if (width <= 782) {
+                if (!mobileMode) toggleMobileMode();
+            } else {
+                if (mobileMode) toggleMobileMode();
+            }
+            
+            updateViewportInfo();
+        }
+        
+        // Simulace PWA standalone
+        function simulatePWAStandalone() {
+            pwaMode = 'standalone';
+            document.body.classList.add('pwa-standalone');
+            document.body.classList.remove('pwa-fullscreen');
+            updatePWAModeInfo();
+            updateElementPositions();
+        }
+        
+        // Simulace PWA fullscreen
+        function simulatePWAFullscreen() {
+            pwaMode = 'fullscreen';
+            document.body.classList.add('pwa-fullscreen');
+            document.body.classList.remove('pwa-standalone');
+            updatePWAModeInfo();
+            updateElementPositions();
+        }
+        
+        // Reset PWA módu
+        function resetPWAMode() {
+            pwaMode = 'none';
+            document.body.classList.remove('pwa-standalone', 'pwa-fullscreen');
+            updatePWAModeInfo();
+            updateElementPositions();
+        }
+        
+        // Aktualizace statusu
+        function updateStatus() {
+            const statusDiv = document.getElementById('admin-bar-status');
+            if (adminBarVisible) {
+                const height = mobileMode ? '46px' : '32px';
+                statusDiv.textContent = `Admin Bar: Viditelný (${height})`;
+                statusDiv.className = 'status success';
+            } else {
+                statusDiv.textContent = 'Admin Bar: Skrytý';
+                statusDiv.className = 'status warning';
+            }
+        }
+        
+        // Aktualizace pozic elementů
+        function updateElementPositions() {
+            const fullscreenBtn = document.querySelector('.pwa-fullscreen-button');
+            const installBtn = document.querySelector('.pwa-install-button');
+            const statusMsg = document.querySelector('.pwa-status-message');
+            const topbar = document.querySelector('.db-map-topbar');
+            
+            if (adminBarVisible) {
+                const adminBarHeight = mobileMode ? 46 : 32;
+                
+                fullscreenBtn.style.top = (20 + adminBarHeight) + 'px';
+                installBtn.style.top = (80 + adminBarHeight) + 'px';
+                statusMsg.style.top = (20 + adminBarHeight) + 'px';
+                topbar.style.top = mobileMode ? (0.75 + adminBarHeight/16) + 'rem' : (2 + adminBarHeight/16) + 'em';
+                
+                document.getElementById('fullscreen-pos').textContent = `top: ${20 + adminBarHeight}px, right: 20px`;
+                document.getElementById('install-pos').textContent = `top: ${80 + adminBarHeight}px, right: 20px`;
+                document.getElementById('status-pos').textContent = `top: ${20 + adminBarHeight}px, center`;
+                document.getElementById('topbar-pos').textContent = mobileMode ? `top: ${0.75 + adminBarHeight/16}rem, right: 2em` : `top: ${2 + adminBarHeight/16}em, right: 2em`;
+            } else {
+                fullscreenBtn.style.top = '20px';
+                installBtn.style.top = '80px';
+                statusMsg.style.top = '20px';
+                topbar.style.top = mobileMode ? '0.75rem' : '2em';
+                
+                document.getElementById('fullscreen-pos').textContent = 'top: 20px, right: 20px';
+                document.getElementById('install-pos').textContent = 'top: 80px, right: 20px';
+                document.getElementById('status-pos').textContent = 'top: 20px, center';
+                document.getElementById('topbar-pos').textContent = mobileMode ? 'top: 0.75rem, right: 2em' : 'top: 2em, right: 2em';
+            }
+        }
+        
+        // Aktualizace CSS tříd
+        function updateCSSClasses() {
+            const bodyClasses = Array.from(document.body.classList).join(' ');
+            document.getElementById('body-classes').textContent = bodyClasses || 'žádné';
+            
+            const adminBar = document.getElementById('wpadminbar');
+            document.getElementById('admin-bar-id').textContent = adminBar ? adminBar.id : 'nenalezen';
+        }
+        
+        // Aktualizace viewport informací
+        function updateViewportInfo() {
+            const width = document.body.style.width || '100%';
+            const height = document.body.style.height || '100%';
+            document.getElementById('current-viewport').textContent = `${width} x ${height}`;
+            
+            const adminBarHeight = mobileMode ? '46px' : '32px';
+            document.getElementById('admin-bar-height').textContent = adminBarHeight;
+        }
+        
+        // Aktualizace PWA módu
+        function updatePWAModeInfo() {
+            let modeText = 'Žádný';
+            if (pwaMode === 'standalone') modeText = 'Standalone';
+            if (pwaMode === 'fullscreen') modeText = 'Fullscreen';
+            
+            document.getElementById('current-pwa-mode').textContent = modeText;
+        }
+        
+        // Resize observer pro admin bar
+        if ('ResizeObserver' in window) {
+            const adminBar = document.getElementById('wpadminbar');
+            const resizeObserver = new ResizeObserver(() => {
+                updateElementPositions();
+            });
+            resizeObserver.observe(adminBar);
+        }
+    </script>
+</body>
+</html>

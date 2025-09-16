@@ -1,0 +1,382 @@
+/**
+ * Styly pro odkazy na místa a navigaci
+ * Barvy odpovídají brandbooku Dobitý Baterky
+ */
+
+/* Základní odkazy na místa */
+.db-location-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #FEF9DF;
+    border: 2px solid #FCE67D;
+    border-radius: 8px;
+    color: #049FE8;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.db-location-link:hover {
+    background: #FCE67D;
+    border-color: #FCE67D;
+    color: #1e293b;
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(252, 230, 125, 0.3);
+}
+
+.db-location-link:focus {
+    outline: 2px solid #049FE8;
+    outline-offset: 2px;
+}
+
+.db-location-link-with-icon {
+    font-size: 0.9rem;
+}
+
+/* Tlačítka míst */
+.db-location-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    background: #FF6A4B;
+    border: none;
+    border-radius: 8px;
+    color: white;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    text-align: center;
+    min-height: 44px;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.db-location-button:hover {
+    background: #e55a3f;
+    color: white;
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(255, 106, 75, 0.3);
+}
+
+.db-location-button:active {
+    transform: translateY(0);
+}
+
+.db-location-button:focus {
+    outline: 2px solid #FF6A4B;
+    outline-offset: 2px;
+}
+
+.db-location-button.db-button-small {
+    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    min-height: 36px;
+}
+
+.db-location-button.db-button-primary {
+    background: #049FE8;
+}
+
+.db-location-button.db-button-primary:hover {
+    background: #0378b8;
+    box-shadow: 0 4px 12px rgba(4, 159, 232, 0.3);
+}
+
+.db-location-button.db-button-secondary {
+    background: #FF8DAA;
+}
+
+.db-location-button.db-button-secondary:hover {
+    background: #e57a95;
+    box-shadow: 0 4px 12px rgba(255, 141, 170, 0.3);
+}
+
+.db-location-button.db-button-success {
+    background: #10b981;
+}
+
+.db-location-button.db-button-success:hover {
+    background: #059669;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+/* Seznam míst */
+.db-locations-list {
+    display: grid;
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.db-locations-list-charging_location {
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.db-locations-list-rv_spot {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.db-locations-list-poi {
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.db-location-item {
+    background: white;
+    border: 2px solid #FFACC4;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(255, 172, 196, 0.1);
+    transition: all 0.2s ease;
+}
+
+.db-location-item:hover {
+    border-color: #FF8DAA;
+    box-shadow: 0 4px 16px rgba(255, 172, 196, 0.2);
+    transform: translateY(-2px);
+}
+
+.db-location-item h3 {
+    margin: 0 0 1rem 0;
+    color: #049FE8;
+    font-size: 1.2rem;
+    font-weight: 600;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.db-location-item p {
+    margin: 0 0 1.5rem 0;
+    color: #64748b;
+    line-height: 1.6;
+    font-family: 'Montserrat', sans-serif;
+}
+
+/* Navigace mezi místy */
+.db-location-navigation {
+    background: linear-gradient(135deg, #FEF9DF 0%, #FFACC4 100%);
+    border: 2px solid #FCE67D;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin: 2rem 0;
+    box-shadow: 0 4px 15px rgba(252, 230, 125, 0.2);
+}
+
+.db-location-navigation h3 {
+    margin: 0 0 1rem 0;
+    color: #049FE8;
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.db-location-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.db-location-nav-item {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: white;
+    border: 2px solid #FFACC4;
+    border-radius: 6px;
+    color: #64748b;
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.db-location-nav-item:hover {
+    background: #FFACC4;
+    border-color: #FF8DAA;
+    color: white;
+    text-decoration: none;
+    transform: translateY(-1px);
+}
+
+.db-location-nav-item.current {
+    background: #049FE8;
+    border-color: #049FE8;
+    color: white;
+    font-weight: 500;
+}
+
+/* Breadcrumbs */
+.db-breadcrumbs {
+    background: #FEF9DF;
+    border: 2px solid #FCE67D;
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    margin: 1rem 0 2rem 0;
+    font-size: 0.9rem;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.db-breadcrumbs a {
+    color: #049FE8;
+    text-decoration: none;
+    transition: color 0.2s ease;
+    font-weight: 500;
+}
+
+.db-breadcrumbs a:hover {
+    color: #0378b8;
+    text-decoration: underline;
+}
+
+.db-breadcrumbs .current {
+    color: #64748b;
+    font-weight: 500;
+}
+
+/* Chybové zprávy */
+.db-error {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    background: #fef2f2;
+    border: 2px solid #fecaca;
+    border-radius: 6px;
+    color: #dc2626;
+    font-size: 0.9rem;
+    font-weight: 500;
+    font-family: 'Montserrat', sans-serif;
+}
+
+/* Speciální styly pro různé typy míst */
+.db-location-link[data-post-type="charging_location"] {
+    border-color: #049FE8;
+    color: #049FE8;
+}
+
+.db-location-link[data-post-type="charging_location"]:hover {
+    background: #049FE8;
+    color: white;
+}
+
+.db-location-link[data-post-type="rv_spot"] {
+    border-color: #10b981;
+    color: #10b981;
+}
+
+.db-location-link[data-post-type="rv_spot"]:hover {
+    background: #10b981;
+    color: white;
+}
+
+.db-location-link[data-post-type="poi"] {
+    border-color: #FF8DAA;
+    color: #FF8DAA;
+}
+
+.db-location-link[data-post-type="poi"]:hover {
+    background: #FF8DAA;
+    color: white;
+}
+
+/* Animace a efekty */
+.db-location-link,
+.db-location-button,
+.db-location-item,
+.db-location-nav-item {
+    position: relative;
+    overflow: hidden;
+}
+
+.db-location-link::before,
+.db-location-button::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    transition: left 0.5s ease;
+}
+
+.db-location-link:hover::before,
+.db-location-button:hover::before {
+    left: 100%;
+}
+
+/* Responzivita */
+@media (max-width: 768px) {
+    .db-locations-list {
+        grid-template-columns: 1fr;
+    }
+    
+    .db-location-list {
+        flex-direction: column;
+    }
+    
+    .db-location-nav-item {
+        display: block;
+        text-align: center;
+    }
+    
+    .db-location-button {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .db-location-link {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .db-location-item {
+        padding: 1rem;
+    }
+    
+    .db-location-navigation {
+        padding: 1rem;
+    }
+    
+    .db-breadcrumbs {
+        padding: 0.75rem 1rem;
+        font-size: 0.8rem;
+    }
+    
+    .db-location-button {
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+    }
+}
+
+/* Dark mode podpora */
+@media (prefers-color-scheme: dark) {
+    .db-location-item {
+        background: #1e293b;
+        color: #f1f5f9;
+    }
+    
+    .db-location-item h3 {
+        color: #60a5fa;
+    }
+    
+    .db-location-item p {
+        color: #cbd5e1;
+    }
+    
+    .db-location-navigation {
+        background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        border-color: #475569;
+    }
+    
+    .db-breadcrumbs {
+        background: #1e293b;
+        border-color: #475569;
+        color: #f1f5f9;
+    }
+}

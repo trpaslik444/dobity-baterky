@@ -1,0 +1,31 @@
+/* Lightweight styles for feedback FAB, modal and highlighter */
+.db-feedback-fab{position:fixed;right:16px;bottom:16px;z-index:99999;background:#111;color:#fff;border-radius:999px;padding:10px 14px;box-shadow:0 6px 18px rgba(0,0,0,.18);cursor:pointer;font-weight:600;transition:opacity 0.3s ease, transform 0.3s ease;}
+
+/* Skrytí feedback tlačítka, když je otevřený mobile sheet nebo detail modal */
+#db-mobile-sheet.open ~ .db-feedback-fab,
+#db-detail-modal.open ~ .db-feedback-fab,
+.db-feedback-fab.hidden {
+  opacity: 0;
+  transform: scale(0.8);
+  pointer-events: none;
+}
+
+.db-feedback-modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:none;align-items:center;justify-content:center;z-index:99999}
+.db-feedback-modal.open{display:flex}
+.db-feedback-card{background:#fff;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.22);max-width:640px;width:92%;padding:16px}
+.db-feedback-card h3{margin:0 0 8px 0}
+.db-feedback-card label{display:block;font-size:12px;color:#555;margin-top:8px}
+.db-feedback-card input[type="text"],.db-feedback-card textarea,.db-feedback-card select{width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;box-sizing:border-box;font-size:14px;line-height:1.4}
+.db-feedback-card .row{display:flex;gap:8px;margin-top:8px}
+.db-feedback-card .row>div{flex:1}
+.db-feedback-card .buttons{display:flex;gap:8px;justify-content:flex-end;margin-top:16px}
+.db-feedback-card button{background:#111;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px}
+.db-feedback-card button.secondary{background:#6b7280}
+.db-feedback-card button:hover{opacity:.9}
+.db-feedback-card textarea{min-height:80px;resize:vertical}
+.db-feedback-card select{appearance:none;background-image:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e");background-repeat:no-repeat;background-position:right 8px center;background-size:16px;padding-right:32px}
+.db-feedback-card select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.db-feedback-card input:focus,.db-feedback-card textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.1)}
+.db-feedback-highlight{outline:2px solid #3b82f6;outline-offset:2px;background:rgba(59,130,246,.1)}
+.db-feedback-highlight:hover{outline-color:#1d4ed8;background:rgba(59,130,246,.2)}
+
