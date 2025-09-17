@@ -291,6 +291,22 @@ if ( file_exists( __DIR__ . '/includes/REST_Map.php' ) ) {
 }
 
 
+// User Submissions (CPT + REST)
+if ( file_exists( __DIR__ . '/includes/Submissions.php' ) ) {
+    require_once __DIR__ . '/includes/Submissions.php';
+    if ( class_exists( 'DB\Submissions' ) ) {
+        DB\Submissions::get_instance()->register();
+    }
+}
+
+if ( file_exists( __DIR__ . '/includes/REST_Submissions.php' ) ) {
+    require_once __DIR__ . '/includes/REST_Submissions.php';
+    if ( class_exists( 'DB\REST_Submissions' ) ) {
+        DB\REST_Submissions::get_instance()->register();
+    }
+}
+
+
 // Feedback module (REST + frontend + admin)
 if ( file_exists( __DIR__ . '/includes/Feedback.php' ) ) {
     require_once __DIR__ . '/includes/Feedback.php';
