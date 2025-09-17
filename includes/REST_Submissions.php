@@ -144,7 +144,17 @@ class REST_Submissions {
 		if ($data['comment'] !== '') update_post_meta($post_id, '_comment', $data['comment']);
 		update_post_meta($post_id, '_submission_status', 'pending_review');
 
-		return new WP_REST_Response(array('id' => $post_id, 'status' => 'pending_review'), 201);
+
+		// Automatická předkontrola s ORS (pokud je nakonfigurováno)
+		try {
+			$ors_key = get_option('db_ors_api_key', '');
+			if (!empty($ors_key)) {
+				$validator = new Submissions_Validator();
+				$validator->validate($post_id);
+			}
+		} catch (\Throwable $e) { /* tiché selhání */ }
+
+		return new WP_REST_Response(array('id' => $post_id, 'status' => get_post_meta($post_id, '_submission_status', true) ?: 'pending_review'), 201);
 	}
 
 	public function list_my_submissions(WP_REST_Request $request) {
