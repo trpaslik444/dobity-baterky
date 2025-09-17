@@ -40,15 +40,22 @@ class REST_Submissions {
 			'permission_callback' => array($this, 'permissions_logged_in')
 		));
 
-		register_rest_route('db/v1', '/submissions/(?P<id>\d+)', array(
+		register_rest_route('db/v1', '/submissions/(?P<id>\\d+)', array(
 			'methods' => 'PATCH',
 			'callback' => array($this, 'update_submission'),
 			'permission_callback' => array($this, 'permissions_logged_in')
 		));
 
-		register_rest_route('db/v1', '/submissions/(?P<id>\d+)/validate', array(
+		register_rest_route('db/v1', '/submissions/(?P<id>\\d+)/validate', array(
 			'methods' => 'POST',
 			'callback' => array($this, 'trigger_validation'),
+			'permission_callback' => array($this, 'permissions_logged_in')
+		));
+
+		// Nový endpoint pro ORS geocode
+		register_rest_route('db/v1', '/submissions/geocode', array(
+			'methods' => 'POST',
+			'callback' => array($this, 'geocode_address'),
 			'permission_callback' => array($this, 'permissions_logged_in')
 		));
 	}
@@ -182,13 +189,23 @@ class REST_Submissions {
 			return new WP_Error('forbidden', 'Nemáte oprávnění validovat podání.', array('status' => 403));
 		}
 
-
 		$validator = new Submissions_Validator();
 		$result = $validator->validate($id);
 		if (isset($result['error'])) {
 			return new WP_Error('validation_error', 'Chyba při validaci.', array('status' => 500));
 		}
 		return new WP_REST_Response(array('id' => $id, 'status' => 'validated', 'result' => $result), 200);
+	}
+
+	public function geocode_address(WP_REST_Request $request) {
+		$params = $request->get_json_params();
+		$address = sanitize_text_field($params['address'] ?? '');
+		if (!$address) return new WP_Error('missing_address', 'Chybí adresa.', array('status' => 400));
+		$adapter = new \DB\Sources\Adapters\ORS_Geocode_Adapter();
+		if (!$adapter->is_configured()) return new WP_Error('not_configured', 'ORS není nakonfigurováno.', array('status' => 500));
+		$res = $adapter->search_address($address, 5);
+		if (isset($res['error'])) return new WP_Error('geocode_error', 'Chyba ORS.', array('status' => 500));
+		return new WP_REST_Response($res, 200);
 	}
 }
 

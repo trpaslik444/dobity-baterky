@@ -134,7 +134,8 @@
             </div>
             <button type="button" id="db-subm-use-center" class="button">Použít střed mapy${(center && center.lat)?` (${center.lat.toFixed?center.lat.toFixed(5):center.lat}, ${center.lng.toFixed?center.lng.toFixed(5):center.lng})`:''}</button>
           </div>`;
-        document.getElementById('db-subm-address').oninput = (e)=> state.address = e.target.value;
+        const addrEl = document.getElementById('db-subm-address');
+        addrEl.oninput = (e)=> { state.address = e.target.value; debounceGeocode(); };
         document.getElementById('db-subm-lat').oninput = (e)=> state.lat = e.target.value;
         document.getElementById('db-subm-lng').oninput = (e)=> state.lng = e.target.value;
         document.getElementById('db-subm-use-center').onclick = ()=>{
@@ -214,6 +215,49 @@
   function escapeHtml(str){
     if (str===null || str===undefined) return '';
     return String(str).replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]));
+  }
+
+  let geocodeTimer = null;
+  function debounceGeocode(){
+    if (geocodeTimer) clearTimeout(geocodeTimer);
+    geocodeTimer = setTimeout(runGeocode, 500);
+  }
+  async function runGeocode(){
+    if (!state.address || state.address.length < 3) return;
+    try{
+      const base = getApiBase();
+      const res = await fetch(base + 'submissions/geocode',{
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'X-WP-Nonce': (window.wpApiSettings && window.wpApiSettings.nonce) ? window.wpApiSettings.nonce : (window.dbMapData && window.dbMapData.restNonce ? window.dbMapData.restNonce : '')
+        },
+        body: JSON.stringify({ address: state.address })
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const items = data.items || [];
+      if (!items.length) return;
+      const best = items[0];
+      // nenutíme, jen zobrazíme drobný tip a nabídku použít
+      const mount = document.getElementById('db-subm-validation');
+      if (mount) {
+        mount.innerHTML = `<div style="margin-top:6px; padding:8px; background:#f7f7f7; border:1px solid #eee; border-radius:6px;">`
+          + `<div><strong>Návrh adresy:</strong> ${escapeHtml(best.label||'')}</div>`
+          + `<div>${best.lat}, ${best.lng}</div>`
+          + `<div style="margin-top:6px;"><button type="button" id="db-subm-apply-geocode" class="button">Použít</button></div>`
+          + `</div>`;
+        const btn = document.getElementById('db-subm-apply-geocode');
+        if (btn) btn.onclick = async ()=>{
+          state.lat = best.lat; state.lng = best.lng; state.address = best.label || state.address;
+          const latEl = document.getElementById('db-subm-lat'); if (latEl) latEl.value = (best.lat.toFixed?best.lat.toFixed(7):best.lat);
+          const lngEl = document.getElementById('db-subm-lng'); if (lngEl) lngEl.value = (best.lng.toFixed?best.lng.toFixed(7):best.lng);
+          const aEl = document.getElementById('db-subm-address'); if (aEl) aEl.value = best.label || aEl.value;
+          if (window.dbMap && window.dbMap.setView){ window.dbMap.setView([best.lat, best.lng], 15, { animate: true }); }
+          await createOrUpdateSubmission();
+        };
+      }
+    }catch(e){ /* ignore */ }
   }
 
   async function submit(payload){
