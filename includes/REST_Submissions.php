@@ -9,6 +9,7 @@ namespace DB;
 use WP_Error;
 use WP_REST_Request;
 use WP_REST_Response;
+use DB\Jobs\Submissions_Validator;
 
 if (!defined('ABSPATH')) exit;
 
@@ -181,9 +182,13 @@ class REST_Submissions {
 			return new WP_Error('forbidden', 'Nemáte oprávnění validovat podání.', array('status' => 403));
 		}
 
-		// Zatím jen změna stavu na pending_review -> validated (placeholder pro službu)
-		update_post_meta($id, '_submission_status', 'validated');
-		return new WP_REST_Response(array('id' => $id, 'status' => 'validated'), 200);
+
+		$validator = new Submissions_Validator();
+		$result = $validator->validate($id);
+		if (isset($result['error'])) {
+			return new WP_Error('validation_error', 'Chyba při validaci.', array('status' => 500));
+		}
+		return new WP_REST_Response(array('id' => $id, 'status' => 'validated', 'result' => $result), 200);
 	}
 }
 

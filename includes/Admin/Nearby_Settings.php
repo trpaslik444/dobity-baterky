@@ -36,6 +36,8 @@ class Nearby_Settings {
         
         // ORS API key
         $sanitized['ors_api_key'] = sanitize_text_field($input['ors_api_key'] ?? '');
+        // Ulož i do samostatného option pro snadné čtení mimo konfiguraci
+        update_option('db_ors_api_key', $sanitized['ors_api_key']);
         
         // Radiusy
         $sanitized['radius_poi_for_charger'] = max(0.1, min(50, floatval($input['radius_poi_for_charger'] ?? 5)));
