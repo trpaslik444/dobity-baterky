@@ -13,7 +13,9 @@
     lat: '',
     lng: '',
     rating: null,
-    comment: ''
+    comment: '',
+    submissionId: null,
+    validation: null
   };
 
   function ensureButton(){
@@ -185,7 +187,13 @@
             <div>Adresa: ${escapeHtml(state.address)}</div>
             <div>Souřadnice: ${state.lat}, ${state.lng}</div>
             <div>Hodnocení: ${state.rating==null?'—':state.rating}, Komentář: ${escapeHtml(state.comment)}</div>
+            <div id="db-subm-validation" style="margin-top:8px;"></div>
+            <div style="margin-top:8px; display:flex; gap:8px;">
+              <button type="button" id="db-subm-validate" class="button">Ověřit s ORS</button>
+            </div>
           </div>`;
+        const validateBtn = document.getElementById('db-subm-validate');
+        if (validateBtn) validateBtn.onclick = runValidationFlow;
       }
     }
 
@@ -210,27 +218,105 @@
 
   async function submit(payload){
     try{
-      const base = (window.wpApiSettings && window.wpApiSettings.root) ? window.wpApiSettings.root : (window.dbMapData.restUrl.replace(/\/map$/, ''));
-      const res = await fetch(base + 'submissions',{
-        method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'X-WP-Nonce': (window.wpApiSettings && window.wpApiSettings.nonce) ? window.wpApiSettings.nonce : (window.dbMapData && window.dbMapData.restNonce ? window.dbMapData.restNonce : '')
-        },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok){
-        const txt = await res.text();
-        alert('Chyba odeslání: '+txt);
-        return;
-      }
-      const data = await res.json();
-      alert('Podání vytvořeno (#'+data.id+').');
+      const id = await createOrUpdateSubmission();
+      if (!id) return;
+      alert('Podání vytvořeno (#'+id+').');
+      // Automaticky spustit validaci po odeslání
+      await runValidation(id);
       closePanel();
     }catch(e){
       console.error(e);
       alert('Chyba připojení.');
     }
+  }
+
+  function getApiBase(){
+    return (window.wpApiSettings && window.wpApiSettings.root) ? window.wpApiSettings.root : (window.dbMapData.restUrl.replace(/\/map$/, ''));
+  }
+
+  async function createOrUpdateSubmission(){
+    const payload = {
+      post_type: state.post_type,
+      title: state.title,
+      description: state.description,
+      address: state.address,
+      lat: state.lat,
+      lng: state.lng,
+      rating: state.rating,
+      comment: state.comment
+    };
+    const base = getApiBase();
+    const headers = {
+      'Content-Type':'application/json',
+      'X-WP-Nonce': (window.wpApiSettings && window.wpApiSettings.nonce) ? window.wpApiSettings.nonce : (window.dbMapData && window.dbMapData.restNonce ? window.dbMapData.restNonce : '')
+    };
+    if (!state.submissionId){
+      const res = await fetch(base + 'submissions',{ method:'POST', headers, body: JSON.stringify(payload) });
+      if (!res.ok){ const txt = await res.text(); alert('Chyba odeslání: '+txt); return null; }
+      const data = await res.json();
+      state.submissionId = data.id;
+      return state.submissionId;
+    } else {
+      const res = await fetch(base + 'submissions/'+state.submissionId,{ method:'PATCH', headers, body: JSON.stringify(payload) });
+      if (!res.ok){ const txt = await res.text(); alert('Chyba uložení: '+txt); return null; }
+      return state.submissionId;
+    }
+  }
+
+  async function runValidationFlow(){
+    const id = await createOrUpdateSubmission();
+    if (!id) return;
+    const result = await runValidation(id);
+    if (!result) return;
+    renderSuggestions(result);
+  }
+
+  async function runValidation(id){
+    try{
+      const base = getApiBase();
+      const res = await fetch(base + 'submissions/'+id+'/validate',{
+        method:'POST',
+        headers:{
+          'X-WP-Nonce': (window.wpApiSettings && window.wpApiSettings.nonce) ? window.wpApiSettings.nonce : (window.dbMapData && window.dbMapData.restNonce ? window.dbMapData.restNonce : '')
+        }
+      });
+      if (!res.ok){ const txt = await res.text(); alert('Validace selhala: '+txt); return null; }
+      const data = await res.json();
+      state.validation = data.result;
+      return data.result;
+    }catch(e){ console.error(e); alert('Chyba validace.'); return null; }
+  }
+
+  function renderSuggestions(validation){
+    const mount = document.getElementById('db-subm-validation');
+    if (!mount) return;
+    const list = (validation && validation.suggestions) ? validation.suggestions : [];
+    if (!list.length){ mount.innerHTML = '<div style="color:#555;">Žádné návrhy z ORS.</div>'; return; }
+    const html = list.slice(0,3).map((s,idx)=>{
+      const lat = (s.lat!=null)?s.lat:''; const lng = (s.lng!=null)?s.lng:''; const label = s.label || '';
+      const conf = (s.confidence!=null) ? `, důvěra: ${s.confidence}` : '';
+      return `<div style="padding:8px; border:1px solid #eee; border-radius:6px; margin-top:6px;">
+        <div><strong>${escapeHtml(label)}</strong></div>
+        <div>${lat}, ${lng}${conf}</div>
+        <div style="margin-top:6px;"><button type="button" class="button" data-idx="${idx}" data-lat="${lat}" data-lng="${lng}" data-label="${escapeHtml(label)}">Použít tento návrh</button></div>
+      </div>`;
+    }).join('');
+    mount.innerHTML = `<div style="margin-top:6px;"><strong>Návrhy od ORS:</strong></div>${html}`;
+    mount.querySelectorAll('button[data-idx]').forEach(btn=>{
+      btn.addEventListener('click', async (e)=>{
+        const lat = parseFloat(e.currentTarget.getAttribute('data-lat'));
+        const lng = parseFloat(e.currentTarget.getAttribute('data-lng'));
+        const label = e.currentTarget.getAttribute('data-label');
+        state.lat = lat; state.lng = lng; state.address = label;
+        // propsat do polí
+        const latEl = document.getElementById('db-subm-lat'); if (latEl) latEl.value = (lat.toFixed?lat.toFixed(7):lat);
+        const lngEl = document.getElementById('db-subm-lng'); if (lngEl) lngEl.value = (lng.toFixed?lng.toFixed(7):lng);
+        const addrEl = document.getElementById('db-subm-address'); if (addrEl) addrEl.value = label;
+        // uložit změny do submission (PATCH)
+        await createOrUpdateSubmission();
+        alert('Návrh použit.');
+      });
+    });
   }
 
   function closePanel(){
