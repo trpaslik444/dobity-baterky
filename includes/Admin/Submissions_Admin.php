@@ -24,12 +24,16 @@ class Submissions_Admin {
 			'Podání uživatelů',
 			'manage_options',
 			'db-user-submissions',
-			array($this, 'render_page')
+            array($this, 'render_page')
 		);
 	}
 
 	public function render_page() {
 		if (!current_user_can('manage_options')) return;
+        if (isset($_GET['view']) && $_GET['view'] === 'detail' && !empty($_GET['submission_id'])) {
+            $this->render_detail_page(intval($_GET['submission_id']));
+            return;
+        }
 		$filter_status = isset($_GET['status']) ? sanitize_text_field($_GET['status']) : '';
 		$args = array(
 			'post_type' => 'user_submission',
@@ -51,7 +55,7 @@ class Submissions_Admin {
 						<th>Typ</th>
 						<th>Poloha</th>
 						<th>Stav</th>
-						<th>Validace</th>
+                        <th>Validace</th>
 						<th>Akce</th>
 					</tr>
 				</thead>
@@ -68,9 +72,13 @@ class Submissions_Admin {
 						$validation = get_post_meta($pid, '_validation_result', true);
 						$first = is_array($validation) && !empty($validation['suggestions']) ? $validation['suggestions'][0] : null;
 					?>
-					<tr>
+                    <tr>
 						<td><?php echo esc_html($pid); ?></td>
-						<td><?php echo esc_html(get_the_title($p)); ?></td>
+                        <td>
+                            <a href="<?php echo esc_url( admin_url('tools.php?page=db-user-submissions&view=detail&submission_id='.$pid) ); ?>">
+                                <?php echo esc_html(get_the_title($p)); ?>
+                            </a>
+                        </td>
 						<td><?php echo esc_html($type); ?></td>
 						<td><?php echo esc_html($lat.', '.$lng); ?></td>
 						<td><?php echo esc_html($status); ?></td>
@@ -97,6 +105,78 @@ class Submissions_Admin {
 		</div>
 		<?php
 	}
+
+    private function render_detail_page(int $submission_id) {
+        $p = get_post($submission_id);
+        if (!$p || $p->post_type !== 'user_submission') {
+            echo '<div class="wrap"><h1>Podání nenalezeno</h1></div>';
+            return;
+        }
+        $type = get_post_meta($submission_id, '_target_post_type', true);
+        $lat = get_post_meta($submission_id, '_lat', true);
+        $lng = get_post_meta($submission_id, '_lng', true);
+        $address = get_post_meta($submission_id, '_address', true);
+        $status = get_post_meta($submission_id, '_submission_status', true) ?: 'pending_review';
+        $validation = get_post_meta($submission_id, '_validation_result', true);
+        $approve_url = wp_nonce_url(admin_url('admin-post.php?action=db_submission_approve&submission_id='.$submission_id), 'db_submission_action_'.$submission_id);
+        $reject_url = wp_nonce_url(admin_url('admin-post.php?action=db_submission_reject&submission_id='.$submission_id), 'db_submission_action_'.$submission_id);
+        $validate_url = wp_nonce_url(admin_url('admin-post.php?action=db_submission_validate&submission_id='.$submission_id), 'db_submission_action_'.$submission_id);
+        ?>
+        <div class="wrap">
+            <h1>Detail podání #<?php echo esc_html($submission_id); ?></h1>
+            <p><a href="<?php echo esc_url( admin_url('tools.php?page=db-user-submissions') ); ?>">← Zpět na seznam</a></p>
+            <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
+                <div style="flex:1; min-width:320px;">
+                    <table class="widefat fixed striped" style="margin-top:0;">
+                        <tbody>
+                            <tr><th>Titulek</th><td><?php echo esc_html(get_the_title($p)); ?></td></tr>
+                            <tr><th>Typ</th><td><?php echo esc_html($type); ?></td></tr>
+                            <tr><th>Adresa</th><td><?php echo esc_html($address); ?></td></tr>
+                            <tr><th>Souřadnice</th><td><?php echo esc_html($lat.', '.$lng); ?></td></tr>
+                            <tr><th>Stav</th><td><?php echo esc_html($status); ?></td></tr>
+                        </tbody>
+                    </table>
+                    <div style="margin-top:12px; display:flex; gap:8px;">
+                        <a class="button" href="<?php echo esc_url($validate_url); ?>">Validovat ORS</a>
+                        <a class="button button-primary" href="<?php echo esc_url($approve_url); ?>">Schválit</a>
+                        <a class="button" href="<?php echo esc_url($reject_url); ?>">Zamítnout</a>
+                    </div>
+                </div>
+                <div style="flex:1.5; min-width:360px;">
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+                    <div id="db-subm-map" style="height:420px; border:1px solid #ddd; border-radius:6px;"></div>
+                    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+                    <script>
+                        (function(){
+                            const lat = <?php echo is_numeric($lat)?json_encode((float)$lat):'null'; ?>;
+                            const lng = <?php echo is_numeric($lng)?json_encode((float)$lng):'null'; ?>;
+                            const map = L.map('db-subm-map');
+                            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(map);
+                            const center = (lat && lng) ? [lat, lng] : [50.08, 14.42];
+                            map.setView(center, (lat && lng) ? 14 : 6);
+                            if (lat && lng) { L.marker([lat, lng]).addTo(map).bindPopup('Podání').openPopup(); }
+                        })();
+                    </script>
+                    <?php if (is_array($validation) && !empty($validation['suggestions'])): ?>
+                        <div style="margin-top:12px;">
+                            <h3>Návrhy z ORS</h3>
+                            <?php foreach (array_slice($validation['suggestions'], 0, 5) as $i => $s): $apply_url = wp_nonce_url(admin_url('admin-post.php?action=db_submission_apply_suggestion&submission_id='.$submission_id.'&idx='.$i), 'db_submission_action_'.$submission_id); ?>
+                                <div style="padding:8px; border:1px solid #eee; border-radius:6px; margin-bottom:8px;">
+                                    <div><strong><?php echo esc_html($s['label'] ?? ''); ?></strong></div>
+                                    <div><?php echo esc_html(($s['lat'] ?? '').', '.($s['lng'] ?? '')); ?><?php if (isset($s['confidence'])) echo ' – důvěra: '.esc_html($s['confidence']); ?></div>
+                                    <div style="margin-top:6px; display:flex; gap:8px;">
+                                        <a class="button" href="<?php echo esc_url($apply_url); ?>">Použít návrh</a>
+                                        <button type="button" class="button" onclick="(function(){ var m = window['db_subm_map']; if (!m) { m = L.map('db-subm-map'); } m.setView([<?php echo esc_js($s['lat']); ?>, <?php echo esc_js($s['lng']); ?>], 15); L.marker([<?php echo esc_js($s['lat']); ?>, <?php echo esc_js($s['lng']); ?>]).addTo(m).bindPopup('Návrh ORS').openPopup(); })()">Vycentrovat</button>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <?php
+    }
 
 	public function handle_approve() {
 		$submission_id = isset($_GET['submission_id']) ? intval($_GET['submission_id']) : 0;
