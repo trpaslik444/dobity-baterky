@@ -42,8 +42,7 @@ class Nearby_Processed_Manager {
             status varchar(20) DEFAULT 'completed',
             error_message text,
             PRIMARY KEY (id),
-            UNIQUE KEY unique_origin_processed (origin_id, origin_type, processed_type),
-            KEY origin_id (origin_id),
+            UNIQUE KEY unique_origin (origin_id),
             KEY origin_type (origin_type),
             KEY processed_type (processed_type),
             KEY processing_date (processing_date),
@@ -56,7 +55,7 @@ class Nearby_Processed_Manager {
     }
     
     /**
-     * Přidat záznam o zpracovaném místě
+     * Přidat záznam o zpracovaném místě (upsert podle origin_id)
      */
     public function add_processed($origin_id, $origin_type, $processed_type, $stats = array()) {
         global $wpdb;
@@ -92,10 +91,27 @@ class Nearby_Processed_Manager {
             'api_provider' => $stats['api_provider'] ?? 'ors',
             'cache_size_kb' => (int)($stats['cache_size_kb'] ?? 0),
             'status' => $stats['status'] ?? 'completed',
-            'error_message' => $stats['error_message'] ?? null
+            'error_message' => $stats['error_message'] ?? null,
+            'processing_date' => current_time('mysql')
         );
         
-        return $wpdb->replace($this->table_name, $data);
+        // Upsert: pokud existuje záznam pro origin_id, update; jinak insert
+        $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$this->table_name} WHERE origin_id = %d", $origin_id));
+        if ($exists) {
+            return $wpdb->update(
+                $this->table_name,
+                $data,
+                array('id' => (int)$exists),
+                array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%s','%s'),
+                array('%d')
+            );
+        }
+        
+        return $wpdb->insert(
+            $this->table_name,
+            $data,
+            array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%s','%s')
+        );
     }
     
     /**
@@ -104,52 +120,22 @@ class Nearby_Processed_Manager {
     public function get_processed_locations($limit = 50, $offset = 0, $filters = array()) {
         global $wpdb;
         
-        $where_conditions = array('1=1');
-        $where_values = array();
-        
-        // Filtry
+        $where = "WHERE 1=1";
         if (!empty($filters['origin_type'])) {
-            $where_conditions[] = 'origin_type = %s';
-            $where_values[] = $filters['origin_type'];
+            $where .= $wpdb->prepare(" AND origin_type = %s", $filters['origin_type']);
         }
-        
-        if (!empty($filters['processed_type'])) {
-            $where_conditions[] = 'processed_type = %s';
-            $where_values[] = $filters['processed_type'];
-        }
-        
-        if (!empty($filters['api_provider'])) {
-            $where_conditions[] = 'api_provider = %s';
-            $where_values[] = $filters['api_provider'];
-        }
-        
         if (!empty($filters['status'])) {
-            $where_conditions[] = 'status = %s';
-            $where_values[] = $filters['status'];
+            $where .= $wpdb->prepare(" AND status = %s", $filters['status']);
         }
         
-        // Datové filtry odstraněny - způsobují jen nepořádek
-        
-        $where_clause = implode(' AND ', $where_conditions);
-        $where_values[] = $limit;
-        $where_values[] = $offset;
-        
-        $sql = $wpdb->prepare("
-            SELECT * 
-            FROM {$this->table_name} 
-            WHERE {$where_clause}
-            ORDER BY processing_date DESC
-            LIMIT %d OFFSET %d
-        ", $where_values);
-        
-        $items = $wpdb->get_results($sql);
-        
-        // Zajistit, že vracíme pole
-        if (!is_array($items)) {
-            $items = array();
-        }
-        
-        return $items;
+        // Nezobrazovat položky, které jsou aktuálně ve frontě (pending/processing)
+        $queue_table = $wpdb->prefix . 'nearby_queue';
+        $sql = $wpdb->prepare(
+            "SELECT p.*\n             FROM {$this->table_name} p\n             LEFT JOIN {$queue_table} q\n               ON q.origin_id = p.origin_id\n              AND q.status IN ('pending','processing')\n             {$where}\n             AND q.id IS NULL\n             ORDER BY p.processing_date DESC\n             LIMIT %d OFFSET %d",
+            (int)$limit,
+            (int)$offset
+        );
+        return $wpdb->get_results($sql);
     }
     
     /**
@@ -214,11 +200,12 @@ class Nearby_Processed_Manager {
     public function get_processed_details($origin_id, $origin_type, $processed_type) {
         global $wpdb;
         
-        return $wpdb->get_row($wpdb->prepare("
-            SELECT * 
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * 
             FROM {$this->table_name} 
-            WHERE origin_id = %d AND origin_type = %s AND processed_type = %s
-        ", $origin_id, $origin_type, $processed_type));
+            WHERE origin_id = %d AND origin_type = %s AND processed_type = %s",
+            $origin_id, $origin_type, $processed_type
+        ));
     }
     
     /**
@@ -227,11 +214,12 @@ class Nearby_Processed_Manager {
     public function is_processed($origin_id, $origin_type, $processed_type) {
         global $wpdb;
         
-        $count = $wpdb->get_var($wpdb->prepare("
-            SELECT COUNT(*) 
+        $count = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) 
             FROM {$this->table_name} 
-            WHERE origin_id = %d AND origin_type = %s AND processed_type = %s AND status = 'completed'
-        ", $origin_id, $origin_type, $processed_type));
+            WHERE origin_id = %d AND origin_type = %s AND processed_type = %s AND status = 'completed'",
+            $origin_id, $origin_type, $processed_type
+        ));
         
         return $count > 0;
     }
@@ -259,10 +247,11 @@ class Nearby_Processed_Manager {
     public function cleanup_old_records($days = 90) {
         global $wpdb;
         
-        $deleted = $wpdb->query($wpdb->prepare("
-            DELETE FROM {$this->table_name} 
-            WHERE processing_date < DATE_SUB(NOW(), INTERVAL %d DAY)
-        ", $days));
+        $deleted = $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$this->table_name} 
+            WHERE processing_date < DATE_SUB(NOW(), INTERVAL %d DAY)",
+            $days
+        ));
         
         return $deleted;
     }
@@ -271,51 +260,7 @@ class Nearby_Processed_Manager {
      * Získat paginaci pro zpracovaná místa
      */
     public function get_processed_pagination($limit = 50, $offset = 0, $filters = array()) {
-        global $wpdb;
-        
-        $where_conditions = array('1=1');
-        $where_values = array();
-        
-        // Stejné filtry jako v get_processed_locations
-        if (!empty($filters['origin_type'])) {
-            $where_conditions[] = 'origin_type = %s';
-            $where_values[] = $filters['origin_type'];
-        }
-        
-        if (!empty($filters['processed_type'])) {
-            $where_conditions[] = 'processed_type = %s';
-            $where_values[] = $filters['processed_type'];
-        }
-        
-        if (!empty($filters['api_provider'])) {
-            $where_conditions[] = 'api_provider = %s';
-            $where_values[] = $filters['api_provider'];
-        }
-        
-        if (!empty($filters['status'])) {
-            $where_conditions[] = 'status = %s';
-            $where_values[] = $filters['status'];
-        }
-        
-        // Datové filtry odstraněny - způsobují jen nepořádek
-        
-        $where_clause = implode(' AND ', $where_conditions);
-        
-        $total_items = (int)$wpdb->get_var($wpdb->prepare("
-            SELECT COUNT(*) 
-            FROM {$this->table_name} 
-            WHERE {$where_clause}
-        ", $where_values ?: array()));
-        
-        $total_pages = ceil($total_items / $limit);
-        $current_page = floor($offset / $limit) + 1;
-        
-        return array(
-            'total_items' => $total_items,
-            'total_pages' => $total_pages,
-            'current_page' => $current_page,
-            'limit' => $limit,
-            'offset' => $offset
-        );
+        // Placeholder - zachovat signaturu
+        return array('limit' => $limit, 'offset' => $offset);
     }
 }

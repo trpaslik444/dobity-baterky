@@ -4,12 +4,16 @@
 
   var HATTR = DB_FEEDBACK.highlightAttr || 'data-db-feedback';
   var activeSelector = null;
+  var lastDomSelector = '';
+  var lastTextSnippet = '';
 
   // Floating button
   var fab = document.createElement('button');
   fab.className = 'db-feedback-fab';
   fab.type = 'button';
-  fab.textContent = 'Zpětná vazba';
+  fab.textContent = 'feedback';
+  fab.setAttribute('aria-label', 'Zpětná vazba');
+  fab.title = 'Zpětná vazba';
   document.addEventListener('DOMContentLoaded', function(){ document.body.appendChild(fab); });
 
   // Modal
@@ -39,12 +43,15 @@
   document.addEventListener('DOMContentLoaded', function(){ document.body.appendChild(modal); });
 
   // Event handlers
-  fab.addEventListener('click', function() {
+  fab.addEventListener('click', function(e) {
     if (activeSelector === null) {
       enableHighlightMode();
     } else {
       disableHighlightMode();
     }
+    // Zabraň zachycení stejného kliku dokumentem (který by rovnou otevřel modal)
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
   });
   document.addEventListener('click', handleElementClick);
   modal.addEventListener('click', function(e) { 
@@ -58,7 +65,8 @@
     document.querySelectorAll('[' + HATTR + ']').forEach(function(el) {
       el.classList.add('db-feedback-highlight');
     });
-    fab.textContent = 'Zrušit výběr';
+    // ponecháme pouze krátký text
+    fab.textContent = 'feedback';
   }
 
   function disableHighlightMode() {
@@ -67,20 +75,36 @@
     document.querySelectorAll('.db-feedback-highlight').forEach(function(el) {
       el.classList.remove('db-feedback-highlight');
     });
-    fab.textContent = 'Zpětná vazba';
+    // ponecháme pouze krátký text
+    fab.textContent = 'feedback';
   }
 
   function handleElementClick(e) {
     if (!activeSelector) return;
-    var el = e.target.closest('[' + HATTR + ']');
-    if (!el) return;
+    // Ignoruj klik na samotné tlačítko nebo do modalu
+    if (e.target === fab || (modal && modal.contains(e.target))) return;
+    var preciseTarget = e.target;
+    var el = preciseTarget.closest && preciseTarget.closest('[' + HATTR + ']') ? preciseTarget.closest('[' + HATTR + ']') : preciseTarget;
+    // Bezpečnost: pokud je vybraný element stále tlačítko, ignoruj
+    if (el === fab) return;
     e.preventDefault();
     e.stopPropagation();
-    activeSelector = getDomSelector(el);
-    var key = el.getAttribute(HATTR) || '';
-    document.getElementById('dbf-component').value = key;
+    // Selektor/snippet z přesného cíle, komponenta z nejbližšího rodiče s HATTR (pokud existuje)
+    lastDomSelector = getDomSelector(preciseTarget);
+    var container = preciseTarget.closest && preciseTarget.closest('[' + HATTR + ']');
+    var key = (container && container.getAttribute(HATTR)) || '';
+    lastTextSnippet = (preciseTarget && (preciseTarget.innerText || preciseTarget.textContent || '')).trim().slice(0, 280);
     disableHighlightMode();
     openModal();
+    var input = document.getElementById('dbf-component');
+    if (!input) {
+      setTimeout(function(){
+        var i2 = document.getElementById('dbf-component');
+        if (i2) i2.value = key || lastDomSelector;
+      }, 0);
+    } else {
+      input.value = key || lastDomSelector;
+    }
   }
 
   function openModal() {
@@ -96,9 +120,31 @@
   }
 
   function getDomSelector(el) {
-    if (el.id) return '#' + el.id;
-    if (el.className) return '.' + el.className.split(' ').join('.');
-    return el.tagName.toLowerCase();
+    if (!el || !el.tagName) return '';
+    // Prefer ID
+    if (el.id) return '#' + String(el.id).replace(/\s+/g, '\\ ');
+    // Handle className being SVGAnimatedString or object
+    var cls = '';
+    var cn = el.className;
+    if (typeof cn === 'string') { cls = cn; }
+    else if (cn && typeof cn.baseVal === 'string') { cls = cn.baseVal; }
+    if (cls && cls.trim()) {
+      var parts = cls.trim().split(/\s+/).map(function(c){
+        return c.replace(/[^a-zA-Z0-9_-]/g, function(m){ return '\\' + m; });
+      });
+      return el.tagName.toLowerCase() + '.' + parts.join('.');
+    }
+    // Fallback to attribute-based selector
+    if (el.getAttribute) {
+      var name = el.getAttribute('name');
+      if (name) return el.tagName.toLowerCase() + '[name="' + String(name).replace(/"/g, '\\"') + '"]';
+      var type = el.getAttribute('type');
+      if (type) return el.tagName.toLowerCase() + '[type="' + String(type).replace(/"/g, '\\"') + '"]';
+    }
+    // Final fallback: nth-child
+    var idx = 1; var p = el;
+    while (p.previousElementSibling) { idx++; p = p.previousElementSibling; }
+    return el.tagName.toLowerCase() + ':nth-child(' + idx + ')';
   }
 
   function submitFeedback(){
@@ -109,23 +155,31 @@
     if (!message) { alert('Vyplňte prosím popis.'); return; }
     var payload = {
       type: type,
-      priority: severity,
-      component: component,
+      severity: severity,
       message: message,
-      url: window.location.href,
-      user_agent: navigator.userAgent
+      page_url: DB_FEEDBACK && DB_FEEDBACK.page ? DB_FEEDBACK.page.url : window.location.href,
+      page_type: DB_FEEDBACK && DB_FEEDBACK.page ? DB_FEEDBACK.page.page_type : '',
+      template: DB_FEEDBACK && DB_FEEDBACK.page ? DB_FEEDBACK.page.template : '',
+      component_key: component,
+      dom_selector: lastDomSelector,
+      text_snippet: lastTextSnippet,
+      meta_json: { ua: navigator.userAgent }
     };
-    fetch('/wp-json/db/v1/feedback', {
+    fetch((DB_FEEDBACK && DB_FEEDBACK.rest && DB_FEEDBACK.rest.createUrl) ? DB_FEEDBACK.rest.createUrl : '/wp-json/db/v1/feedback', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': (DB_FEEDBACK && DB_FEEDBACK.nonce) ? DB_FEEDBACK.nonce : '' },
       body: JSON.stringify(payload)
     }).then(function(res) {
       return res.json();
     }).then(function(data) {
       if (data.success) {
+        // Vyčistit hodnoty ještě před zavřením modalu (elementy po closeModal už nemusí existovat)
+        var desc = document.getElementById('dbf-description');
+        if (desc) desc.value = '';
+        var comp = document.getElementById('dbf-component');
+        if (comp) comp.value = '';
         alert('Díky! Zpětná vazba byla uložena.');
         closeModal();
-        document.getElementById('dbf-description').value = '';
       } else {
         alert('Nepodařilo se uložit: ' + (data && (data.message || data.code) || 'neznámá chyba'));
       }

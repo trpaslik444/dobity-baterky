@@ -53,6 +53,30 @@ html, body {
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
   transition: pointer-events 0.2s ease;
+  /* Povolit panování prstem/dvouprsté gesto na trackpadu */
+  touch-action: pan-x pan-y;
+}
+
+/* Vlastní attribution bar, aby byl čitelný a konzistentní */
+#db-attribution-bar {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  z-index: 1002;
+  background: rgba(255,255,255,0.9);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: #333;
+  pointer-events: auto;
+}
+
+/* Skrýt výchozí Leaflet attribution, aby se neduplikovalo */
+.leaflet-control-attribution {
+  display: none !important;
 }
 
 /* Když jsou filtry otevřené, mapa nechytá pointer events */
@@ -689,6 +713,84 @@ html, body {
     display: flex;
     flex-direction: column;
     gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .db-menu-section-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #E0F7FF;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.5rem;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 6px;
+    transition: background-color 0.2s;
+    user-select: none;
+  }
+  
+  .db-menu-section-title:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+  }
+  
+  .db-menu-collapse-icon {
+    font-size: 0.8rem;
+    transition: transform 0.2s;
+  }
+  
+  .db-menu-submenu {
+    padding-left: 1rem;
+    border-left: 2px solid rgba(255, 255, 255, 0.2);
+    margin-left: 0.5rem;
+    margin-bottom: 1rem;
+  }
+  
+  /* Styly pro numerické políčko v menu */
+  .db-menu-number-input {
+    width: 60px;
+    padding: 4px 6px;
+    margin: 0 5px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    font-size: 0.9rem;
+    text-align: center;
+    outline: none;
+    transition: border-color 0.2s, background-color 0.2s;
+  }
+  
+  .db-menu-number-input:focus {
+    border-color: #049FE8;
+    background: rgba(255, 255, 255, 0.2);
+  }
+  
+  .db-menu-number-input::-webkit-outer-spin-button,
+  .db-menu-number-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  
+  .db-menu-number-input[type=number] {
+    -moz-appearance: textfield;
+  }
+  
+  .db-menu-unit {
+    font-size: 0.8rem;
+    color: #E0F7FF;
+    margin-left: 2px;
+  }
+  
+  .db-menu-help-text {
+    font-size: 0.75rem;
+    color: #B8E6FF;
+    margin-top: 2px;
+    margin-left: 1rem;
+    font-style: italic;
   }
   
   .db-menu-toggle-item {
@@ -764,6 +866,8 @@ html, body {
 
 /* Zámek stránky v imerzivním režimu */
 body.db-immersive { overflow: hidden !important; height: 100vh; }
+/* Zámek body při otevřeném modalu detailu */
+body.db-modal-open { overflow: hidden !important; }
 
 @media (max-width: 700px) {
   .db-map-topbar {
@@ -785,18 +889,18 @@ body.db-immersive { overflow: hidden !important; height: 100vh; }
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 12px; /* Sníženo pro minimální zakrytí mapy */
+  bottom: 6px; /* menší mezera od spodku */
   background: #F5F1E8; /* Béžový background podle brandbooku */
-  border-radius: 16px;
+  border-radius: 16px; /* horní i spodní, protože není nalepený */
   box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-  z-index: 10003;
+  z-index: 10003; /* Nad licenčním barem */
   width: calc(100% - 24px); /* Zmenšeno pro menší zakrytí */
   max-width: 380px;
   overflow: hidden;
   opacity: 0;
   visibility: hidden;
   transition: all 0.3s ease;
-  padding-bottom: 0;
+  padding-bottom: env(safe-area-inset-bottom, 0); /* respektovat safe area */
 }
 
 /* Zobrazení mobile sheet */
@@ -805,6 +909,14 @@ body.db-immersive { overflow: hidden !important; height: 100vh; }
   visibility: visible;
   transform: translateX(-50%) translateY(0);
 }
+
+/* Když jsou viditelné licence, posuň mobile sheet nad ně */
+body.has-attribution #db-mobile-sheet.open {
+  bottom: 28px; /* menší rezerva pro licence */
+}
+
+/* Odsazení mobilní karty nad attribution bar (licence) */
+/* Mobilní sheet zůstává nalepený dole; licence přetékají níže pod ním */
 
 /* Obsah mobile sheet - nový design */
 #db-mobile-sheet .sheet-content {
@@ -990,9 +1102,10 @@ body.db-immersive { overflow: hidden !important; height: 100vh; }
 @media (max-width: 480px) {
   #db-mobile-sheet {
     width: calc(100% - 16px);
-    bottom: 8px;
+    bottom: 6px; /* menší mezera od spodku */
     max-width: calc(100vw - 16px);
   }
+  body.has-attribution #db-mobile-sheet.open { bottom: 28px; }
   
   #db-mobile-sheet .sheet-content {
     padding: 10px;
@@ -1041,7 +1154,9 @@ body.db-immersive { overflow: hidden !important; height: 100vh; }
   display: none; 
   align-items: flex-end; 
   justify-content: center; 
-  z-index: 10004; 
+  z-index: 10001; 
+  /* Overlay nesmí scrollovat, scroll patří jen kartě */
+  overflow: hidden;
 }
 #db-detail-modal.open { display: flex; }
 #db-detail-modal .modal-card { 
@@ -1051,10 +1166,26 @@ body.db-immersive { overflow: hidden !important; height: 100vh; }
   background: #F5F1E8; /* Béžový background podle brandbooku */
   border-radius: 20px 20px 0 0; 
   overflow-y: auto; 
+  -webkit-overflow-scrolling: touch; /* plynulé scrollování na iOS */
+  overscroll-behavior: contain; /* nepropagovat scroll do pozadí */
+  touch-action: pan-y; /* umožnit vertikální gesto */
   box-shadow: 0 -10px 30px rgba(0,0,0,.35);
   padding-bottom: 0;
   box-sizing: border-box;
+  pointer-events: auto; /* interakce zachytává karta, ne backdrop */
 }
+
+/* Pokud je aktivní isochrones legenda, posuň modal kartu výše o její výšku */
+body.has-isochrones #db-detail-modal .modal-card {
+  margin-bottom: 64px; /* rezerva pro legendu ve spodní části */
+}
+
+/* Pokud je viditelný attribution bar, posuň modal kartu výš, aby jej nezakrývala */
+body.has-attribution #db-detail-modal.open .modal-card { margin-bottom: 0 !important; }
+body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
+
+/* Specificky posunout pouze modal detail z mapy (ne obecné „další informace“ UI) pokud se liší značkou) */
+/* Pokud by mapa otvírala jinou kartu s odlišným ID/ třídou, přidejme zde specifický selektor. Zatím držíme obecně. */
 
 /* Fullscreen modal na mobilech */
 @media (max-width: 900px) {

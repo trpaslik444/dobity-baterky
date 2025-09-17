@@ -62,6 +62,126 @@ class Nearby_Queue_Admin {
             "db-nearby-processed",
             array( $this, "render_processed_page" )
         );
+        
+        add_submenu_page(
+            "tools.php", // Parent slug - Tools menu
+            __( "Isochrones Settings", "dobity-baterky" ),
+            __( "Isochrones Settings", "dobity-baterky" ),
+            "manage_options",
+            "db-isochrones-settings",
+            array( $this, "render_isochrones_settings_page" )
+        );
+    }
+    
+    public function render_isochrones_settings_page() {
+        // Zpracovat POST požadavek
+        if (isset($_POST['submit']) && wp_verify_nonce($_POST['isochrones_nonce'], 'isochrones_settings')) {
+            $isochrones_enabled = isset($_POST['isochrones_enabled']) ? 1 : 0;
+            $walking_speed = floatval($_POST['walking_speed']);
+            $display_times = array_map('intval', $_POST['display_times']);
+            
+            // Uložit nastavení
+            update_option('db_isochrones_settings', [
+                'enabled' => $isochrones_enabled,
+                'walking_speed_kmh' => $walking_speed,
+                'display_times_min' => $display_times
+            ]);
+            
+            echo '<div class="notice notice-success"><p>Nastavení isochrones uloženo!</p></div>';
+        }
+        
+        // Načíst aktuální nastavení
+        $settings = get_option('db_isochrones_settings', [
+            'enabled' => 1,
+            'walking_speed_kmh' => 4.5,
+            'display_times_min' => [10, 20, 30]
+        ]);
+        ?>
+        <div class="wrap">
+            <h1>Isochrones Settings</h1>
+            <nav class="nav-tab-wrapper" style="margin-top: 10px;">
+                <a href="<?php echo esc_url( admin_url('tools.php?page=db-icon-admin') ); ?>" class="nav-tab">
+                    Správa ikon
+                </a>
+                <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-queue') ); ?>" class="nav-tab">
+                    Nearby Queue
+                </a>
+                <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-settings') ); ?>" class="nav-tab">
+                    Nearby Settings
+                </a>
+                <a href="<?php echo esc_url( admin_url('tools.php?page=db-isochrones-settings') ); ?>" class="nav-tab nav-tab-active">
+                    Isochrones Settings
+                </a>
+            </nav>
+            
+            <div class="notice notice-info" style="margin: 20px 0; padding: 15px; background: #e7f3ff; border-left: 4px solid #0073aa;">
+                <h3 style="margin: 0 0 10px 0; color: #0073aa;">ℹ️ Isochrones (Dochozí okruhy)</h3>
+                <p style="margin: 0; color: #0073aa;">
+                    Isochrones zobrazují oblasti dostupné za určitý čas pěší chůze. Můžete upravit rychlost chůze pro přesnější odhady.
+                </p>
+            </div>
+            
+            <form method="post" action="">
+                <?php wp_nonce_field('isochrones_settings', 'isochrones_nonce'); ?>
+                
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Zapnout isochrones</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="isochrones_enabled" value="1" <?php checked($settings['enabled'], 1); ?>>
+                                Zobrazovat isochrones na mapě
+                            </label>
+                            <p class="description">Když je zapnuto, budou se zobrazovat dochozí okruhy při kliknutí na bod.</p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">Rychlost chůze</th>
+                        <td>
+                            <input type="number" name="walking_speed" value="<?php echo esc_attr($settings['walking_speed_kmh']); ?>" 
+                                   min="1" max="10" step="0.1" style="width: 80px;"> km/h
+                            <p class="description">
+                                Standardní rychlost chůze je 4.5 km/h. Můžete ji upravit pro přesnější odhady:
+                                <br>• Pomalejší chůze: 3.0-4.0 km/h
+                                <br>• Rychlejší chůze: 5.0-6.0 km/h
+                            </p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">Zobrazované časy</th>
+                        <td>
+                            <input type="number" name="display_times[]" value="<?php echo esc_attr($settings['display_times_min'][0]); ?>" 
+                                   min="5" max="60" step="5" style="width: 60px;"> min
+                            <input type="number" name="display_times[]" value="<?php echo esc_attr($settings['display_times_min'][1]); ?>" 
+                                   min="5" max="60" step="5" style="width: 60px;"> min
+                            <input type="number" name="display_times[]" value="<?php echo esc_attr($settings['display_times_min'][2]); ?>" 
+                                   min="5" max="60" step="5" style="width: 60px;"> min
+                            <p class="description">Časy, které se zobrazí v legendě isochrones (např. ~10 min, ~20 min, ~30 min).</p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <p class="submit">
+                    <input type="submit" name="submit" class="button-primary" value="Uložit nastavení">
+                </p>
+            </form>
+            
+            <div class="notice notice-warning" style="margin: 20px 0; padding: 15px; background: #fff3cd; border-left: 4px solid #ffc107;">
+                <h3 style="margin: 0 0 10px 0; color: #856404;">⚠️ Poznámka k přesnosti</h3>
+                <p style="margin: 0; color: #856404;">
+                    Isochrones jsou založeny na standardní rychlosti chůze a neberou v úvahu individuální faktory jako:
+                    <br>• Fyzická kondice uživatele
+                    <br>• Terén (kopce, schody, chodníky)
+                    <br>• Počasí a povrch
+                    <br>• Zatížení (nákup, kufr)
+                    <br><br>
+                    <strong>Doporučujeme brát časy jako orientační!</strong>
+                </p>
+            </div>
+        </div>
+        <?php
     }
     
     public function render_queue_page() {
@@ -80,6 +200,9 @@ class Nearby_Queue_Admin {
                 </a>
                 <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-settings') ); ?>" class="nav-tab">
                     Nearby Settings
+                </a>
+                <a href="<?php echo esc_url( admin_url('tools.php?page=db-isochrones-settings') ); ?>" class="nav-tab">
+                    Isochrones Settings
                 </a>
             </nav>
             <p>Správa fronty pro batch zpracování nearby bodů.</p>
@@ -1142,16 +1265,15 @@ class Nearby_Queue_Admin {
             
             <!-- Tabulka zpracovaných míst -->
             <div class="db-processed-table">
-                <table class="wp-list-table widefat fixed striped">
+				<table class="wp-list-table widefat fixed striped">
                     <thead>
                         <tr>
-                            <th>ID</th>
+							<th style="width:28px;"><input type="checkbox" id="db-select-all"></th>
+							<th>Origin ID</th>
                             <th>Název</th>
                             <th>Typ</th>
-                            <th>Souřadnice</th>
                             <th>Kandidáti</th>
-                            <th>API volání</th>
-                            <th>Čas zpracování</th>
+							<th>Čas zpracování</th>
                             <th>API Provider</th>
                             <th>Velikost cache</th>
                             <th>Datum zpracování</th>
@@ -1160,20 +1282,19 @@ class Nearby_Queue_Admin {
                         </tr>
                     </thead>
                     <tbody id="db-processed-details-body">
-                        <?php if (empty($items)): ?>
+						<?php if (empty($items)): ?>
                             <tr>
-                                <td colspan="12" style="text-align: center; padding: 20px;">Žádná zpracovaná místa</td>
+								<td colspan="11" style="text-align: center; padding: 20px;">Žádná zpracovaná místa</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($items as $item): ?>
                                 <tr>
-                                    <td><?php echo esc_html($item->id); ?></td>
+									<td><input type="checkbox" class="db-select-row" value="<?php echo (int)$item->origin_id; ?>"></td>
+									<td><?php echo esc_html($item->origin_id); ?></td>
                                     <td><?php echo esc_html($item->origin_title); ?></td>
                                     <td><?php echo esc_html($item->origin_type); ?></td>
-                                    <td><?php echo esc_html($item->origin_lat . ', ' . $item->origin_lng); ?></td>
                                     <td><?php echo esc_html($item->candidates_count); ?></td>
-                                    <td><?php echo esc_html($item->api_calls_used); ?></td>
-                                    <td><?php echo esc_html($item->processing_time_seconds); ?>s</td>
+									<td><?php echo esc_html(((int)$item->processing_time_seconds) * 1000); ?> ms</td>
                                     <td><?php echo esc_html(strtoupper($item->api_provider)); ?></td>
                                     <td><?php echo esc_html($item->cache_size_kb); ?> KB</td>
                                     <td><?php echo esc_html(date('d.m.Y H:i', strtotime($item->processing_date))); ?></td>
@@ -1183,9 +1304,8 @@ class Nearby_Queue_Admin {
                                         </span>
                                     </td>
                                     <td>
-                                        <button class="button button-small" onclick="viewDetails(<?php echo $item->origin_id; ?>, '<?php echo esc_js($item->origin_type); ?>')">
-                                            Detaily
-                                        </button>
+                                        <button class="button button-small" onclick="viewDetails(<?php echo $item->origin_id; ?>, '<?php echo esc_js($item->origin_type); ?>')">Detaily</button>
+                                        <button class="button button-small button-secondary" onclick="requeueOrigin(<?php echo $item->origin_id; ?>, '<?php echo esc_js($item->origin_type); ?>')">Odeslat do fronty</button>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -1194,6 +1314,11 @@ class Nearby_Queue_Admin {
                 </table>
             </div>
             
+            <!-- Hromadné akce -->
+            <div style="margin:15px 0; display:flex; gap:10px; align-items:center;">
+                <button class="button" onclick="requeueSelected()">Odeslat vybrané do fronty</button>
+            </div>
+
             <!-- Paginace -->
             <?php if ($pagination['total_pages'] > 1): ?>
                 <div class="db-pagination" style="margin: 20px 0; text-align: center;">
@@ -1221,6 +1346,60 @@ class Nearby_Queue_Admin {
         function viewDetails(originId, originType) {
             // Otevřít detaily místa v novém okně nebo modalu
             window.open('<?php echo admin_url('post.php?action=edit&post='); ?>' + originId, '_blank');
+        }
+        async function requeueOrigin(originId, originType) {
+            try {
+                const res = await fetch('<?php echo esc_url_raw( rest_url('db/v1/admin/nearby/requeue') ); ?>', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo esc_js( wp_create_nonce('wp_rest') ); ?>' },
+                    body: JSON.stringify({ origin_ids: [originId] })
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    const enq = json.enqueued || [];
+                    const skp = json.skipped || [];
+                    const msg = 'Zařazeno: ' + enq.length + ' / 1' + (enq.length ? ('\nID: ' + enq.map(r=>r[0]).join(', ')) : '')
+                      + (skp.length ? ('\nPřeskočeno: ' + skp.length + ' (důvod: ' + skp.map(r=>r[1]).join(', ') + ')') : '');
+                    alert(msg);
+                } else {
+                    alert('Chyba: ' + (json.message || 'Nepodařilo se odeslat do fronty'));
+                }
+            } catch (e) {
+                alert('Chyba při volání API: ' + e);
+            }
+        }
+        // Select all handling
+        (function(){
+            const selectAll = document.getElementById('db-select-all');
+            if (selectAll) {
+                selectAll.addEventListener('change', function(){
+                    document.querySelectorAll('.db-select-row').forEach(cb => { cb.checked = selectAll.checked; });
+                });
+            }
+        })();
+        async function requeueSelected(){
+            const ids = Array.from(document.querySelectorAll('.db-select-row:checked')).map(cb => parseInt(cb.value,10)).filter(Boolean);
+            if (!ids.length) { alert('Vyberte prosím alespoň jeden řádek.'); return; }
+            try {
+                const res = await fetch('<?php echo esc_url_raw( rest_url('db/v1/admin/nearby/requeue') ); ?>', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo esc_js( wp_create_nonce('wp_rest') ); ?>' },
+                    body: JSON.stringify({ origin_ids: ids })
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    const enq = json.enqueued || [];
+                    const skp = json.skipped || [];
+                    const msg = 'Zařazeno: ' + enq.length + ' / ' + ids.length
+                      + (enq.length ? ('\nID: ' + enq.map(r=>r[0]).join(', ')) : '')
+                      + (skp.length ? ('\nPřeskočeno: ' + skp.length + ' (důvod: ' + skp.map(r=>r[1]).join(', ') + ')\nID: ' + skp.map(r=>r[0]).join(', ')) : '');
+                    alert(msg);
+                } else {
+                    alert('Chyba: ' + (json.message || 'Nepodařilo se odeslat do fronty'));
+                }
+            } catch (e) {
+                alert('Chyba při volání API: ' + e);
+            }
         }
         </script>
         

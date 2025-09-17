@@ -1,12 +1,14 @@
 /* Lightweight styles for feedback FAB, modal and highlighter */
-.db-feedback-fab{position:fixed;right:16px;bottom:16px;z-index:99999;background:#111;color:#fff;border-radius:999px;padding:10px 14px;box-shadow:0 6px 18px rgba(0,0,0,.18);cursor:pointer;font-weight:600;transition:opacity 0.3s ease, transform 0.3s ease;}
+.db-feedback-fab{position:fixed;top:50%;left:0;right:auto;bottom:auto;z-index:99999;display:flex;align-items:center;justify-content:center;gap:0;background:#FCE67D;color:#333;border-radius:0 12px 12px 0;width:36px;height:120px;padding:0;box-shadow:0 6px 18px rgba(0,0,0,.18);cursor:pointer;font-weight:700;font-size:14px;line-height:1;transform:translate(-60%, -50%);transition:opacity 0.25s ease, transform 0.25s ease, background-color 0.2s ease;writing-mode:vertical-rl;text-orientation:mixed;letter-spacing:0.5px}
+.db-feedback-fab:hover,.db-feedback-fab:focus{transform:translate(0, -50%)}
+.db-feedback-fab:focus{outline:none}
+.db-feedback-fab:focus-visible{box-shadow:0 0 0 3px rgba(252,230,125,.55), 0 6px 18px rgba(0,0,0,.18)}
 
 /* Skrytí feedback tlačítka, když je otevřený mobile sheet nebo detail modal */
 #db-mobile-sheet.open ~ .db-feedback-fab,
 #db-detail-modal.open ~ .db-feedback-fab,
 .db-feedback-fab.hidden {
   opacity: 0;
-  transform: scale(0.8);
   pointer-events: none;
 }
 

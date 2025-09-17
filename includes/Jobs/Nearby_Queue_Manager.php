@@ -62,19 +62,16 @@ class Nearby_Queue_Manager {
             return false; // Už je ve frontě
         }
         
-        // Zkontrolovat, zda už není zpracované
-        $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
-        $processed_type = ($origin_type === 'poi') ? 'poi_foot' : 'charger_foot';
-        
-        if ($processed_manager->is_processed($origin_id, $origin_type, $processed_type)) {
-            return false; // Už je zpracované
-        }
+        // Neblokovat zařazení na základě processed – requeue může úmyslně přepracovat
         
         // Server rozhoduje - zkontrolovat, zda má bod kandidáty v okolí
         if (!$this->has_candidates_in_area($origin_id, $origin_type)) {
             return false; // Nemá kandidáty, nezařadit do fronty
         }
         
+        // Normalizovat cílový typ: povoleny pouze 'poi', 'charging_location', 'rv_spot'
+        $origin_type = in_array($origin_type, array('poi','charging_location','rv_spot'), true) ? $origin_type : 'charging_location';
+
         // Přidat do fronty
         $result = $wpdb->insert(
             $this->table_name,
@@ -87,7 +84,18 @@ class Nearby_Queue_Manager {
             array('%d', '%s', '%d', '%s')
         );
         
-        return $result !== false;
+        if ($result !== false) {
+            // Po úspěšném zařazení smaž z processed, aby nikdy nesoužily zároveň
+            $real_origin_type = get_post_type((int)$origin_id) ?: $origin_type;
+            $processed_type = ($origin_type === 'poi') ? 'poi_foot' : 'charger_foot';
+            try {
+                $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
+                $processed_manager->delete_processed($origin_id, $real_origin_type, $processed_type);
+            } catch (\Throwable $__) {}
+            return true;
+        }
+        
+        return false;
     }
     
     /**
@@ -459,15 +467,18 @@ class Nearby_Queue_Manager {
         $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
         $processed_type = ($item->origin_type === 'poi') ? 'poi_foot' : 'charger_foot';
         
+        // Uložit reálný typ origin postu (ne cílový typ zpracování)
+        $real_origin_type = get_post_type((int)$item->origin_id) ?: $item->origin_type;
+        
         $processed_manager->add_processed(
             $item->origin_id, 
-            $item->origin_type, 
+            $real_origin_type, 
             $processed_type, 
             $stats
         );
         
         // Označit jako dokončené ve frontě
-        return $wpdb->update(
+        $res = $wpdb->update(
             $this->table_name,
             array(
                 'status' => 'completed',
@@ -477,6 +488,14 @@ class Nearby_Queue_Manager {
             array('%s', '%s'),
             array('%d')
         );
+
+        // Odstranit případné další položky ve frontě pro stejný origin (jiný origin_type), aby nebyl současně ve frontě i v processed
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$this->table_name} WHERE origin_id = %d AND status IN ('pending','processing')",
+            $item->origin_id
+        ));
+
+        return $res;
     }
     
     /**
@@ -529,9 +548,8 @@ class Nearby_Queue_Manager {
         ");
         
         foreach ($charging_locations as $location) {
-            if ($this->enqueue($location->ID, 'poi', 1)) {
-                $added_count++;
-            }
+            if ($this->enqueue($location->ID, 'poi', 1)) { $added_count++; }
+            if ($this->enqueue($location->ID, 'rv_spot', 1)) { $added_count++; }
         }
         
         // POI
@@ -555,9 +573,8 @@ class Nearby_Queue_Manager {
         ");
         
         foreach ($rv_spots as $spot) {
-            if ($this->enqueue($spot->ID, 'charging_location', 1)) {
-                $added_count++;
-            }
+            if ($this->enqueue($spot->ID, 'charging_location', 1)) { $added_count++; }
+            if ($this->enqueue($spot->ID, 'poi', 1)) { $added_count++; }
         }
         
         return $added_count;
