@@ -13,6 +13,8 @@ class Submissions_Admin {
 		add_action('admin_menu', array($this, 'add_admin_menu'));
 		add_action('admin_post_db_submission_approve', array($this, 'handle_approve'));
 		add_action('admin_post_db_submission_reject', array($this, 'handle_reject'));
+		add_action('admin_post_db_submission_validate', array($this, 'handle_validate'));
+		add_action('admin_post_db_submission_apply_suggestion', array($this, 'handle_apply_suggestion'));
 	}
 
 	public function add_admin_menu() {
@@ -49,6 +51,7 @@ class Submissions_Admin {
 						<th>Typ</th>
 						<th>Poloha</th>
 						<th>Stav</th>
+						<th>Validace</th>
 						<th>Akce</th>
 					</tr>
 				</thead>
@@ -61,6 +64,9 @@ class Submissions_Admin {
 						$status = get_post_meta($pid, '_submission_status', true) ?: 'pending_review';
 						$approve_url = wp_nonce_url(admin_url('admin-post.php?action=db_submission_approve&submission_id='.$pid), 'db_submission_action_'.$pid);
 						$reject_url = wp_nonce_url(admin_url('admin-post.php?action=db_submission_reject&submission_id='.$pid), 'db_submission_action_'.$pid);
+						$validate_url = wp_nonce_url(admin_url('admin-post.php?action=db_submission_validate&submission_id='.$pid), 'db_submission_action_'.$pid);
+						$validation = get_post_meta($pid, '_validation_result', true);
+						$first = is_array($validation) && !empty($validation['suggestions']) ? $validation['suggestions'][0] : null;
 					?>
 					<tr>
 						<td><?php echo esc_html($pid); ?></td>
@@ -68,6 +74,16 @@ class Submissions_Admin {
 						<td><?php echo esc_html($type); ?></td>
 						<td><?php echo esc_html($lat.', '.$lng); ?></td>
 						<td><?php echo esc_html($status); ?></td>
+						<td>
+							<?php if ($first): ?>
+								<div><strong>Návrh:</strong> <?php echo esc_html($first['label'] ?? ''); ?></div>
+								<div>(<?php echo esc_html(($first['lat'] ?? '').', '.($first['lng'] ?? '')); ?>)</div>
+								<?php $apply_url = wp_nonce_url(admin_url('admin-post.php?action=db_submission_apply_suggestion&submission_id='.$pid.'&idx=0'), 'db_submission_action_'.$pid); ?>
+								<a class="button" href="<?php echo esc_url($apply_url); ?>">Použít návrh</a>
+							<?php else: ?>
+								<a class="button" href="<?php echo esc_url($validate_url); ?>">Validovat ORS</a>
+							<?php endif; ?>
+						</td>
 						<td>
 							<a class="button button-primary" href="<?php echo esc_url($approve_url); ?>">Schválit</a>
 							<a class="button" href="<?php echo esc_url($reject_url); ?>">Zamítnout</a>
@@ -97,6 +113,36 @@ class Submissions_Admin {
 		check_admin_referer('db_submission_action_'.$submission_id);
 		update_post_meta($submission_id, '_submission_status', 'rejected');
 		wp_redirect(admin_url('tools.php?page=db-user-submissions&rejected=1'));
+		exit;
+	}
+
+	public function handle_validate() {
+		$submission_id = isset($_GET['submission_id']) ? intval($_GET['submission_id']) : 0;
+		if (!$submission_id || !current_user_can('manage_options')) wp_die('Forbidden');
+		check_admin_referer('db_submission_action_'.$submission_id);
+		$validator = new \DB\Jobs\Submissions_Validator();
+		$validator->validate($submission_id);
+		wp_redirect(admin_url('tools.php?page=db-user-submissions&validated=1'));
+		exit;
+	}
+
+	public function handle_apply_suggestion() {
+		$submission_id = isset($_GET['submission_id']) ? intval($_GET['submission_id']) : 0;
+		$idx = isset($_GET['idx']) ? intval($_GET['idx']) : 0;
+		if (!$submission_id || !current_user_can('manage_options')) wp_die('Forbidden');
+		check_admin_referer('db_submission_action_'.$submission_id);
+		$validation = get_post_meta($submission_id, '_validation_result', true);
+		if (is_array($validation) && !empty($validation['suggestions']) && isset($validation['suggestions'][$idx])) {
+			$s = $validation['suggestions'][$idx];
+			if (isset($s['lat']) && isset($s['lng'])) {
+				update_post_meta($submission_id, '_lat', (float)$s['lat']);
+				update_post_meta($submission_id, '_lng', (float)$s['lng']);
+			}
+			if (!empty($s['label'])) {
+				update_post_meta($submission_id, '_address', sanitize_text_field($s['label']));
+			}
+		}
+		wp_redirect(admin_url('tools.php?page=db-user-submissions&applied=1'));
 		exit;
 	}
 
