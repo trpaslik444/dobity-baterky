@@ -27,6 +27,26 @@ class REST_Submissions {
 		add_action('rest_api_init', array($this, 'register_routes'));
 	}
 
+	private function check_rate_limit(string $bucket, int $limit, int $windowSeconds) {
+		$userId = get_current_user_id() ?: 0;
+		$key = 'db_rl_' . $bucket . '_' . $userId;
+		$rec = get_transient($key);
+		if (!is_array($rec)) {
+			$rec = array('count' => 0, 'start' => time());
+		}
+		$elapsed = time() - intval($rec['start']);
+		if ($elapsed > $windowSeconds) {
+			$rec = array('count' => 0, 'start' => time());
+		}
+		if ($rec['count'] >= $limit) {
+			return new WP_Error('rate_limited', 'Příliš mnoho požadavků, zkuste to později.', array('status' => 429));
+		}
+		$rec['count']++;
+		$ttl = max(1, $windowSeconds - (time() - $rec['start']));
+		set_transient($key, $rec, $ttl);
+		return true;
+	}
+
 	public function register_routes() {
 		register_rest_route('db/v1', '/submissions', array(
 			'methods' => 'POST',
@@ -99,6 +119,8 @@ class REST_Submissions {
 	}
 
 	public function create_submission(WP_REST_Request $request) {
+		$rl = $this->check_rate_limit('create_submission', 5, 60); // max 5/min
+		if (is_wp_error($rl)) return $rl;
 		$current_user = get_current_user_id();
 		$params = $request->get_json_params();
 		$data = $this->sanitize_payload(is_array($params) ? $params : array());
@@ -180,6 +202,8 @@ class REST_Submissions {
 	}
 
 	public function trigger_validation(WP_REST_Request $request) {
+		$rl = $this->check_rate_limit('validate_submission', 10, 300); // max 10/5min
+		if (is_wp_error($rl)) return $rl;
 		$id = intval($request['id']);
 		$post = get_post($id);
 		if (!$post || $post->post_type !== 'user_submission') {
@@ -198,6 +222,8 @@ class REST_Submissions {
 	}
 
 	public function geocode_address(WP_REST_Request $request) {
+		$rl = $this->check_rate_limit('geocode_address', 30, 60); // max 30/min
+		if (is_wp_error($rl)) return $rl;
 		$params = $request->get_json_params();
 		$address = sanitize_text_field($params['address'] ?? '');
 		if (!$address) return new WP_Error('missing_address', 'Chybí adresa.', array('status' => 400));
