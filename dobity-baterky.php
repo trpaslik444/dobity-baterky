@@ -415,6 +415,7 @@ add_action('wp_enqueue_scripts', function() {
     wp_enqueue_script( 'leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', array(), '1.9.4', true );
     wp_enqueue_script( 'leaflet-markercluster', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js', array('leaflet'), '1.5.3', true );
     wp_enqueue_script( 'db-map', plugins_url( 'assets/db-map.js', DB_PLUGIN_FILE ), array('leaflet','leaflet-markercluster'), DB_PLUGIN_VERSION, true );
+    wp_enqueue_script( 'db-submissions', plugins_url( 'assets/submissions.js', DB_PLUGIN_FILE ), array('db-map'), DB_PLUGIN_VERSION, true );
     
     // Data pro JS
     wp_localize_script( 'db-map', 'dbMapData', array(
@@ -565,6 +566,13 @@ if (is_admin()) {
             require_once __DIR__ . '/includes/Admin/Nearby_Queue_Admin.php';
             if ( class_exists( 'DB\Admin\Nearby_Queue_Admin' ) ) {
                 new DB\Admin\Nearby_Queue_Admin();
+            }
+        }
+        // Submissions Admin - moderace uživatelských podání
+        if ( file_exists( __DIR__ . '/includes/Admin/Submissions_Admin.php' ) ) {
+            require_once __DIR__ . '/includes/Admin/Submissions_Admin.php';
+            if ( class_exists( 'DB\\Admin\\Submissions_Admin' ) ) {
+                new DB\Admin\Submissions_Admin();
             }
         }
         
