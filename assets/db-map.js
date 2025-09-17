@@ -625,6 +625,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       attribution: '&copy; OpenStreetMap',
       maxZoom: 19
     }).addTo(map);
+    // Publikovat instanci mapy pro lightweight integrace (wizard, submissions)
+    window.dbMap = map;
     
   
   } catch (error) {
