@@ -26,31 +26,27 @@ class Nearby_Recompute_Job {
         try {
             $meta_key = ($type === 'poi') ? '_db_nearby_cache_poi_foot' : '_db_nearby_cache_charger_foot';
             
-            // Načíst origin souřadnice
-            global $wpdb;
-            $origin = $wpdb->get_row($wpdb->prepare("
-                SELECT p.*, 
-                    CASE 
-                        WHEN p.post_type = 'charging_location' THEN pm_lat.meta_value
-                        WHEN p.post_type = 'poi' THEN pm_lat.meta_value
-                        WHEN p.post_type = 'rv_spot' THEN pm_lat.meta_value
-                    END as lat,
-                    CASE 
-                        WHEN p.post_type = 'charging_location' THEN pm_lng.meta_value
-                        WHEN p.post_type = 'poi' THEN pm_lng.meta_value
-                        WHEN p.post_type = 'rv_spot' THEN pm_lng.meta_value
-                    END as lng
-                FROM {$wpdb->posts} p
-                LEFT JOIN {$wpdb->postmeta} pm_lat ON p.ID = pm_lat.post_id AND pm_lat.meta_key IN ('_db_lat', '_poi_lat', '_rv_lat')
-                LEFT JOIN {$wpdb->postmeta} pm_lng ON p.ID = pm_lng.post_id AND pm_lng.meta_key IN ('_db_lng', '_poi_lng', '_rv_lng')
-                WHERE p.ID = %d
-            ", $origin_id));
-            
-            if (!$origin || !$origin->lat || !$origin->lng) {
-                return array('success' => false, 'error' => 'Origin bod nenalezen nebo nemá souřadnice');
+            // Načíst origin souřadnice podle typu postu
+            $origin_post = get_post($origin_id);
+            if (!$origin_post) {
+                return array('success' => false, 'error' => 'Origin bod nenalezen');
             }
-            $origin_lat = (float)$origin->lat;
-            $origin_lng = (float)$origin->lng;
+            
+            $origin_lat = $origin_lng = null;
+            if ($origin_post->post_type === 'charging_location') {
+                $origin_lat = (float)get_post_meta($origin_id, '_db_lat', true);
+                $origin_lng = (float)get_post_meta($origin_id, '_db_lng', true);
+            } elseif ($origin_post->post_type === 'poi') {
+                $origin_lat = (float)get_post_meta($origin_id, '_poi_lat', true);
+                $origin_lng = (float)get_post_meta($origin_id, '_poi_lng', true);
+            } elseif ($origin_post->post_type === 'rv_spot') {
+                $origin_lat = (float)get_post_meta($origin_id, '_rv_lat', true);
+                $origin_lng = (float)get_post_meta($origin_id, '_rv_lng', true);
+            }
+            
+            if (!$origin_lat || !$origin_lng) {
+                return array('success' => false, 'error' => 'Origin bod nemá souřadnice');
+            }
             
             // Získat konfiguraci
             $cfg = get_option('db_nearby_config', []);
@@ -85,6 +81,11 @@ class Nearby_Recompute_Job {
             
             // Uložit výsledky
             $this->write_cache($origin_id, $meta_key, $items, false, count($items), count($items), current_time('c'), null);
+
+            // Současně stáhnout a uložit isochrones stejně jako v recompute_nearby_for_origin
+            if (!empty($orsKey) && $provider === 'ors') {
+                $this->fetch_and_cache_isochrones($origin_id, $origin_lat, $origin_lng, $orsKey);
+            }
             
             // Přidat do zpracovaných míst
             $this->track_processed_location($origin_id, $type, $candidates, $api_calls_used, $processing_time);
@@ -117,8 +118,10 @@ class Nearby_Recompute_Job {
                 'status' => 'completed'
             );
             
+            // origin_type zde reprezentuje cílový typ (co zpracováváme). Do processed ukládáme reálný typ origin postu.
+            $real_origin_type = get_post_type($origin_id) ?: $origin_type;
             $processed_type = ($origin_type === 'poi') ? 'poi_foot' : 'charger_foot';
-            $processed_manager->add_processed($origin_id, $origin_type, $processed_type, $stats);
+            $processed_manager->add_processed($origin_id, $real_origin_type, $processed_type, $stats);
             
         } catch (Exception $e) {
             error_log("[DB Processed Tracking] Chyba při trackingu: " . $e->getMessage());
@@ -130,7 +133,7 @@ class Nearby_Recompute_Job {
      */
     public function recompute_nearby_for_origin($origin_id, $type) {
         $type = sanitize_key($type);
-        $meta_key = ($type === 'poi') ? '_db_nearby_cache_poi_foot' : '_db_nearby_cache_charger_foot';
+        $meta_key = ($type === 'poi') ? '_db_nearby_cache_poi_foot' : (($type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
         $lock_key = $meta_key . '_lock';
         $transient_lock_key = 'db_nearby_lock_' . $origin_id . '_' . $type;
 
@@ -167,6 +170,14 @@ class Nearby_Recompute_Job {
                 error_log("[DB Nearby] origin post #$origin_id not found");
                 $this->write_cache($origin_id, $meta_key, [], false, 0, 0, null, 'origin_not_found');
                 return;
+            }
+
+            // Guard: nikdy nezpracovávej stejný typ jako je origin; přemapuj na protitip
+            // charging_location => poi (a/nebo rv_spot), poi => charging_location, rv_spot => charging_location (základní)
+            if ($type === $origin_post->post_type) {
+                if ($type === 'charging_location') { $type = 'poi'; $meta_key = '_db_nearby_cache_poi_foot'; }
+                elseif ($type === 'poi') { $type = 'charging_location'; $meta_key = '_db_nearby_cache_charger_foot'; }
+                elseif ($type === 'rv_spot') { $type = 'charging_location'; $meta_key = '_db_nearby_cache_charger_foot'; }
             }
             
             $lat = $lng = null;
@@ -325,6 +336,9 @@ class Nearby_Recompute_Job {
             usort($items, fn($a,$b) => ($a['duration_s'] <=> $b['duration_s']));
             $this->write_cache($origin_id, $meta_key, $items, false, $total, $total, current_time('c'), null);
 
+            // 4) Načíst isochrones data současně s nearby data
+            $this->fetch_and_cache_isochrones($origin_id, $lat, $lng, $orsKey);
+
         } catch (\Throwable $e) {
             error_log("[DB Nearby] Exception: ".$e->getMessage());
             $this->write_cache($origin_id, $meta_key, [], true, 0, 0, null, 'exception');
@@ -332,6 +346,136 @@ class Nearby_Recompute_Job {
             delete_post_meta($origin_id, $lock_key);
             delete_transient($transient_lock_key);
         }
+    }
+    
+    /**
+     * Načíst a uložit isochrones data současně s nearby data
+     */
+    private function fetch_and_cache_isochrones($origin_id, $lat, $lng, $orsKey) {
+        try {
+            $cfg = get_option('db_nearby_config', []);
+            $profile = 'foot-walking';
+            $ranges = [552, 1124, 1695]; // Vypočítané časy pro realistické 10, 20, 30 min
+            
+            // Zkontrolovat, zda už máme isochrones data
+            $meta_key = 'db_isochrones_v1_' . $profile;
+            $existing_cache = get_post_meta($origin_id, $meta_key, true);
+            
+            if ($existing_cache && !empty($existing_cache)) {
+                $payload = is_string($existing_cache) ? json_decode($existing_cache, true) : $existing_cache;
+                // Pokud máme platná data a nejsou starší než TTL, nepřenačítat
+                if ($payload && isset($payload['geojson']) && isset($payload['geojson']['features']) && 
+                    !empty($payload['geojson']['features']) && !isset($payload['error'])) {
+                    $ttl_days = 30; // Default TTL
+                    $computed_at = isset($payload['computed_at']) ? strtotime($payload['computed_at']) : 0;
+                    if ((time() - $computed_at) < ($ttl_days * DAY_IN_SECONDS)) {
+                        return; // Data jsou ještě platná
+                    }
+                }
+            }
+            
+            // Zkontrolovat lokální minutový limit
+            $quota_manager = new \DB\Jobs\API_Quota_Manager();
+            $minute_check = $quota_manager->check_minute_limit();
+            
+            if (!$minute_check['allowed']) {
+                error_log("[DB Isochrones] Lokální minutový limit. Přeskočeno pro origin_id {$origin_id}");
+                return;
+            }
+            
+            $body = [
+                'locations' => [[(float)$lng, (float)$lat]],
+                'range' => $ranges,
+                'range_type' => 'time'
+            ];
+            
+            $response = wp_remote_post("https://api.openrouteservice.org/v2/isochrones/{$profile}", [
+                'headers' => [
+                    'Authorization' => $orsKey,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/geo+json;charset=UTF-8',
+                    'User-Agent' => 'DobityBaterky/isochrones (+https://dobitybaterky.cz)'
+                ],
+                'body' => json_encode($body),
+                'timeout' => 30
+            ]);
+            
+            if (is_wp_error($response)) {
+                error_log("[DB Isochrones] Network error for origin_id {$origin_id}: " . $response->get_error_message());
+                return;
+            }
+            
+            $http_code = wp_remote_retrieve_response_code($response);
+            $response_body = wp_remote_retrieve_body($response);
+            $data = json_decode($response_body, true);
+            
+            // Uložit kvóty z hlaviček
+            $headers = wp_remote_retrieve_headers($response);
+            $quota_manager->save_ors_headers($headers);
+            
+            if ($http_code === 401 || $http_code === 403) {
+                error_log("[DB Isochrones] Unauthorized for origin_id {$origin_id}");
+                $this->set_isochrones_error($origin_id, $profile, 'unauthorized', 'API key invalid');
+                return;
+            }
+            
+            if ($http_code === 429) {
+                error_log("[DB Isochrones] Rate limited for origin_id {$origin_id}");
+                $this->set_isochrones_error($origin_id, $profile, 'rate_limited', 'Rate limited');
+                return;
+            }
+            
+            if ($http_code !== 200) {
+                error_log("[DB Isochrones] HTTP error {$http_code} for origin_id {$origin_id}");
+                $this->set_isochrones_error($origin_id, $profile, 'upstream_error', "HTTP $http_code: " . ($data['error']['message'] ?? 'Unknown error'));
+                return;
+            }
+            
+            // Úspěch - uložit data
+            $payload = [
+                'version' => 1,
+                'profile' => $profile,
+                'ranges_s' => $ranges,
+                'center' => [(float)$lng, (float)$lat],
+                'geojson' => $data,
+                'computed_at' => current_time('c'),
+                'ttl_days' => 30,
+                'error' => null,
+                'error_at' => null,
+                'retry_after_s' => null,
+                'running' => false
+            ];
+            
+            update_post_meta($origin_id, $meta_key, json_encode($payload));
+            error_log("[DB Isochrones] Successfully cached for origin_id {$origin_id}, features: " . count($data['features'] ?? []));
+            
+        } catch (\Throwable $e) {
+            error_log("[DB Isochrones] Exception for origin_id {$origin_id}: " . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Nastavit chybu v isochrones cache
+     */
+    private function set_isochrones_error($origin_id, $profile, $error_type, $message, $retry_after = null) {
+        $meta_key = 'db_isochrones_v1_' . $profile;
+        $cfg = get_option('db_nearby_config', []);
+        
+        $payload = [
+            'version' => 1,
+            'profile' => $profile,
+            'ranges_s' => [552, 1124, 1695],
+            'center' => null,
+            'geojson' => null,
+            'computed_at' => current_time('c'),
+            'ttl_days' => 30,
+            'error' => $error_type,
+            'error_at' => current_time('c'),
+            'retry_after_s' => $retry_after,
+            'running' => false
+        ];
+        
+        update_post_meta($origin_id, $meta_key, json_encode($payload));
     }
     
     /**
@@ -671,8 +815,11 @@ class Nearby_Recompute_Job {
             return array();
         }
         
-        // Určit typ kandidátů na základě typu origin bodu
-        $candidate_type = ($origin_type === 'charging_location') ? 'poi' : 'charging_location';
+        // Určit typ kandidátů: zde origin_type reprezentuje CÍLOVÝ typ, který chceme hledat
+        // (fronta ukládá, co se má k originu počítat: 'poi' => hledej POI; 'charging_location' => hledej nabíječky)
+        $candidate_type = in_array($origin_type, ['poi','charging_location','rv_spot'], true)
+            ? $origin_type
+            : 'charging_location';
         
         // Načíst kandidáty v okolí
         $candidates = $wpdb->get_results($wpdb->prepare("

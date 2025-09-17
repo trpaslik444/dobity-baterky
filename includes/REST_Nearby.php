@@ -50,6 +50,23 @@ class REST_Nearby {
             'callback' => array($this, 'verify_ors'),
             'permission_callback' => function() { return current_user_can('manage_options'); },
         ));
+        // Admin: requeue processed origins
+        register_rest_route('db/v1', '/admin/nearby/requeue', array(
+            'methods'  => 'POST',
+            'callback' => array($this, 'requeue_processed'),
+            'permission_callback' => function() { return current_user_can('manage_options'); },
+            'args' => array(
+                'origin_ids' => array(
+                    'required' => true,
+                    'type' => 'array',
+                ),
+                'target_type' => array(
+                    'required' => false,
+                    'type' => 'string',
+                    'enum' => array('poi','charging_location','rv_spot')
+                )
+            )
+        ));
         // Rychlé čtení cache
         register_rest_route('db/v1', '/nearby', array(
             'methods' => 'GET',
@@ -102,36 +119,7 @@ class REST_Nearby {
             )
         ));
         
-        // Routing endpoint pro DEV
-        register_rest_route('db/v1', '/route', array(
-            'methods' => 'GET',
-            'callback' => array($this, 'get_route'),
-            'permission_callback' => '__return_true',
-            'args' => array(
-                'from' => array(
-                    'required' => true,
-                    'type' => 'string',
-                    'sanitize_callback' => 'sanitize_text_field'
-                ),
-                'to' => array(
-                    'required' => true,
-                    'type' => 'string',
-                    'sanitize_callback' => 'sanitize_text_field'
-                ),
-                'provider' => array(
-                    'default' => 'ors',
-                    'type' => 'string',
-                    'enum' => array('ors', 'osrm'),
-                    'sanitize_callback' => 'sanitize_text_field'
-                ),
-                'profile' => array(
-                    'default' => 'foot-walking',
-                    'type' => 'string',
-                    'enum' => array('foot-walking', 'driving-car', 'cycling-regular'),
-                    'sanitize_callback' => 'sanitize_text_field'
-                )
-            )
-        ));
+        // (Removed) Duplicitní veřejný routing endpoint byl odstraněn – ponechán pouze admin-protected níže
         
         // Diagnostický endpoint
         register_rest_route('db/v1', '/nearby/diagnose', array(
@@ -190,6 +178,7 @@ class REST_Nearby {
             'permission_callback' => function() { return current_user_can('manage_options'); }
         ));
         
+        
     }
     
     /**
@@ -200,7 +189,7 @@ class REST_Nearby {
         $type      = $request->get_param('type'); // 'poi' | 'charging_location' | 'rv_spot'
         $limit     = max(1, (int)$request->get_param('limit'));
 
-        $meta_key = ($type === 'poi') ? '_db_nearby_cache_poi_foot' : '_db_nearby_cache_charger_foot';
+        $meta_key = ($type === 'poi') ? '_db_nearby_cache_poi_foot' : (($type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
 
         $cache     = get_post_meta($origin_id, $meta_key, true);
         $payload   = is_string($cache) ? json_decode($cache, true) : (is_array($cache) ? $cache : null);
@@ -254,16 +243,68 @@ class REST_Nearby {
             }
         }
 
-        // Pokud nemáme žádnou cache, připrav fallback výsledek vzdušnou čarou
-        if (empty($items_all)) {
+        // Fallback data se zobrazí pouze pokud:
+        // 1. Existuje cache payload (někdy bylo zpracováno)
+        // 2. Ale items jsou prázdné (např. kvůli chybě)
+        // 3. A není to v cooldownu kvůli chybě
+        // 4. A není to stale (neplatná cache)
+        if (empty($items_all) && $payload && !$error && !$stale) {
             $items_all = $this->build_basic_fallback($origin_id, $type);
         }
 
         // výstup (ořež na limit)
         $items = array_slice($items_all, 0, $limit);
         
+        // Pokud origin je charging_location a klient chce nearby obecně, sloučit POI + RV
+        $origin_post = get_post($origin_id);
+        if ($origin_post && $type === 'poi' && $origin_post->post_type === 'charging_location') {
+            $rv_cache = get_post_meta($origin_id, '_db_nearby_cache_rv_foot', true);
+            $rv_payload = is_string($rv_cache) ? json_decode($rv_cache, true) : (is_array($rv_cache) ? $rv_cache : null);
+            if ($rv_payload && !empty($rv_payload['items'])) {
+                $items_all = array_merge($items_all, (array)$rv_payload['items']);
+            }
+        }
+        if ($origin_post && $type === 'charging_location' && $origin_post->post_type === 'rv_spot') {
+            // Pro RV vracej i POI
+            $poi_cache = get_post_meta($origin_id, '_db_nearby_cache_poi_foot', true);
+            $poi_payload = is_string($poi_cache) ? json_decode($poi_cache, true) : (is_array($poi_cache) ? $poi_cache : null);
+            if ($poi_payload && !empty($poi_payload['items'])) {
+                $items_all = array_merge($items_all, (array)$poi_payload['items']);
+            }
+        }
+
         // Obohacení dat o ikony a metadata dynamicky
         $enriched_items = $this->enrich_nearby_items($items);
+
+        // Načíst isochrones data pokud jsou k dispozici (z cache)
+        $isochrones_data = null;
+        $isochrones_meta_key = 'db_isochrones_v1_foot-walking';
+        $isochrones_cache = get_post_meta($origin_id, $isochrones_meta_key, true);
+        
+        // Zkontrolovat, zda jsou isochrones povoleny
+        $isochrones_settings = get_option('db_isochrones_settings', ['enabled' => 1]);
+        
+        if ($isochrones_cache && $isochrones_settings['enabled']) {
+            $isochrones_payload = is_string($isochrones_cache) ? json_decode($isochrones_cache, true) : $isochrones_cache;
+            if ($isochrones_payload && isset($isochrones_payload['geojson']) && isset($isochrones_payload['geojson']['features'])) {
+                
+                // Aplikovat uživatelské nastavení rychlosti chůze
+                $adjusted_geojson = $this->adjust_isochrones_for_walking_speed(
+                    $isochrones_payload['geojson'], 
+                    $isochrones_payload['ranges_s'] ?? [552, 1124, 1695],
+                    $isochrones_settings
+                );
+                
+                $isochrones_data = [
+                    'profile' => $isochrones_payload['profile'] ?? 'foot-walking',
+                    'ranges_s' => $isochrones_payload['ranges_s'] ?? [552, 1124, 1695],
+                    'geojson' => $adjusted_geojson,
+                    'computed_at' => $isochrones_payload['computed_at'] ?? null,
+                    'error' => $isochrones_payload['error'] ?? null,
+                    'user_settings' => $isochrones_settings
+                ];
+            }
+        }
 
         return rest_ensure_response([
             'origin_id' => $origin_id,
@@ -278,6 +319,7 @@ class REST_Nearby {
             'error_at'  => $error_at ? date('c', $error_at) : null,
             'retry_after_s' => $retry_after_s,
             'next_retry_at' => $next_retry_at,
+            'isochrones' => $isochrones_data,
             'version'   => 4
         ]);
     }
@@ -353,6 +395,8 @@ class REST_Nearby {
     // Admin handlers
     public function get_admin_config($request) {
         $cfg = get_option('db_nearby_config', []);
+        
+        
         return rest_ensure_response($cfg);
     }
 
@@ -369,6 +413,8 @@ class REST_Nearby {
         $cfg['matrix_batch_size'] = intval($cfg['matrix_batch_size'] ?? 60);
         $cfg['cache_ttl_days'] = intval($cfg['cache_ttl_days'] ?? 30);
         $cfg['walking_speed_m_s'] = isset($cfg['walking_speed_m_s']) ? floatval($cfg['walking_speed_m_s']) : 1.3;
+        
+        
         update_option('db_nearby_config', $cfg);
         return rest_ensure_response(['ok'=>true,'saved'=>true]);
     }
@@ -424,6 +470,76 @@ class REST_Nearby {
         // async (AS/WP-Cron)
         $this->enqueue_recompute_async($origin_id, $type);
         return rest_ensure_response(['ok'=>true, 'queued'=>1]);
+    }
+    
+    /**
+     * POST /admin/nearby/requeue - znovu zařadit vybrané originy do fronty
+     */
+    public function requeue_processed($request) {
+        $origin_ids = (array)($request->get_param('origin_ids') ?? []);
+        $target_type = sanitize_key($request->get_param('target_type') ?? '');
+        
+        $origin_ids = array_values(array_filter(array_map('intval', $origin_ids), function($v){ return $v > 0; }));
+        if (empty($origin_ids)) {
+            return new \WP_Error('bad_request', 'origin_ids required', ['status'=>400]);
+        }
+        
+        $enqueued = [];
+        $skipped  = [];
+        
+        if (!class_exists('DB\\Jobs\\Nearby_Queue_Manager')) {
+            require_once __DIR__ . '/Jobs/Nearby_Queue_Manager.php';
+        }
+        $qm = new \DB\Jobs\Nearby_Queue_Manager();
+        global $wpdb;
+        $queue_table = $wpdb->prefix . 'nearby_queue';
+        
+        foreach ($origin_ids as $oid) {
+            $post = get_post($oid);
+            if (!$post) { $skipped[] = [$oid,'not_found']; continue; }
+            
+            // Určit default target podle skutečného typu originu, pokud není dán
+            $type = $target_type;
+            if ($type === '') {
+                if ($post->post_type === 'charging_location') {
+                    // charger: chceme poi i rv
+                    $types_to_enqueue = ['poi','rv_spot'];
+                } elseif ($post->post_type === 'poi') {
+                    $types_to_enqueue = ['charging_location'];
+                } else { // rv_spot
+                    $types_to_enqueue = ['charging_location','poi'];
+                }
+            } else {
+                $types_to_enqueue = [$type];
+            }
+            
+            foreach ($types_to_enqueue as $tt) {
+                // Force behavior: pokud je již ve frontě, posuň na začátek a počítej jako enqueued
+                $existing = $wpdb->get_row($wpdb->prepare("SELECT id FROM {$queue_table} WHERE origin_id=%d AND origin_type=%s AND status IN ('pending','processing')", $oid, $tt));
+                if ($existing && $existing->id) {
+                    $qm->move_to_front((int)$existing->id);
+                    $enqueued[] = [$oid, $tt, 'moved'];
+                    continue;
+                }
+                // Pokud je zpracované, smaž processed a chybné cache (pro jistotu)
+                try {
+                    $pm = new \DB\Jobs\Nearby_Processed_Manager();
+                    $pm->delete_processed($oid, $post->post_type, ($tt==='poi'?'poi_foot':'charger_foot'));
+                } catch (\Throwable $__) {}
+                // Vyčistit chybné cache klíče (např. charger měl v poi cache nabíječky)
+                if ($tt === 'poi') { delete_post_meta($oid, '_db_nearby_cache_poi_foot'); }
+                if ($tt === 'rv_spot') { delete_post_meta($oid, '_db_nearby_cache_rv_foot'); }
+                if ($tt === 'charging_location') { delete_post_meta($oid, '_db_nearby_cache_charger_foot'); }
+
+                if ($qm->enqueue($oid, $tt, 1)) {
+                    $enqueued[] = [$oid, $tt];
+                } else {
+                    $skipped[] = [$oid, 'already_in_queue_or_processed'];
+                }
+            }
+        }
+        
+        return rest_ensure_response(['enqueued'=>$enqueued, 'skipped'=>$skipped]);
     }
     
     /**
@@ -750,7 +866,7 @@ class REST_Nearby {
      * OSRM routing
      */
     private function get_osrm_route($from_lat, $from_lng, $to_lat, $to_lng, $profile) {
-        $url = "http://router.project-osrm.org/route/v1/{$profile}/{$from_lng},{$from_lat};{$to_lng},{$to_lat}?overview=false";
+        $url = "https://router.project-osrm.org/route/v1/{$profile}/{$from_lng},{$from_lat};{$to_lng},{$to_lat}?overview=false";
         
         $response = wp_remote_get($url, array('timeout' => 10));
         
@@ -874,5 +990,45 @@ class REST_Nearby {
         }
         
         return $enriched;
+    }
+    
+    
+    
+    /**
+     * Upravit isochrones podle uživatelské rychlosti chůze
+     */
+    private function adjust_isochrones_for_walking_speed($geojson, $original_ranges_s, $user_settings) {
+        // Standardní rychlost ORS je ~5 km/h, uživatelská rychlost
+        $standard_speed = 5.0; // km/h (ORS default)
+        $user_speed = floatval($user_settings['walking_speed_kmh'] ?? 4.5);
+        
+        // Pokud je rychlost stejná, vrátit původní data
+        if (abs($user_speed - $standard_speed) < 0.1) {
+            return $geojson;
+        }
+        
+        // Vypočítat koeficient úpravy
+        $speed_ratio = $user_speed / $standard_speed;
+        
+        // Zkopírovat GeoJSON a upravit hodnoty
+        $adjusted_geojson = $geojson;
+        
+        if (isset($adjusted_geojson['features'])) {
+            foreach ($adjusted_geojson['features'] as &$feature) {
+                if (isset($feature['properties']['value'])) {
+                    // Upravit čas podle rychlosti
+                    $original_time = $feature['properties']['value'];
+                    $adjusted_time = $original_time * $speed_ratio;
+                    $feature['properties']['value'] = round($adjusted_time);
+                    
+                    // Přidat informaci o úpravě
+                    $feature['properties']['original_value'] = $original_time;
+                    $feature['properties']['speed_adjusted'] = true;
+                    $feature['properties']['user_speed_kmh'] = $user_speed;
+                }
+            }
+        }
+        
+        return $adjusted_geojson;
     }
 }
