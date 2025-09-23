@@ -5,7 +5,7 @@
   const panelId = 'db-submission-panel';
   const overlayId = 'db-submission-overlay';
 
-  const state = {
+  const defaultState = {
     post_type: 'poi',
     title: '',
     description: '',
@@ -17,6 +17,12 @@
     submissionId: null,
     validation: null
   };
+
+  const state = { ...defaultState };
+
+  function resetState(){
+    Object.assign(state, defaultState);
+  }
 
   function ensureButton(){
     if (document.getElementById(btnId)) return;
@@ -133,6 +139,7 @@
               </label>
             </div>
             <button type="button" id="db-subm-use-center" class="button">Použít střed mapy${(center && center.lat)?` (${center.lat.toFixed?center.lat.toFixed(5):center.lat}, ${center.lng.toFixed?center.lng.toFixed(5):center.lng})`:''}</button>
+            <div id="db-subm-geocode" style="margin-top:8px;"></div>
           </div>`;
         const addrEl = document.getElementById('db-subm-address');
         addrEl.oninput = (e)=> { state.address = e.target.value; debounceGeocode(); };
@@ -193,14 +200,22 @@
               <button type="button" id="db-subm-validate" class="button">Ověřit s ORS</button>
             </div>
           </div>`;
+        if (state.validation) {
+          renderSuggestions(state.validation);
+        } else {
+          const mount = document.getElementById('db-subm-validation');
+          if (mount) mount.innerHTML = '';
+        }
         const validateBtn = document.getElementById('db-subm-validate');
         if (validateBtn) validateBtn.onclick = runValidationFlow;
       }
     }
 
     function validateStep(s){
-      if (s === 1) {
-        if (!state.lat || !state.lng) { alert('Vyplňte souřadnice, nebo použijte střed mapy.'); return false; }
+    if (s === 1) {
+        const latVal = normalizeCoordForApi(state.lat);
+        const lngVal = normalizeCoordForApi(state.lng);
+        if (latVal === null || lngVal === null) { alert('Vyplňte platné souřadnice, nebo použijte střed mapy.'); return false; }
       }
       if (s === 2) {
         if (!state.title) { alert('Zadejte název.'); return false; }
@@ -215,6 +230,20 @@
   function escapeHtml(str){
     if (str===null || str===undefined) return '';
     return String(str).replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]));
+  }
+
+  function normalizeCoordForApi(value){
+    if (value === null || value === undefined) return null;
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : null;
+    }
+    if (typeof value === 'string') {
+      const normalized = value.replace(',', '.').trim();
+      if (normalized === '') return null;
+      const parsed = Number(normalized);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
   }
 
   let geocodeTimer = null;
@@ -239,22 +268,29 @@
       const items = data.items || [];
       if (!items.length) return;
       const best = items[0];
+      const bestLat = normalizeCoordForApi(best.lat);
+      const bestLng = normalizeCoordForApi(best.lng);
+      if (bestLat === null || bestLng === null) return;
+      const latDisplay = bestLat.toFixed ? bestLat.toFixed(6) : String(bestLat);
+      const lngDisplay = bestLng.toFixed ? bestLng.toFixed(6) : String(bestLng);
       // nenutíme, jen zobrazíme drobný tip a nabídku použít
-      const mount = document.getElementById('db-subm-validation');
+      const mount = document.getElementById('db-subm-geocode');
       if (mount) {
         mount.innerHTML = `<div style="margin-top:6px; padding:8px; background:#f7f7f7; border:1px solid #eee; border-radius:6px;">`
           + `<div><strong>Návrh adresy:</strong> ${escapeHtml(best.label||'')}</div>`
-          + `<div>${best.lat}, ${best.lng}</div>`
+          + `<div>${latDisplay}, ${lngDisplay}</div>`
           + `<div style="margin-top:6px;"><button type="button" id="db-subm-apply-geocode" class="button">Použít</button></div>`
           + `</div>`;
         const btn = document.getElementById('db-subm-apply-geocode');
         if (btn) btn.onclick = async ()=>{
-          state.lat = best.lat; state.lng = best.lng; state.address = best.label || state.address;
-          const latEl = document.getElementById('db-subm-lat'); if (latEl) latEl.value = (best.lat.toFixed?best.lat.toFixed(7):best.lat);
-          const lngEl = document.getElementById('db-subm-lng'); if (lngEl) lngEl.value = (best.lng.toFixed?best.lng.toFixed(7):best.lng);
+          state.lat = bestLat; state.lng = bestLng; state.address = best.label || state.address;
+          const latEl = document.getElementById('db-subm-lat'); if (latEl) latEl.value = bestLat.toFixed ? bestLat.toFixed(7) : bestLat;
+          const lngEl = document.getElementById('db-subm-lng'); if (lngEl) lngEl.value = bestLng.toFixed ? bestLng.toFixed(7) : bestLng;
           const aEl = document.getElementById('db-subm-address'); if (aEl) aEl.value = best.label || aEl.value;
-          if (window.dbMap && window.dbMap.setView){ window.dbMap.setView([best.lat, best.lng], 15, { animate: true }); }
-          await createOrUpdateSubmission();
+          if (window.dbMap && window.dbMap.setView){ window.dbMap.setView([bestLat, bestLng], 15, { animate: true }); }
+          if (state.submissionId) {
+            await createOrUpdateSubmission();
+          }
         };
       }
     }catch(e){ /* ignore */ }
@@ -266,8 +302,11 @@
       if (!id) return;
       alert('Podání vytvořeno (#'+id+').');
       // Automaticky spustit validaci po odeslání
-      await runValidation(id);
+      const validationResult = await runValidation(id);
       closePanel();
+      if (validationResult) {
+        resetState();
+      }
     }catch(e){
       console.error(e);
       alert('Chyba připojení.');
@@ -284,8 +323,8 @@
       title: state.title,
       description: state.description,
       address: state.address,
-      lat: state.lat,
-      lng: state.lng,
+      lat: normalizeCoordForApi(state.lat),
+      lng: normalizeCoordForApi(state.lng),
       rating: state.rating,
       comment: state.comment
     };
@@ -337,25 +376,39 @@
     const list = (validation && validation.suggestions) ? validation.suggestions : [];
     if (!list.length){ mount.innerHTML = '<div style="color:#555;">Žádné návrhy z ORS.</div>'; return; }
     const html = list.slice(0,3).map((s,idx)=>{
-      const lat = (s.lat!=null)?s.lat:''; const lng = (s.lng!=null)?s.lng:''; const label = s.label || '';
-      const conf = (s.confidence!=null) ? `, důvěra: ${s.confidence}` : '';
+      const label = s.label || '';
+      const latVal = normalizeCoordForApi(s.lat);
+      const lngVal = normalizeCoordForApi(s.lng);
+      const latDisplay = latVal === null ? '' : (latVal.toFixed ? latVal.toFixed(6) : String(latVal));
+      const lngDisplay = lngVal === null ? '' : (lngVal.toFixed ? lngVal.toFixed(6) : String(lngVal));
+      const conf = (s.confidence!=null && s.confidence!=='') ? `, důvěra: ${s.confidence}` : '';
+      const canApply = latVal !== null && lngVal !== null;
+      const encodedLabel = encodeURIComponent(label);
+      const actionHtml = canApply
+        ? `<button type="button" class="button" data-idx="${idx}" data-lat="${latVal}" data-lng="${lngVal}" data-label="${encodedLabel}">Použít tento návrh</button>`
+        : '<em>Souřadnice nejsou k dispozici.</em>';
       return `<div style="padding:8px; border:1px solid #eee; border-radius:6px; margin-top:6px;">
         <div><strong>${escapeHtml(label)}</strong></div>
-        <div>${lat}, ${lng}${conf}</div>
-        <div style="margin-top:6px;"><button type="button" class="button" data-idx="${idx}" data-lat="${lat}" data-lng="${lng}" data-label="${escapeHtml(label)}">Použít tento návrh</button></div>
+        <div>${latDisplay}, ${lngDisplay}${conf}</div>
+        <div style="margin-top:6px;">${actionHtml}</div>
       </div>`;
     }).join('');
     mount.innerHTML = `<div style="margin-top:6px;"><strong>Návrhy od ORS:</strong></div>${html}`;
     mount.querySelectorAll('button[data-idx]').forEach(btn=>{
       btn.addEventListener('click', async (e)=>{
-        const lat = parseFloat(e.currentTarget.getAttribute('data-lat'));
-        const lng = parseFloat(e.currentTarget.getAttribute('data-lng'));
-        const label = e.currentTarget.getAttribute('data-label');
-        state.lat = lat; state.lng = lng; state.address = label;
+        const latAttr = e.currentTarget.dataset.lat;
+        const lngAttr = e.currentTarget.dataset.lng;
+        const labelAttr = e.currentTarget.dataset.label || '';
+        const lat = latAttr ? parseFloat(latAttr) : NaN;
+        const lng = lngAttr ? parseFloat(lngAttr) : NaN;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+        const label = labelAttr ? decodeURIComponent(labelAttr) : '';
+        state.lat = lat; state.lng = lng; if (label) state.address = label;
         // propsat do polí
         const latEl = document.getElementById('db-subm-lat'); if (latEl) latEl.value = (lat.toFixed?lat.toFixed(7):lat);
         const lngEl = document.getElementById('db-subm-lng'); if (lngEl) lngEl.value = (lng.toFixed?lng.toFixed(7):lng);
-        const addrEl = document.getElementById('db-subm-address'); if (addrEl) addrEl.value = label;
+        const addrEl = document.getElementById('db-subm-address'); if (addrEl && label) addrEl.value = label;
+        if (window.dbMap && window.dbMap.setView){ window.dbMap.setView([lat, lng], 15, { animate: true }); }
         // uložit změny do submission (PATCH)
         await createOrUpdateSubmission();
         alert('Návrh použit.');
@@ -368,6 +421,10 @@
     const o = document.getElementById(overlayId);
     if (p) p.remove();
     if (o) o.remove();
+    if (geocodeTimer) {
+      clearTimeout(geocodeTimer);
+      geocodeTimer = null;
+    }
   }
 
   document.addEventListener('DOMContentLoaded', ensureButton);
