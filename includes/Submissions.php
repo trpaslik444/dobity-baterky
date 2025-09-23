@@ -127,12 +127,70 @@ class Submissions {
 			'_submission_status' => 'sanitize_text_field',
 		);
 
-		foreach ($fields as $key => $cb) {
-			if (isset($_POST[$key])) {
-				$value = call_user_func($cb, $_POST[$key]);
-				update_post_meta($post_id, $key, $value);
-			}
-		}
-	}
+                foreach ($fields as $key => $cb) {
+                        if (!isset($_POST[$key])) {
+                                continue;
+                        }
+
+                        $raw = $_POST[$key];
+
+                        if ($key === '_lat' || $key === '_lng') {
+                                $is_lat = ($key === '_lat');
+                                $trimmed = is_string($raw) ? trim($raw) : $raw;
+
+                                if ($trimmed === '' || (is_array($raw) && empty(array_filter($raw, fn($v) => trim((string)$v) !== '')))) {
+                                        delete_post_meta($post_id, $key);
+                                        continue;
+                                }
+
+                                $coord = $this->sanitize_coordinate($raw, $is_lat);
+                                if ($coord === null) {
+                                        continue;
+                                }
+
+                                update_post_meta($post_id, $key, $coord);
+                                continue;
+                        }
+
+                        $value = call_user_func($cb, $raw);
+                        update_post_meta($post_id, $key, $value);
+                }
+        }
+
+        private function sanitize_coordinate($value, bool $is_lat): ?string {
+                if (is_array($value)) {
+                        $value = reset($value);
+                }
+
+                $value = trim((string)$value);
+
+                if ($value === '') {
+                        return null;
+                }
+
+                $value = str_replace([' ', ','], ['', '.'], $value);
+
+                if (!is_numeric($value)) {
+                        return null;
+                }
+
+                $float = (float)$value;
+
+                if (!is_finite($float)) {
+                        return null;
+                }
+
+                if ($is_lat && ($float < -90 || $float > 90)) {
+                        return null;
+                }
+
+                if (!$is_lat && ($float < -180 || $float > 180)) {
+                        return null;
+                }
+
+                $normalized = number_format($float, 7, '.', '');
+
+                return rtrim(rtrim($normalized, '0'), '.');
+        }
 }
 

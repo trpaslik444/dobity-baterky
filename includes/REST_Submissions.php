@@ -91,27 +91,65 @@ class REST_Submissions {
 		return true;
 	}
 
-	private function sanitize_payload(array $params) : array {
-		$target_post_type = sanitize_text_field($params['post_type'] ?? '');
-		$title = sanitize_text_field($params['title'] ?? '');
-		$description = sanitize_textarea_field($params['description'] ?? '');
-		$lat = isset($params['lat']) ? floatval($params['lat']) : null;
-		$lng = isset($params['lng']) ? floatval($params['lng']) : null;
-		$address = sanitize_text_field($params['address'] ?? '');
-		$rating = isset($params['rating']) ? intval($params['rating']) : null;
-		$comment = sanitize_text_field($params['comment'] ?? '');
+        private function sanitize_payload(array $params) : array {
+                $target_post_type = sanitize_text_field($params['post_type'] ?? '');
+                $title = sanitize_text_field($params['title'] ?? '');
+                $description = sanitize_textarea_field($params['description'] ?? '');
+                $lat = $this->parse_coordinate($params['lat'] ?? null, true);
+                $lng = $this->parse_coordinate($params['lng'] ?? null, false);
+                $address = sanitize_text_field($params['address'] ?? '');
+                $rating = isset($params['rating']) ? intval($params['rating']) : null;
+                $comment = sanitize_text_field($params['comment'] ?? '');
 
-		return compact('target_post_type','title','description','lat','lng','address','rating','comment');
-	}
+                return compact('target_post_type','title','description','lat','lng','address','rating','comment');
+        }
+
+        private function parse_coordinate($value, bool $is_lat): ?float {
+                if ($value === null) {
+                        return null;
+                }
+
+                if (is_array($value)) {
+                        $value = reset($value);
+                }
+
+                $value = trim((string)$value);
+
+                if ($value === '') {
+                        return null;
+                }
+
+                $value = str_replace([' ', ','], ['', '.'], $value);
+
+                if (!is_numeric($value)) {
+                        return null;
+                }
+
+                $float = (float)$value;
+
+                if (!is_finite($float)) {
+                        return null;
+                }
+
+                if ($is_lat && ($float < -90 || $float > 90)) {
+                        return null;
+                }
+
+                if (!$is_lat && ($float < -180 || $float > 180)) {
+                        return null;
+                }
+
+                return $float;
+        }
 
 	private function validate_business_rules(array $data) {
 		// základní
 		if (!in_array($data['target_post_type'], array('charging_location','poi','rv_spot'), true)) {
 			return new WP_Error('invalid_type', 'Neplatný cílový typ.', array('status' => 400));
 		}
-		if (!$data['lat'] || !$data['lng']) {
-			return new WP_Error('invalid_coords', 'Chybí souřadnice.', array('status' => 400));
-		}
+                if ($data['lat'] === null || $data['lng'] === null) {
+                        return new WP_Error('invalid_coords', 'Chybí souřadnice.', array('status' => 400));
+                }
 		if ($data['comment'] && ($data['rating'] === null || $data['rating'] === '')) {
 			return new WP_Error('rating_required', 'Komentář vyžaduje hodnocení.', array('status' => 400));
 		}
@@ -154,7 +192,13 @@ class REST_Submissions {
 			}
 		} catch (\Throwable $e) { /* tiché selhání */ }
 
-		return new WP_REST_Response(array('id' => $post_id, 'status' => get_post_meta($post_id, '_submission_status', true) ?: 'pending_review'), 201);
+                $approved_post_id = intval(get_post_meta($post_id, '_approved_post_id', true));
+                return new WP_REST_Response(array(
+                        'id' => $post_id,
+                        'status' => get_post_meta($post_id, '_submission_status', true) ?: 'pending_review',
+                        'approved_post_id' => $approved_post_id ?: null,
+                        'approved_post_url' => $approved_post_id ? get_permalink($approved_post_id) : null,
+                ), 201);
 	}
 
 	public function list_my_submissions(WP_REST_Request $request) {
@@ -168,19 +212,22 @@ class REST_Submissions {
 			'order' => 'DESC',
 		));
 		$items = array();
-		foreach ($q->posts as $p) {
-			$items[] = array(
-				'id' => $p->ID,
-				'title' => get_the_title($p),
-				'post_type' => get_post_meta($p->ID, '_target_post_type', true),
-				'lat' => get_post_meta($p->ID, '_lat', true),
-				'lng' => get_post_meta($p->ID, '_lng', true),
-				'address' => get_post_meta($p->ID, '_address', true),
-				'status' => get_post_meta($p->ID, '_submission_status', true) ?: 'pending_review',
-			);
-		}
-		return new WP_REST_Response(array('items' => $items), 200);
-	}
+                foreach ($q->posts as $p) {
+                        $approved_post_id = intval(get_post_meta($p->ID, '_approved_post_id', true));
+                        $items[] = array(
+                                'id' => $p->ID,
+                                'title' => get_the_title($p),
+                                'post_type' => get_post_meta($p->ID, '_target_post_type', true),
+                                'lat' => get_post_meta($p->ID, '_lat', true),
+                                'lng' => get_post_meta($p->ID, '_lng', true),
+                                'address' => get_post_meta($p->ID, '_address', true),
+                                'status' => get_post_meta($p->ID, '_submission_status', true) ?: 'pending_review',
+                                'approved_post_id' => $approved_post_id ?: null,
+                                'approved_post_url' => $approved_post_id ? get_permalink($approved_post_id) : null,
+                        );
+                }
+                return new WP_REST_Response(array('items' => $items), 200);
+        }
 
 	public function update_submission(WP_REST_Request $request) {
 		$id = intval($request['id']);
@@ -208,7 +255,13 @@ class REST_Submissions {
 		if ($data['rating'] !== null) update_post_meta($id, '_rating', $data['rating']);
 		update_post_meta($id, '_comment', $data['comment']);
 
-		return new WP_REST_Response(array('id' => $id, 'status' => get_post_meta($id, '_submission_status', true) ?: 'pending_review'), 200);
+                $approved_post_id = intval(get_post_meta($id, '_approved_post_id', true));
+                return new WP_REST_Response(array(
+                        'id' => $id,
+                        'status' => get_post_meta($id, '_submission_status', true) ?: 'pending_review',
+                        'approved_post_id' => $approved_post_id ?: null,
+                        'approved_post_url' => $approved_post_id ? get_permalink($approved_post_id) : null,
+                ), 200);
 	}
 
 	public function trigger_validation(WP_REST_Request $request) {

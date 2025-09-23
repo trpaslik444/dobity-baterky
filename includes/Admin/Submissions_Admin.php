@@ -98,7 +98,7 @@ class Submissions_Admin {
 						</td>
 					</tr>
 					<?php endforeach; else: ?>
-					<tr><td colspan="6">Žádná podání.</td></tr>
+                                        <tr><td colspan="7">Žádná podání.</td></tr>
 					<?php endif; ?>
 				</tbody>
 			</table>
@@ -148,13 +148,28 @@ class Submissions_Admin {
                     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
                     <script>
                         (function(){
-                            const lat = <?php echo is_numeric($lat)?json_encode((float)$lat):'null'; ?>;
-                            const lng = <?php echo is_numeric($lng)?json_encode((float)$lng):'null'; ?>;
+                            const lat = <?php echo is_numeric($lat) ? wp_json_encode((float)$lat) : 'null'; ?>;
+                            const lng = <?php echo is_numeric($lng) ? wp_json_encode((float)$lng) : 'null'; ?>;
+                            const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
                             const map = L.map('db-subm-map');
+                            window.dbSubmMap = map;
+                            window.dbSubmSuggestionMarker = null;
                             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 19 }).addTo(map);
-                            const center = (lat && lng) ? [lat, lng] : [50.08, 14.42];
-                            map.setView(center, (lat && lng) ? 14 : 6);
-                            if (lat && lng) { L.marker([lat, lng]).addTo(map).bindPopup('Podání').openPopup(); }
+                            const center = hasCoords ? [lat, lng] : [50.08, 14.42];
+                            map.setView(center, hasCoords ? 14 : 6);
+                            if (hasCoords) {
+                                window.dbSubmPrimaryMarker = L.marker([lat, lng]).addTo(map).bindPopup('Podání').openPopup();
+                            }
+                            window.dbSubmFocusSuggestion = function(sLat, sLng) {
+                                if (!window.dbSubmMap || !Number.isFinite(sLat) || !Number.isFinite(sLng)) {
+                                    return;
+                                }
+                                if (window.dbSubmSuggestionMarker) {
+                                    window.dbSubmMap.removeLayer(window.dbSubmSuggestionMarker);
+                                }
+                                window.dbSubmMap.setView([sLat, sLng], 15);
+                                window.dbSubmSuggestionMarker = L.marker([sLat, sLng]).addTo(window.dbSubmMap).bindPopup('Návrh ORS').openPopup();
+                            };
                         })();
                     </script>
                     <?php if (is_array($validation) && !empty($validation['suggestions'])): ?>
@@ -166,7 +181,11 @@ class Submissions_Admin {
                                     <div><?php echo esc_html(($s['lat'] ?? '').', '.($s['lng'] ?? '')); ?><?php if (isset($s['confidence'])) echo ' – důvěra: '.esc_html($s['confidence']); ?></div>
                                     <div style="margin-top:6px; display:flex; gap:8px;">
                                         <a class="button" href="<?php echo esc_url($apply_url); ?>">Použít návrh</a>
-                                        <button type="button" class="button" onclick="(function(){ var m = window['db_subm_map']; if (!m) { m = L.map('db-subm-map'); } m.setView([<?php echo esc_js($s['lat']); ?>, <?php echo esc_js($s['lng']); ?>], 15); L.marker([<?php echo esc_js($s['lat']); ?>, <?php echo esc_js($s['lng']); ?>]).addTo(m).bindPopup('Návrh ORS').openPopup(); })()">Vycentrovat</button>
+                                        <?php
+                                        $hasCoords = isset($s['lat'], $s['lng']) && is_numeric($s['lat']) && is_numeric($s['lng']);
+                                        if ($hasCoords): ?>
+                                            <button type="button" class="button" onclick="window.dbSubmFocusSuggestion(<?php echo wp_json_encode((float)$s['lat']); ?>, <?php echo wp_json_encode((float)$s['lng']); ?>);">Vycentrovat</button>
+                                        <?php endif; ?>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
@@ -214,10 +233,14 @@ class Submissions_Admin {
 		$validation = get_post_meta($submission_id, '_validation_result', true);
 		if (is_array($validation) && !empty($validation['suggestions']) && isset($validation['suggestions'][$idx])) {
 			$s = $validation['suggestions'][$idx];
-			if (isset($s['lat']) && isset($s['lng'])) {
-				update_post_meta($submission_id, '_lat', (float)$s['lat']);
-				update_post_meta($submission_id, '_lng', (float)$s['lng']);
-			}
+                        $sLat = $this->normalize_coordinate($s['lat'] ?? null, true);
+                        $sLng = $this->normalize_coordinate($s['lng'] ?? null, false);
+                        if ($sLat !== null) {
+                                update_post_meta($submission_id, '_lat', $sLat);
+                        }
+                        if ($sLng !== null) {
+                                update_post_meta($submission_id, '_lng', $sLng);
+                        }
 			if (!empty($s['label'])) {
 				update_post_meta($submission_id, '_address', sanitize_text_field($s['label']));
 			}
@@ -229,19 +252,20 @@ class Submissions_Admin {
 	private function approve_submission($submission_id) {
 		$post = get_post($submission_id);
 		if (!$post || $post->post_type !== 'user_submission') return;
-		$target_type = get_post_meta($submission_id, '_target_post_type', true);
-		$lat = get_post_meta($submission_id, '_lat', true);
-		$lng = get_post_meta($submission_id, '_lng', true);
+                $target_type = get_post_meta($submission_id, '_target_post_type', true);
+                $lat = $this->normalize_coordinate(get_post_meta($submission_id, '_lat', true), true);
+                $lng = $this->normalize_coordinate(get_post_meta($submission_id, '_lng', true), false);
 		$address = get_post_meta($submission_id, '_address', true);
 		$rating = get_post_meta($submission_id, '_rating', true);
 		$comment = get_post_meta($submission_id, '_comment', true);
 
-		$target_post_id = wp_insert_post(array(
-			'post_type' => $target_type,
-			'post_title' => $post->post_title ?: __('Nový bod', 'dobity-baterky'),
-			'post_content' => $post->post_content ?: '',
-			'post_status' => 'publish',
-		));
+                $target_post_id = wp_insert_post(array(
+                        'post_type' => $target_type,
+                        'post_title' => $post->post_title ?: __('Nový bod', 'dobity-baterky'),
+                        'post_content' => $post->post_content ?: '',
+                        'post_status' => 'publish',
+                        'post_author' => $post->post_author ?: get_current_user_id(),
+                ));
 		if (is_wp_error($target_post_id) || !$target_post_id) return;
 
 		// Mapování meta klíčů dle typu CPT
@@ -253,9 +277,17 @@ class Submissions_Admin {
 		$keys = isset($meta_map[$target_type]) ? $meta_map[$target_type] : $meta_map['charging_location'];
 
 		// Základní meta (adresa/lat/lng)
-		if ($address !== '') update_post_meta($target_post_id, $keys['address'], sanitize_text_field($address));
-		if ($lat !== '') update_post_meta($target_post_id, $keys['lat'], (float)$lat);
-		if ($lng !== '') update_post_meta($target_post_id, $keys['lng'], (float)$lng);
+                if ($address !== '') {
+                        update_post_meta($target_post_id, $keys['address'], sanitize_text_field($address));
+                }
+                if ($lat !== null) {
+                        update_post_meta($target_post_id, $keys['lat'], $lat);
+                        update_post_meta($submission_id, '_lat', $lat);
+                }
+                if ($lng !== null) {
+                        update_post_meta($target_post_id, $keys['lng'], $lng);
+                        update_post_meta($submission_id, '_lng', $lng);
+                }
 
 		// Vytvořit komentář s ratingem, pokud je hodnocení
 		if ($rating !== '') {
@@ -270,8 +302,42 @@ class Submissions_Admin {
 			}
 		}
 
-		update_post_meta($submission_id, '_submission_status', 'approved');
-		update_post_meta($submission_id, '_approved_post_id', $target_post_id);
-	}
+                update_post_meta($submission_id, '_submission_status', 'approved');
+                update_post_meta($submission_id, '_approved_post_id', $target_post_id);
+        }
+
+        private function normalize_coordinate($value, bool $is_lat): ?float {
+                if (is_array($value)) {
+                        $value = reset($value);
+                }
+
+                $value = trim((string)$value);
+
+                if ($value === '') {
+                        return null;
+                }
+
+                $value = str_replace([' ', ','], ['', '.'], $value);
+
+                if (!is_numeric($value)) {
+                        return null;
+                }
+
+                $float = (float)$value;
+
+                if (!is_finite($float)) {
+                        return null;
+                }
+
+                if ($is_lat && ($float < -90 || $float > 90)) {
+                        return null;
+                }
+
+                if (!$is_lat && ($float < -180 || $float > 180)) {
+                        return null;
+                }
+
+                return $float;
+        }
 }
 
