@@ -23,7 +23,7 @@ class Nearby_Queue_Admin {
         $this->queue_manager = new Nearby_Queue_Manager();
         $this->processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
         $this->batch_processor = new Nearby_Batch_Processor();
-        $this->auto_processor = new Nearby_Auto_Processor();
+        $this->auto_processor = Nearby_Auto_Processor::get_instance();
         $this->quota_manager = new API_Quota_Manager();
         
         add_action('admin_menu', array($this, 'add_admin_menu'));
@@ -36,9 +36,11 @@ class Nearby_Queue_Admin {
         add_action('wp_ajax_db_move_to_front', array($this, 'ajax_move_to_front'));
         add_action('wp_ajax_db_toggle_auto_processing', array($this, 'ajax_toggle_auto_processing'));
         add_action('wp_ajax_db_trigger_auto_processing', array($this, 'ajax_trigger_auto_processing'));
+        add_action('wp_ajax_db_trigger_manual_batch', array($this, 'ajax_trigger_manual_batch'));
         add_action('wp_ajax_db_test_api_call', array($this, 'ajax_test_api_call'));
         add_action('wp_ajax_db_test_token_bucket', array($this, 'ajax_test_token_bucket'));
         add_action('wp_ajax_db_test_ors_headers', array($this, 'ajax_test_ors_headers'));
+        add_action('wp_ajax_db_clear_queue', array($this, 'ajax_clear_queue'));
         
         // Inicializovat hooky pro automatické zařazování do fronty
         $this->queue_manager->init_hooks();
@@ -71,6 +73,21 @@ class Nearby_Queue_Admin {
             "db-isochrones-settings",
             array( $this, "render_isochrones_settings_page" )
         );
+        
+        // Načíst JavaScript pro admin stránky
+        add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
+    }
+    
+    public function enqueue_admin_scripts($hook) {
+        // Načíst pouze na našich stránkách
+        if (strpos($hook, 'db-nearby') === false && strpos($hook, 'db-isochrones') === false) {
+            return;
+        }
+        
+        // Načíst jQuery pokud není načteno
+        wp_enqueue_script('jquery');
+        
+        // Necháme definici db_ajax pro pozdější zpracování v HTML
     }
     
     public function render_isochrones_settings_page() {
@@ -79,12 +96,16 @@ class Nearby_Queue_Admin {
             $isochrones_enabled = isset($_POST['isochrones_enabled']) ? 1 : 0;
             $walking_speed = floatval($_POST['walking_speed']);
             $display_times = array_map('intval', $_POST['display_times']);
+            $rendering_mode = sanitize_text_field($_POST['rendering_mode']);
+            $zindex_layering = isset($_POST['zindex_layering']) ? 1 : 0;
             
             // Uložit nastavení
             update_option('db_isochrones_settings', [
                 'enabled' => $isochrones_enabled,
                 'walking_speed_kmh' => $walking_speed,
-                'display_times_min' => $display_times
+                'display_times_min' => $display_times,
+                'rendering_mode' => $rendering_mode,
+                'zindex_layering' => $zindex_layering
             ]);
             
             echo '<div class="notice notice-success"><p>Nastavení isochrones uloženo!</p></div>';
@@ -94,7 +115,9 @@ class Nearby_Queue_Admin {
         $settings = get_option('db_isochrones_settings', [
             'enabled' => 1,
             'walking_speed_kmh' => 4.5,
-            'display_times_min' => [10, 20, 30]
+            'display_times_min' => [10, 20, 30],
+            'rendering_mode' => 'full_circles',
+            'zindex_layering' => 0
         ]);
         ?>
         <div class="wrap">
@@ -161,6 +184,35 @@ class Nearby_Queue_Admin {
                             <p class="description">Časy, které se zobrazí v legendě isochrones (např. ~10 min, ~20 min, ~30 min).</p>
                         </td>
                     </tr>
+                    
+                    <tr>
+                        <th scope="row">Režim vykreslování</th>
+                        <td>
+                            <label>
+                                <input type="radio" name="rendering_mode" value="full_circles" 
+                                       <?php checked($settings['rendering_mode'], 'full_circles'); ?>>
+                                Plné kruhy (původní) - překrývající se oblasti mění barvu
+                            </label><br>
+                            <label>
+                                <input type="radio" name="rendering_mode" value="rings_only" 
+                                       <?php checked($settings['rendering_mode'], 'rings_only'); ?>>
+                                Pouze prstence - vykreslování pouze od hranice k hranici
+                            </label>
+                            <p class="description">Režim vykreslování ovlivňuje, jak se zobrazují překrývající se oblasti isochron.</p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">Vrstvení (z-index)</th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="zindex_layering" value="1" 
+                                       <?php checked($settings['zindex_layering'], 1); ?>>
+                                Největší okruh nejníže, nejmenší nahoře
+                            </label>
+                            <p class="description">Když je zapnuto, největší okruh bude v nejnižší vrstvě, prostřední uprostřed a nejmenší nahoře.</p>
+                        </td>
+                    </tr>
                 </table>
                 
                 <p class="submit">
@@ -188,8 +240,14 @@ class Nearby_Queue_Admin {
         $stats = $this->queue_manager->get_stats();
         $auto_status = $this->auto_processor->get_auto_status();
         $quota_stats = $this->quota_manager->get_usage_stats();
+        $recommended_limit = $this->quota_manager->get_max_batch_limit();
         ?>
         <div class="wrap">
+            <!-- Cache busting meta tag -->
+            <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+            <meta http-equiv="Pragma" content="no-cache" />
+            <meta http-equiv="Expires" content="0" />
+            
             <h1>Nearby Queue Management</h1>
             <nav class="nav-tab-wrapper" style="margin-top: 10px;">
                 <a href="<?php echo esc_url( admin_url('tools.php?page=db-icon-admin') ); ?>" class="nav-tab">
@@ -207,12 +265,51 @@ class Nearby_Queue_Admin {
             </nav>
             <p>Správa fronty pro batch zpracování nearby bodů.</p>
             
+            
             <div class="notice notice-info" style="margin: 20px 0; padding: 15px; background: #e7f3ff; border-left: 4px solid #0073aa;">
                 <h3 style="margin: 0 0 10px 0; color: #0073aa;">ℹ️ Jak systém funguje</h3>
                 <p style="margin: 0; color: #0073aa;">
                     <strong>Proces 1 (zdarma):</strong> Body se automaticky přidávají do fronty při uložení/změně.<br>
                     <strong>Proces 2 (stojí peníze):</strong> API zpracování fronty se spouští pouze na povolení admina.
                 </p>
+            </div>
+            
+            <!-- DEBUG INFO -->
+            <div style="background: #f0f0f0; padding: 10px; margin: 10px 0; border: 1px solid #ccc;">
+                <h3>🔍 DEBUG INFORMACE:</h3>
+                <p><strong>AJAX URL:</strong> <?php echo admin_url('admin-ajax.php'); ?></p>
+                <p><strong>Nonce:</strong> <?php echo wp_create_nonce('db_nearby_batch'); ?></p>
+                <p><strong>User can manage options:</strong> <?php echo current_user_can('manage_options') ? 'YES' : 'NO'; ?></p>
+                <p><strong>Current user:</strong> <?php echo wp_get_current_user()->user_login; ?></p>
+                <p><strong>Charging locations count:</strong> <?php 
+                    global $wpdb;
+                    $count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'charging_location' AND post_status = 'publish'");
+                    echo $count;
+                ?></p>
+                <p><strong>POIs count:</strong> <?php 
+                    $count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'poi' AND post_status = 'publish'");
+                    echo $count;
+                ?></p>
+                <p><strong>RV spots count:</strong> <?php 
+                    $count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'rv_spot' AND post_status = 'publish'");
+                    echo $count;
+                ?></p>
+                <p><strong>Queue table exists:</strong> <?php 
+                    global $wpdb;
+                    $table_name = $wpdb->prefix . 'nearby_queue';
+                    $exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") == $table_name;
+                    echo $exists ? 'YES' : 'NO';
+                ?></p>
+                <p><strong>Auto enabled:</strong> <?php echo get_option('db_nearby_auto_enabled', false) ? 'YES' : 'NO'; ?></p>
+                <p><strong>Next scheduled run:</strong> <?php 
+                    $next_run = wp_next_scheduled('db_nearby_auto_process');
+                    if ($next_run) {
+                        $local_time = get_date_from_gmt(date('Y-m-d H:i:s', $next_run), 'Y-m-d H:i:s');
+                        echo $local_time . ' (místní čas)';
+                    } else {
+                        echo 'NE';
+                    }
+                ?></p>
             </div>
             
             <?php if (!$auto_status['auto_enabled']): ?>
@@ -229,23 +326,23 @@ class Nearby_Queue_Admin {
             <div class="db-queue-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0;">
                 <div class="db-stat-card" style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #495057;">Celkem</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #007cba;"><?php echo $stats->total; ?></div>
+                    <div id="db-stat-total" style="font-size: 2em; font-weight: bold; color: #007cba;"><?php echo (int) $stats->total; ?></div>
                 </div>
                 <div class="db-stat-card" style="background: #fff3cd; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #856404;">Čekající</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #ffc107;"><?php echo $stats->pending; ?></div>
+                    <div id="db-stat-pending" style="font-size: 2em; font-weight: bold; color: #ffc107;"><?php echo (int) $stats->pending; ?></div>
                 </div>
                 <div class="db-stat-card" style="background: #d1ecf1; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #0c5460;">Zpracovává se</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #17a2b8;"><?php echo $stats->processing; ?></div>
+                    <div id="db-stat-processing" style="font-size: 2em; font-weight: bold; color: #17a2b8;"><?php echo (int) $stats->processing; ?></div>
                 </div>
                 <div class="db-stat-card" style="background: #d4edda; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #155724;">Dokončené</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #28a745;"><?php echo $stats->completed; ?></div>
+                    <div id="db-stat-completed" style="font-size: 2em; font-weight: bold; color: #28a745;"><?php echo (int) $stats->completed; ?></div>
                 </div>
                 <div class="db-stat-card" style="background: #f8d7da; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #721c24;">Chyby</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #dc3545;"><?php echo $stats->failed; ?></div>
+                    <div id="db-stat-failed" style="font-size: 2em; font-weight: bold; color: #dc3545;"><?php echo (int) $stats->failed; ?></div>
                 </div>
             </div>
             
@@ -317,17 +414,15 @@ class Nearby_Queue_Admin {
                 <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
                     <div style="background: white; padding: 15px; border-radius: 6px; flex: 1; min-width: 200px;">
                         <h4 style="margin: 0 0 8px 0;">Stav</h4>
-                        <div style="font-size: 1.1em; font-weight: bold; color: <?php echo $auto_status['auto_enabled'] ? '#28a745' : '#dc3545'; ?>">
+                        <div id="db-auto-status-label" style="font-size: 1.1em; font-weight: bold; color: <?php echo $auto_status['auto_enabled'] ? '#28a745' : '#dc3545'; ?>">
                             <?php echo $auto_status['auto_enabled'] ? '✓ Zapnuto' : '✗ Vypnuto'; ?>
                         </div>
-                        <?php if ($auto_status['next_run']): ?>
-                        <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
-                            Další běh: <?php echo esc_html($auto_status['next_run']); ?>
+                        <div id="db-auto-status-next" style="font-size: 0.9em; color: #666; margin-top: 5px;">
+                            <?php echo $auto_status['next_run'] ? 'Další běh: ' . esc_html($auto_status['next_run']) : 'Další běh: —'; ?>
                         </div>
-                        <?php endif; ?>
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button type="button" class="button button-primary" id="db-toggle-auto">
+                        <button type="button" class="button button-primary" id="db-toggle-auto" data-enabled="<?php echo $auto_status['auto_enabled'] ? '1' : '0'; ?>">
                             <?php echo $auto_status['auto_enabled'] ? 'Vypnout automatické zpracování' : 'Zapnout automatické zpracování'; ?>
                         </button>
                         <button type="button" class="button button-secondary" id="db-trigger-auto">
@@ -337,26 +432,41 @@ class Nearby_Queue_Admin {
                 </div>
             </div>
 
-            <!-- Akce -->
+            <!-- Hlavní akce -->
             <div class="db-queue-actions" style="margin: 20px 0;">
-                <h2>Ruční akce</h2>
-                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <h2>Hlavní akce</h2>
+                <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
                     <button type="button" class="button button-primary" id="db-process-batch">
-                        Zpracovat dávku (50 bodů)
-                    </button>
-                    <button type="button" class="button button-secondary" id="db-process-all">
-                        Zpracovat všechny čekající
+                        Zpracovat dávku (<?php echo (int)$recommended_limit; ?> bodů)
                     </button>
                     <button type="button" class="button button-secondary" id="db-enqueue-all">
                         Přidat všechny body do fronty
                     </button>
-                    <button type="button" class="button button-secondary" id="db-reset-failed">
-                        Resetovat chybné položky
-                    </button>
-                    <button type="button" class="button button-secondary" id="db-cleanup-old">
-                        Vyčistit staré položky
+                    <button type="button" class="button button-secondary" id="db-test-api-call">
+                        Test API (1 bod)
                     </button>
                 </div>
+            </div>
+            
+            <!-- Pokročilé akce (skryté) -->
+            <div class="db-advanced-actions" style="margin: 20px 0;">
+                <details>
+                    <summary style="cursor: pointer; font-weight: bold; color: #666;">Pokročilé akce</summary>
+                    <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                        <button type="button" class="button button-secondary" id="db-process-all">
+                            Zpracovat všechny čekající
+                        </button>
+                        <button type="button" class="button button-secondary" id="db-reset-failed">
+                            Resetovat chybné položky
+                        </button>
+                        <button type="button" class="button button-secondary" id="db-cleanup-old">
+                            Vyčistit staré položky
+                        </button>
+                        <button type="button" class="button button-secondary" id="db-clear-queue" onclick="if(confirm('Opravdu chcete vyčistit celou frontu?')) { clearQueue(); }">
+                            🗑️ Vyčistit frontu
+                        </button>
+                    </div>
+                </details>
             </div>
             
             <!-- Podrobnosti fronty -->
@@ -366,21 +476,10 @@ class Nearby_Queue_Admin {
                     <button type="button" class="button button-secondary" id="db-refresh-details">
                         Obnovit
                     </button>
-                    <button type="button" class="button button-primary" id="db-test-api-call">
-                        Test API (1 bod)
-                    </button>
-                    <button type="button" class="button button-secondary" id="db-test-token-bucket">
-                        Test Token Bucket
-                    </button>
-                    <button type="button" class="button button-secondary" id="db-test-ors-headers">
-                        Test ORS Headers
-                    </button>
                     <select id="db-details-limit" style="padding: 5px;">
                         <option value="20">20 položek</option>
                         <option value="50" selected>50 položek</option>
                         <option value="100">100 položek</option>
-                        <option value="200">200 položek</option>
-                        <option value="500">500 položek</option>
                     </select>
                     <div style="display: flex; gap: 5px; align-items: center;">
                         <button type="button" class="button button-small" id="db-prev-page" disabled>
@@ -440,6 +539,15 @@ class Nearby_Queue_Admin {
         </div>
         
         <script>
+        // Definovat proměnné přímo v JavaScript (v2.4 - <?php echo time(); ?> - opraveno manuální zpracování dávky)
+        var DB_AJAX_URL = '<?php echo admin_url('admin-ajax.php'); ?>';
+        var DB_NONCE = '<?php echo wp_create_nonce('db_nearby_batch'); ?>';
+        var DB_TIMESTAMP = <?php echo time(); ?>;
+        var DB_MAX_BATCH = <?php echo (int)$recommended_limit; ?>;
+        
+        // Debug: zkontrolovat, zda se načítá správný JavaScript
+        console.log('DB Nearby Queue JavaScript v2.4 načten - timestamp:', DB_TIMESTAMP, new Date().toISOString());
+        
         let currentPage = 1;
         
         function loadQueueDetails() {
@@ -447,11 +555,11 @@ class Nearby_Queue_Admin {
             const offset = (currentPage - 1) * limit;
             showLoading('Načítají se podrobnosti fronty...');
             
-            jQuery.post(ajaxurl, {
+            jQuery.post(DB_AJAX_URL, {
                 action: 'db_get_queue_details',
                 limit: limit,
                 offset: offset,
-                nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                nonce: DB_NONCE
             }, function(response) {
                 if (response.success) {
                     renderQueueDetails(response.data.data, response.data.pagination);
@@ -527,94 +635,30 @@ class Nearby_Queue_Admin {
         function testApiCall() {
             showLoading('Testuje se API volání na 1 bod...');
             
-            jQuery.post(ajaxurl, {
+            jQuery.post(DB_AJAX_URL, {
                 action: 'db_test_api_call',
-                nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                nonce: DB_NONCE
             }, function(response) {
                 if (response.success) {
                     const message = response.data?.message || response.data || 'Test proběhl úspěšně';
                     showResult(`Test API úspěšný: ${message}`, 'success');
-                    // Aktualizovat kvóty po testu
-                    setTimeout(() => {
-                        location.reload();
-                    }, 2000);
+                    if (response.data?.stats && typeof updateStats === 'function') {
+                        updateStats(response.data.stats);
+                    }
+                    currentPage = 1;
+                    loadQueueDetails();
                 } else {
                     const message = response.data?.message || response.data || 'Neznámá chyba';
                     showResult(`Test API selhal: ${message}`, 'error');
+                    if (response.data?.stats && typeof updateStats === 'function') {
+                        updateStats(response.data.stats);
+                    }
                 }
             }).fail(function() {
                 showResult('Chyba při testování API', 'error');
             });
         }
         
-        function testTokenBucket() {
-            showLoading('Testuje se token bucket...');
-            
-            jQuery.post(ajaxurl, {
-                action: 'db_test_token_bucket',
-                nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
-            }, function(response) {
-                if (response.success) {
-                    const data = response.data;
-                    if (data && typeof data === 'object') {
-                        let message = `Token Bucket Status:<br>`;
-                        message += `• Povoleno: ${data.allowed ? '✓ Ano' : '✗ Ne'}<br>`;
-                        if (data.allowed) {
-                            message += `• Zbývající tokeny: ${data.tokens_remaining || 'N/A'}<br>`;
-                        } else {
-                            message += `• Čekat: ${data.wait_seconds || 'N/A'}s<br>`;
-                        }
-                        message += `• Bucket data: ${JSON.stringify(data.bucket_data || {})}`;
-                        
-                        showResult(message, data.allowed ? 'success' : 'error');
-                    } else {
-                        showResult('Test Token Bucket: Neplatná data', 'error');
-                    }
-                } else {
-                    const message = response.data?.message || response.data || 'Neznámá chyba';
-                    showResult(`Test Token Bucket selhal: ${message}`, 'error');
-                }
-            }).fail(function() {
-                showResult('Chyba při testování Token Bucket', 'error');
-            });
-        }
-        
-        function testOrsHeaders() {
-            showLoading('Testuje se ORS hlavičky...');
-            
-            jQuery.post(ajaxurl, {
-                action: 'db_test_ors_headers',
-                nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
-            }, function(response) {
-                if (response.success) {
-                    const data = response.data;
-                    if (data && typeof data === 'object') {
-                        let message = `ORS Headers Test:<br>`;
-                        message += `• Status: ${data.status || 'N/A'}<br>`;
-                        message += `• Code: ${data.code || 'N/A'}<br>`;
-                        message += `• Headers: ${JSON.stringify(data.headers || {})}<br>`;
-                        message += `• Kvóty uloženy: ${data.quotas_saved ? '✓ Ano' : '✗ Ne'}<br>`;
-                        if (data.cached_quotas) {
-                            message += `• Cached kvóty: ${JSON.stringify(data.cached_quotas)}`;
-                        }
-                        
-                        showResult(message, data.status === 'ok' ? 'success' : 'error');
-                        
-                        // Aktualizovat stránku po testu
-                        setTimeout(() => {
-                            location.reload();
-                        }, 3000);
-                    } else {
-                        showResult('Test ORS Headers: Neplatná data', 'error');
-                    }
-                } else {
-                    const message = response.data?.message || response.data || 'Neznámá chyba';
-                    showResult(`Test ORS Headers selhal: ${message}`, 'error');
-                }
-            }).fail(function() {
-                showResult('Chyba při testování ORS Headers', 'error');
-            });
-        }
         
         jQuery(document).ready(function($) {
             // Automaticky načíst frontu při načtení stránky
@@ -622,7 +666,14 @@ class Nearby_Queue_Admin {
             
             // Zpracovat dávku
             $('#db-process-batch').on('click', function() {
-                processBatch(50);
+                const batchSize = typeof DB_MAX_BATCH === 'number' && DB_MAX_BATCH > 0 ? DB_MAX_BATCH : 20;
+                console.log(`Tlačítko "Zpracovat dávku" kliknuto - volá se processManualBatch(${batchSize})`);
+                if (typeof processManualBatch === 'function') {
+                    processManualBatch(batchSize);
+                } else {
+                    console.error('processManualBatch funkce neexistuje!');
+                    showResult('Chyba: processManualBatch funkce neexistuje', 'error');
+                }
             });
             
             // Zpracovat všechny
@@ -655,10 +706,10 @@ class Nearby_Queue_Admin {
             
             function processBatch(size) {
                 showLoading('Zpracovává se dávka...');
-                $.post(ajaxurl, {
+                $.post(DB_AJAX_URL, {
                     action: 'db_process_nearby_batch',
                     batch_size: size,
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                    nonce: DB_NONCE
                 }, function(response) {
                     showResult(response.data.message);
                     if (response.data.stats) {
@@ -669,12 +720,34 @@ class Nearby_Queue_Admin {
                 });
             }
             
+            function processManualBatch(size) {
+                const batchSize = (typeof size === 'number' && size > 0) ? size : DB_MAX_BATCH;
+                showLoading('Zpracovává se dávka... (akce: db_trigger_manual_batch)');
+                console.log('processManualBatch volána s akcí: db_trigger_manual_batch');
+                $.post(DB_AJAX_URL, {
+                    action: 'db_trigger_manual_batch',
+                    batch_size: batchSize,
+                    nonce: DB_NONCE
+                }, function(response) {
+                    console.log('processManualBatch response:', response);
+                    showResult(response.data.message);
+                    if (response.data.stats) {
+                        updateStats(response.data.stats);
+                    }
+                    currentPage = 1;
+                    loadQueueDetails();
+                }).fail(function(xhr, status, error) {
+                    console.error('processManualBatch error:', xhr, status, error);
+                    showResult('Chyba při zpracování dávky: ' + error, 'error');
+                });
+            }
+            
             function processAll() {
                 showLoading('Zpracovávají se všechny položky...');
-                $.post(ajaxurl, {
+                $.post(DB_AJAX_URL, {
                     action: 'db_process_nearby_batch',
                     batch_size: 'all',
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                    nonce: DB_NONCE
                 }, function(response) {
                     showResult(response.data.message);
                     if (response.data.stats) {
@@ -687,24 +760,26 @@ class Nearby_Queue_Admin {
             
             function enqueueAll() {
                 showLoading('Přidávají se všechny body do fronty...');
-                $.post(ajaxurl, {
+                $.post(DB_AJAX_URL, {
                     action: 'db_enqueue_all_points',
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                    nonce: DB_NONCE
                 }, function(response) {
                     showResult(response.data.message);
                     if (response.data.stats) {
                         updateStats(response.data.stats);
                     }
-                }).fail(function() {
-                    showResult('Chyba při přidávání do fronty', 'error');
+                    currentPage = 1;
+                    loadQueueDetails();
+                }).fail(function(xhr, status, error) {
+                    showResult('Chyba při přidávání do fronty: ' + error, 'error');
                 });
             }
             
             function resetFailed() {
                 showLoading('Resetují se chybné položky...');
-                $.post(ajaxurl, {
+                $.post(DB_AJAX_URL, {
                     action: 'db_reset_failed_items',
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                    nonce: DB_NONCE
                 }, function(response) {
                     showResult(response.data.message);
                     if (response.data.stats) {
@@ -717,9 +792,9 @@ class Nearby_Queue_Admin {
             
             function cleanupOld() {
                 showLoading('Čistí se staré položky...');
-                $.post(ajaxurl, {
+                $.post(DB_AJAX_URL, {
                     action: 'db_cleanup_old_items',
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                    nonce: DB_NONCE
                 }, function(response) {
                     showResult(response.data.message);
                     if (response.data.stats) {
@@ -742,8 +817,52 @@ class Nearby_Queue_Admin {
             }
             
             function updateStats(stats) {
-                // Aktualizovat statistiky na stránce
-                location.reload();
+                if (!stats || typeof stats !== 'object') {
+                    return;
+                }
+
+                const map = {
+                    total: '#db-stat-total',
+                    pending: '#db-stat-pending',
+                    processing: '#db-stat-processing',
+                    completed: '#db-stat-completed',
+                    failed: '#db-stat-failed'
+                };
+
+                Object.entries(map).forEach(function([key, selector]) {
+                    if (Object.prototype.hasOwnProperty.call(stats, key)) {
+                        let value = stats[key];
+                        if (typeof value !== 'number') {
+                            const parsed = parseInt(value, 10);
+                            value = Number.isNaN(parsed) ? value : parsed;
+                        }
+                        jQuery(selector).text(value);
+                    }
+                });
+            }
+
+            function updateAutoStatus(status, buttonLabel) {
+                if (!status) { return; }
+
+                const enabled = !!status.auto_enabled;
+                const labelEl = jQuery('#db-auto-status-label');
+                const nextEl = jQuery('#db-auto-status-next');
+                const btn = jQuery('#db-toggle-auto');
+
+                if (labelEl.length) {
+                    labelEl.text(enabled ? '✓ Zapnuto' : '✗ Vypnuto');
+                    labelEl.css('color', enabled ? '#28a745' : '#dc3545');
+                }
+
+                if (nextEl.length) {
+                    const nextText = status.next_run ? 'Další běh: ' + status.next_run : 'Další běh: —';
+                    nextEl.text(nextText);
+                }
+
+                if (btn.length) {
+                    btn.text(buttonLabel || (enabled ? 'Vypnout automatické zpracování' : 'Zapnout automatické zpracování'));
+                    btn.data('enabled', enabled ? 1 : 0);
+                }
             }
             
             // Nové funkce pro podrobnosti fronty
@@ -791,29 +910,32 @@ class Nearby_Queue_Admin {
             });
             
             function toggleAutoProcessing() {
-                const isEnabled = jQuery('#db-toggle-auto').text().includes('Vypnout');
-                const action = isEnabled ? 'vypnout' : 'zapnout';
-                
-                if (!confirm(`Opravdu chcete ${action} automatické zpracování fronty?`)) {
+                const btn = jQuery('#db-toggle-auto');
+                const isEnabled = btn.data('enabled') === 1 || btn.data('enabled') === '1';
+                const actionLabel = isEnabled ? 'vypnout' : 'zapnout';
+
+                if (!confirm(`Opravdu chcete ${actionLabel} automatické zpracování fronty?`)) {
                     return;
                 }
-                
+
                 showLoading(`${isEnabled ? 'Vypíná' : 'Zapíná'} se automatické zpracování...`);
-                
-                $.post(ajaxurl, {
-                    action: 'db_trigger_auto_processing',
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+
+                $.post(DB_AJAX_URL, {
+                    action: 'db_toggle_auto_processing',
+                    nonce: DB_NONCE
                 }, function(response) {
                     if (response.success) {
-                        const action = jQuery('#db-toggle-auto').text().includes('Vypnout') ? 'vypnuto' : 'zapnuto';
-                        showResult(`Automatické zpracování ${action}`);
-                        // Načíst aktualizované podrobnosti fronty
-                        setTimeout(() => {
-                            loadQueueDetails();
-                            location.reload();
-                        }, 2000);
+                        const data = response.data || {};
+                        showResult(data.message || 'Automatické zpracování bylo přepnuto');
+                        if (data.auto_status) {
+                            updateAutoStatus(data.auto_status, data.button_label || null);
+                        }
+                        if (data.stats) {
+                            updateStats(data.stats);
+                        }
                     } else {
-                        showResult('Chyba při přepínání automatického zpracování', 'error');
+                        const msg = response.data?.message || 'Chyba při přepínání automatického zpracování';
+                        showResult(msg, 'error');
                     }
                 }).fail(function() {
                     showResult('Chyba při přepínání automatického zpracování', 'error');
@@ -823,12 +945,15 @@ class Nearby_Queue_Admin {
             function triggerAutoProcessing() {
                 showLoading('Zpracovává se jedna dávka ručně...');
                 
-                $.post(ajaxurl, {
+                $.post(DB_AJAX_URL, {
                     action: 'db_trigger_auto_processing',
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                    nonce: DB_NONCE
                 }, function(response) {
                     if (response.success) {
                         showResult('Jedna dávka zpracována ručně: ' + response.data.message);
+                        if (response.data.stats) {
+                            updateStats(response.data.stats);
+                        }
                         // Načíst aktualizované podrobnosti fronty
                         setTimeout(() => {
                             loadQueueDetails();
@@ -844,10 +969,10 @@ class Nearby_Queue_Admin {
             // Globální funkce pro akce v tabulce
             window.moveToFront = function(id) {
                 if (confirm('Opravdu chcete přesunout tuto položku na začátek fronty?')) {
-                    $.post(ajaxurl, {
+                    $.post(DB_AJAX_URL, {
                         action: 'db_move_to_front',
                         id: id,
-                        nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
+                        nonce: DB_NONCE
                     }, function(response) {
                         if (response.success) {
                             showResult(response.data.message);
@@ -863,6 +988,26 @@ class Nearby_Queue_Admin {
             
             // Načíst podrobnosti při načtení stránky
             loadQueueDetails();
+            
+            // Funkce pro vyčištění fronty
+            window.clearQueue = function() {
+                $.post(DB_AJAX_URL, {
+                    action: 'db_clear_queue',
+                    nonce: DB_NONCE
+                }, function(response) {
+                    if (response.success) {
+                        showResult('Fronta byla vyčištěna', 'success');
+                        if (response.data && response.data.stats) {
+                            updateStats(response.data.stats);
+                        }
+                        loadQueueDetails();
+                    } else {
+                        showResult('Chyba při čištění fronty: ' + response.data, 'error');
+                    }
+                }).fail(function() {
+                    showResult('Chyba při komunikaci se serverem', 'error');
+                });
+            };
         });
         </script>
         <?php
@@ -875,7 +1020,7 @@ class Nearby_Queue_Admin {
             wp_die('Nedostatečná oprávnění');
         }
         
-        $batch_size = $_POST['batch_size'] ?? 50;
+        $batch_size = isset($_POST['batch_size']) ? $_POST['batch_size'] : 50;
         
         if ($batch_size === 'all') {
             $result = $this->batch_processor->process_all_pending();
@@ -946,8 +1091,8 @@ class Nearby_Queue_Admin {
             wp_die('Nedostatečná oprávnění');
         }
         
-        $limit = (int)($_POST['limit'] ?? 50);
-        $offset = (int)($_POST['offset'] ?? 0);
+        $limit = (int)(isset($_POST['limit']) ? $_POST['limit'] : 50);
+        $offset = (int)(isset($_POST['offset']) ? $_POST['offset'] : 0);
         
         $items = $this->queue_manager->get_queue_details($limit, $offset);
         $pagination = $this->queue_manager->get_queue_pagination($limit, $offset);
@@ -965,37 +1110,153 @@ class Nearby_Queue_Admin {
             wp_die('Nedostatečná oprávnění');
         }
         
-        // Najít první pending položku ve frontě
-        $test_item = $this->queue_manager->get_next_pending_item();
-        
-        if (!$test_item) {
-            wp_send_json_error(array('message' => 'Žádná položka k testování ve frontě'));
-        }
-        
-        // Načíst recompute job pro test
-        $recompute_job = new \DB\Jobs\Nearby_Recompute_Job();
-        
-        // Log testu
-        error_log("[DB Nearby Test] Testování API volání pro položku ID: {$test_item->id}");
-        
         try {
-            // Zkusit zpracovat 1 položku
-            $result = $recompute_job->process_single_item($test_item->id);
-            
-            if ($result['success']) {
-                $message = "Úspěšně zpracováno: {$result['processed']} kandidátů, použito {$result['api_calls']} API volání";
-                error_log("[DB Nearby Test] Test úspěšný: {$message}");
-                wp_send_json_success(array('message' => $message, 'result' => $result));
-            } else {
-                $message = "Chyba při zpracování: " . $result['error'];
-                error_log("[DB Nearby Test] Test selhal: {$message}");
-                wp_send_json_error(array('message' => $message));
+            // Najít první čekající položku
+            $queue_items = $this->queue_manager->get_pending_items(1);
+
+            if (empty($queue_items)) {
+                wp_send_json_success(array(
+                    'message' => 'Žádné položky k testování ve frontě',
+                    'stats' => $this->queue_manager->get_stats()
+                ));
+                return;
             }
+
+            $item = $queue_items[0];
+            
+            // Pro test API použij speciální metodu bez spotřebování tokenů
+            $result = $this->test_single_item_api($item);
+
+            if (!empty($result['success'])) {
+                $this->queue_manager->mark_as_processed($item->id, $result);
+                $stats = $this->queue_manager->get_stats();
+                $processed_snapshot = $this->queue_manager->get_last_processed_record();
+                if (!$processed_snapshot) {
+                    $processed_snapshot = $this->processed_manager->get_processed_by_origin($item->origin_id);
+                }
+                $message = 'Úspěšně zpracován 1 bod';
+                if (!empty($result['message'])) {
+                    $message .= ' – ' . $result['message'];
+                }
+                wp_send_json_success(array(
+                    'message' => $message,
+                    'result' => $result,
+                    'stats' => $stats,
+                    'processed_snapshot' => $processed_snapshot,
+                    'origin_id' => (int)$item->origin_id
+                ));
+            }
+
+            // Pokud nic nezpracoval, vrať detailní informaci
+            $message_parts = array();
+            if (!empty($result['message'])) {
+                $message_parts[] = $result['message'];
+            }
+            if (!empty($result['error'])) {
+                $message_parts[] = $result['error'];
+            }
+            if (!empty($result['last_error'])) {
+                $message_parts[] = 'Poslední chyba: ' . $result['last_error'];
+            }
+            if (!empty($result['next_run'])) {
+                $message_parts[] = 'Další pokus: ' . date_i18n('Y-m-d H:i', $result['next_run']);
+            }
+            $message = !empty($message_parts) ? implode(' | ', $message_parts) : 'Žádné položky k testování nebo nedostupná kvóta';
+            if (!empty($result['error'])) {
+                $this->queue_manager->mark_failed($item->id, $result['error']);
+            }
+
+            $stats = $this->queue_manager->get_stats();
+            wp_send_json_error(array(
+                'message' => $message,
+                'result' => $result,
+                'stats' => $stats,
+                'processed_snapshot' => null,
+                'origin_id' => (int)$item->origin_id
+            ));
         } catch (Exception $e) {
             $message = "Výjimka při testování: " . $e->getMessage();
             error_log("[DB Nearby Test] Výjimka: {$message}");
             wp_send_json_error(array('message' => $message));
         }
+    }
+    
+    /**
+     * Test API volání na jednu položku bez spotřebování tokenů
+     */
+    private function test_single_item_api($item) {
+        // Získat souřadnice origin bodu
+        $post = get_post($item->origin_id);
+        if (!$post) {
+            return array('success' => false, 'error' => 'Origin bod nenalezen');
+        }
+        
+        $lat = $lng = null;
+        if ($post->post_type === 'charging_location') {
+            $lat = (float)get_post_meta($item->origin_id, '_db_lat', true);
+            $lng = (float)get_post_meta($item->origin_id, '_db_lng', true);
+        } elseif ($post->post_type === 'poi') {
+            $lat = (float)get_post_meta($item->origin_id, '_poi_lat', true);
+            $lng = (float)get_post_meta($item->origin_id, '_poi_lng', true);
+        } elseif ($post->post_type === 'rv_spot') {
+            $lat = (float)get_post_meta($item->origin_id, '_rv_lat', true);
+            $lng = (float)get_post_meta($item->origin_id, '_rv_lng', true);
+        }
+        
+        if (!$lat || !$lng) {
+            return array('success' => false, 'error' => 'Neplatné souřadnice');
+        }
+        
+        // Zkontrolovat, zda už máme nearby data
+        $meta_key = ($item->origin_type === 'poi') ? '_db_nearby_cache_poi_foot' : '_db_nearby_cache_charger_foot';
+        $existing_cache = get_post_meta($item->origin_id, $meta_key, true);
+        if ($existing_cache) {
+            $cache_payload = is_string($existing_cache) ? json_decode($existing_cache, true) : $existing_cache;
+            if (is_array($cache_payload)) {
+                $is_valid_cache = !empty($cache_payload['items'])
+                    && empty($cache_payload['partial'])
+                    && empty($cache_payload['error']);
+                if ($is_valid_cache) {
+                    $items_count = count($cache_payload['items']);
+                    return array(
+                        'success' => true,
+                        'message' => 'Data už existují (' . $items_count . ' položek)',
+                        'processed' => 0,
+                        'items_count' => $items_count,
+                        'candidates_count' => $items_count,
+                        'api_calls' => 0,
+                        'processing_time' => 0,
+                        'api_provider' => 'cache.hit'
+                    );
+                }
+            }
+        }
+
+        // Zkontrolovat token bucket bez spotřebování
+        $quota_manager = new \DB\Jobs\API_Quota_Manager();
+        $quota_check = $quota_manager->check_minute_limit('matrix', false);
+        
+        if (!$quota_check['allowed']) {
+            $wait_seconds = isset($quota_check['wait_seconds']) ? (int)$quota_check['wait_seconds'] : 60;
+            return array(
+                'success' => false,
+                'error' => 'Lokální minutový limit. Počkej ' . $wait_seconds . 's',
+                'rate_limited' => true,
+                'retry_after' => $wait_seconds,
+                'candidates_count' => 0,
+                'status' => 'failed'
+            );
+        }
+
+        // Pokud máme kvótu, zkusit skutečné API volání
+        $recompute_job = new \DB\Jobs\Nearby_Recompute_Job();
+        $result = $recompute_job->process_nearby_data(
+            $item->origin_id, 
+            $item->origin_type, 
+            array() // Prázdné kandidáty - necháme recompute job najít je
+        );
+        
+        return $result;
     }
     
     public function ajax_test_token_bucket() {
@@ -1008,8 +1269,8 @@ class Nearby_Queue_Admin {
         try {
             $quota_manager = new \DB\Jobs\API_Quota_Manager();
             
-            // Test token bucket
-            $result = $quota_manager->check_minute_limit();
+            // Test token bucket (bez spotřebování tokenu)
+            $result = $quota_manager->check_minute_limit('matrix', false);
             
             // Získat raw bucket data pro debug
             $bucket_key = 'db_ors_matrix_token_bucket';
@@ -1017,8 +1278,8 @@ class Nearby_Queue_Admin {
             
             $debug_info = array(
                 'allowed' => $result['allowed'],
-                'tokens_remaining' => $result['tokens_remaining'] ?? 0,
-                'wait_seconds' => $result['wait_seconds'] ?? 0,
+                'tokens_remaining' => isset($result['tokens_remaining']) ? $result['tokens_remaining'] : 0,
+                'wait_seconds' => isset($result['wait_seconds']) ? $result['wait_seconds'] : 0,
                 'bucket_data' => $bucket_data,
                 'current_time' => time(),
                 'transient_exists' => $bucket_data !== false
@@ -1045,7 +1306,7 @@ class Nearby_Queue_Admin {
         try {
             // Získat ORS API key
             $cfg = get_option('db_nearby_config', []);
-            $ors_key = trim((string)($cfg['ors_api_key'] ?? ''));
+            $ors_key = trim((string)(isset($cfg['ors_api_key']) ? $cfg['ors_api_key'] : ''));
             
             if (empty($ors_key)) {
                 wp_send_json_error(array('message' => 'ORS API key není nastaven'));
@@ -1114,8 +1375,8 @@ class Nearby_Queue_Admin {
             wp_die('Nedostatečná oprávnění');
         }
         
-        $id = (int)($_POST['id'] ?? 0);
-        $priority = (int)($_POST['priority'] ?? 0);
+        $id = (int)(isset($_POST['id']) ? $_POST['id'] : 0);
+        $priority = (int)(isset($_POST['priority']) ? $_POST['priority'] : 0);
         
         $result = $this->queue_manager->set_priority($id, $priority);
         
@@ -1133,7 +1394,7 @@ class Nearby_Queue_Admin {
             wp_die('Nedostatečná oprávnění');
         }
         
-        $id = (int)($_POST['id'] ?? 0);
+        $id = (int)(isset($_POST['id']) ? $_POST['id'] : 0);
         
         $result = $this->queue_manager->move_to_front($id);
         
@@ -1152,18 +1413,27 @@ class Nearby_Queue_Admin {
         }
         
         $auto_status = $this->auto_processor->get_auto_status();
-        
-        if ($auto_status['auto_enabled']) {
-            $this->auto_processor->stop_auto_processing();
+        $is_enabled = !empty($auto_status['auto_enabled']);
+
+        if ($is_enabled) {
             update_option('db_nearby_auto_enabled', false);
+            $this->auto_processor->stop_auto_processing();
             $message = 'Automatické zpracování vypnuto';
         } else {
-            $this->auto_processor->restart_auto_processing();
             update_option('db_nearby_auto_enabled', true);
+            $this->auto_processor->restart_auto_processing();
             $message = 'Automatické zpracování zapnuto';
         }
-        
-        wp_send_json_success(array('message' => $message));
+
+        $auto_status = $this->auto_processor->get_auto_status();
+        $stats = $this->queue_manager->get_stats();
+
+        wp_send_json_success(array(
+            'message' => $message,
+            'auto_status' => $auto_status,
+            'button_label' => $auto_status['auto_enabled'] ? 'Vypnout automatické zpracování' : 'Zapnout automatické zpracování',
+            'stats' => $stats
+        ));
     }
     
     public function ajax_trigger_auto_processing() {
@@ -1174,16 +1444,41 @@ class Nearby_Queue_Admin {
         }
         
         $result = $this->auto_processor->trigger_auto_processing();
+        $stats = $this->queue_manager->get_stats();
         
-        if ($result) {
+        if ($result && isset($result['processed'])) {
             wp_send_json_success(array(
                 'message' => "Zpracováno: {$result['processed']} položek, chyb: {$result['errors']}",
                 'processed' => $result['processed'],
-                'errors' => $result['errors']
+                'errors' => $result['errors'],
+                'stats' => $stats
             ));
         } else {
-            wp_send_json_success(array('message' => 'Žádné položky k zpracování nebo nedostatečná kvóta'));
+            wp_send_json_success(array(
+                'message' => $result['message'] ?? 'Žádné položky k zpracování nebo nedostatečná kvóta',
+                'stats' => $stats
+            ));
         }
+    }
+    
+    public function ajax_trigger_manual_batch() {
+        check_ajax_referer('db_nearby_batch', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Nedostatečná oprávnění');
+        }
+        
+        $requested = isset($_POST['batch_size']) ? (int)$_POST['batch_size'] : null;
+        $batch_size = $this->quota_manager->get_max_batch_limit($requested);
+        $result = $this->batch_processor->process_batch($batch_size);
+        $stats = $this->queue_manager->get_stats();
+
+        wp_send_json_success(array(
+            'message' => $result['message'],
+            'processed' => $result['processed'],
+            'errors' => $result['errors'],
+            'stats' => $stats
+        ));
     }
     
     /**
@@ -1243,16 +1538,16 @@ class Nearby_Queue_Admin {
                         <label for="origin_type">Typ původu:</label>
                         <select name="origin_type" id="origin_type">
                             <option value="">Všechny</option>
-                            <option value="poi" <?php selected($filters['origin_type'] ?? '', 'poi'); ?>>POI</option>
-                            <option value="charging_location" <?php selected($filters['origin_type'] ?? '', 'charging_location'); ?>>Charging Location</option>
+                            <option value="poi" <?php selected(isset($filters['origin_type']) ? $filters['origin_type'] : '', 'poi'); ?>>POI</option>
+                            <option value="charging_location" <?php selected(isset($filters['origin_type']) ? $filters['origin_type'] : '', 'charging_location'); ?>>Charging Location</option>
                         </select>
                     </div>
                     <div>
                         <label for="api_provider">API Provider:</label>
                         <select name="api_provider" id="api_provider">
                             <option value="">Všechny</option>
-                            <option value="ors" <?php selected($filters['api_provider'] ?? '', 'ors'); ?>>ORS</option>
-                            <option value="osrm" <?php selected($filters['api_provider'] ?? '', 'osrm'); ?>>OSRM</option>
+                            <option value="ors" <?php selected(isset($filters['api_provider']) ? $filters['api_provider'] : '', 'ors'); ?>>ORS</option>
+                            <option value="osrm" <?php selected(isset($filters['api_provider']) ? $filters['api_provider'] : '', 'osrm'); ?>>OSRM</option>
                         </select>
                     </div>
                     <!-- Datové filtry odstraněny -->
@@ -1275,6 +1570,9 @@ class Nearby_Queue_Admin {
                             <th>Kandidáti</th>
 							<th>Čas zpracování</th>
                             <th>API Provider</th>
+                            <th>Iso provider</th>
+                            <th>Iso features</th>
+                            <th>Iso error</th>
                             <th>Velikost cache</th>
                             <th>Datum zpracování</th>
                             <th>Status</th>
@@ -1294,8 +1592,19 @@ class Nearby_Queue_Admin {
                                     <td><?php echo esc_html($item->origin_title); ?></td>
                                     <td><?php echo esc_html($item->origin_type); ?></td>
                                     <td><?php echo esc_html($item->candidates_count); ?></td>
-									<td><?php echo esc_html(((int)$item->processing_time_seconds) * 1000); ?> ms</td>
+                                    <td><?php echo esc_html(((int)$item->processing_time_seconds) * 1000); ?> ms</td>
                                     <td><?php echo esc_html(strtoupper($item->api_provider)); ?></td>
+                                    <td><?php echo esc_html($item->isochrones_provider ?: '-'); ?></td>
+                                    <td><?php echo esc_html($item->isochrones_features !== null ? $item->isochrones_features : '-'); ?></td>
+                                    <td>
+                                        <?php if (!empty($item->isochrones_error)): ?>
+                                            <span style="color:#dc3545; font-weight:600;">
+                                                <?php echo esc_html($item->isochrones_error); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="color:#28a745;">OK</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><?php echo esc_html($item->cache_size_kb); ?> KB</td>
                                     <td><?php echo esc_html(date('d.m.Y H:i', strtotime($item->processing_date))); ?></td>
                                     <td>
@@ -1325,8 +1634,8 @@ class Nearby_Queue_Admin {
                     <?php
                     $base_url = add_query_arg(array(
                         'page' => 'db-nearby-processed',
-                        'origin_type' => $filters['origin_type'] ?? '',
-                        'api_provider' => $filters['api_provider'] ?? ''
+                        'origin_type' => isset($filters['origin_type']) ? $filters['origin_type'] : '',
+                        'api_provider' => isset($filters['api_provider']) ? $filters['api_provider'] : ''
                     ), admin_url('tools.php'));
                     
                     echo paginate_links(array(
@@ -1409,5 +1718,22 @@ class Nearby_Queue_Admin {
         .status-processing { color: #17a2b8; font-weight: bold; }
         </style>
         <?php
+    }
+    
+    public function ajax_clear_queue() {
+        check_ajax_referer('db_nearby_batch', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_die('Nedostatečná oprávnění');
+        }
+        
+        $deleted = $this->queue_manager->clear_queue();
+        $stats = $this->queue_manager->get_stats();
+        
+        wp_send_json_success(array(
+            'message' => "Vyčištěno {$deleted} položek z fronty",
+            'deleted' => (int) $deleted,
+            'stats' => $stats
+        ));
     }
 }

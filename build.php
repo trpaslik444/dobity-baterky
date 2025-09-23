@@ -36,6 +36,7 @@ class PluginBuilder {
             'build/',
             'build.php',
             '*.log',
+            '.git',
             '.git/',
             '.gitignore',
             '*.md',
@@ -53,8 +54,8 @@ class PluginBuilder {
             'uninstall.php',
             'tests/',
             'attachements/',
-            'lib/',
-            '*.json.backup'
+            '*.json.backup',
+            '.DS_Store'
         ];
     }
     
@@ -107,12 +108,59 @@ class PluginBuilder {
             throw new Exception("Nelze vytvořit destinaci: {$dest_dir}");
         }
         
-        $this->copy_directory($this->plugin_dir, $dest_dir);
+        // Použít jednodušší metodu kopírování
+        $this->copy_directory_simple($this->plugin_dir, $dest_dir);
+        
         
         echo "📋 Zkopírovány soubory pluginu\n";
     }
     
+    private function copy_directory_simple($src, $dest) {
+        // Zabránit rekurzivnímu kopírování - pouze pokud je dest uvnitř src (ale ne v build adresáři)
+        if (strpos($dest, $src . '/') === 0 && strpos($dest, '/build/') === false) {
+            return;
+        }
+        
+        $dir = opendir($src);
+        if (!$dir) {
+            return;
+        }
+        
+        $copied_files = 0;
+        while (($file = readdir($dir)) !== false) {
+            if ($file == '.' || $file == '..') {
+                continue;
+            }
+            
+            $src_path = $src . '/' . $file;
+            $dest_path = $dest . '/' . $file;
+            
+            // Zkontrolovat exclude patterns
+            if ($this->should_exclude($file)) {
+                continue;
+            }
+            
+            if (is_dir($src_path)) {
+                if (!is_dir($dest_path)) {
+                    mkdir($dest_path, 0755, true);
+                }
+                $this->copy_directory_simple($src_path, $dest_path);
+            } else {
+                if (copy($src_path, $dest_path)) {
+                    $copied_files++;
+                }
+            }
+        }
+        
+        closedir($dir);
+    }
+    
     private function copy_directory($src, $dest) {
+        // Zabránit rekurzivnímu kopírování do sebe sama
+        if (strpos($dest, $src) === 0) {
+            return;
+        }
+        
         $iterator = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator($src, RecursiveDirectoryIterator::SKIP_DOTS),
             RecursiveIteratorIterator::SELF_FIRST
@@ -128,11 +176,21 @@ class PluginBuilder {
                 continue;
             }
             
+            // Zabránit kopírování do build adresáře (pouze pokud je to build adresář v source)
+            if (strpos($src_path, '/build/') !== false) {
+                continue;
+            }
+            
             if ($item->isDir()) {
                 if (!is_dir($dest_path)) {
                     mkdir($dest_path, 0755, true);
                 }
             } else {
+                // Zkontrolovat, zda cílový adresář existuje
+                $dest_dir = dirname($dest_path);
+                if (!is_dir($dest_dir)) {
+                    mkdir($dest_dir, 0755, true);
+                }
                 copy($src_path, $dest_path);
             }
         }
@@ -200,9 +258,9 @@ class PluginBuilder {
     private function clean_js_file($file) {
         $content = file_get_contents($file);
         
-        // Odstranit console.log statements
-        $content = preg_replace('/console\.log\([^)]*\);/g', '', $content);
-        $content = preg_replace('/console\.debug\([^)]*\);/g', '', $content);
+        // Odstranit console.log statements (bez 'g' modifikátoru v PHP)
+        $content = preg_replace('/console\.log\([^)]*\);/', '', $content);
+        $content = preg_replace('/console\.debug\([^)]*\);/', '', $content);
         
         file_put_contents($file, $content);
     }

@@ -6,6 +6,11 @@ let isochronesCache = null;
 let isochronesLayer = null;
 let currentIsochronesRequestId = 0;
 
+// Globální proměnné pro režim prozkoumávání
+let exploreMode = false;
+let lockedIsochronesFeature = null;
+let floatingCrosshair = null;
+
 /**
  * Upravit isochrones podle frontend nastavení rychlosti chůze
  */
@@ -51,8 +56,25 @@ function renderIsochrones(geojson, ranges, userSettings = null) {
   // Odstranit předchozí vrstvu
   clearIsochrones();
   
+  // Získat nastavení vykreslování
+  const renderingMode = userSettings?.rendering_mode || 'full_circles';
+  const zindexLayering = userSettings?.zindex_layering || false;
+  
+  // Seřadit features podle času pro správné vrstvení
+  const sortedFeatures = geojson.features.slice().sort((a, b) => {
+    const timeA = a.properties.value;
+    const timeB = b.properties.value;
+    return zindexLayering ? timeB - timeA : timeA - timeB; // Největší okruh nejníže pokud je zindexLayering zapnuto
+  });
+  
+  // Vytvořit upravený GeoJSON s seřazenými features
+  const sortedGeojson = {
+    ...geojson,
+    features: sortedFeatures
+  };
+  
   // Vytvořit novou vrstvu
-  isochronesLayer = L.geoJSON(geojson, {
+  isochronesLayer = L.geoJSON(sortedGeojson, {
     style: function(feature) {
       const range = feature.properties.value;
       let color = '#10b981'; // default green
@@ -64,14 +86,28 @@ function renderIsochrones(geojson, ranges, userSettings = null) {
         else color = '#ef4444'; // 30min - červená
       }
       
-      return {
-        fillColor: color,
-        color: color,
-        weight: 2,
-        opacity: 0.8,
-        fillOpacity: 0.25,
-        dashArray: '5, 5'
-      };
+      // Nastavení stylu podle režimu vykreslování
+      if (renderingMode === 'rings_only') {
+        // Pouze prstence - bez vyplnění, pouze obrysy
+        return {
+          fillColor: 'transparent',
+          color: color,
+          weight: 3,
+          opacity: 0.8,
+          fillOpacity: 0,
+          dashArray: '5, 5'
+        };
+      } else {
+        // Plné kruhy (původní režim)
+        return {
+          fillColor: color,
+          color: color,
+          weight: 2,
+          opacity: 0.8,
+          fillOpacity: 0.25,
+          dashArray: '5, 5'
+        };
+      }
     }
   });
   
@@ -86,12 +122,15 @@ function renderIsochrones(geojson, ranges, userSettings = null) {
     // Získat zobrazované časy z user_settings nebo použít defaultní
     const displayTimes = userSettings?.display_times_min || [10, 20, 30];
     
+    // Upravit legendu podle režimu vykreslování
+    const legendSymbol = renderingMode === 'rings_only' ? '○' : '●';
+    
     legend.innerHTML = `
       <div style="background: white; padding: 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-size: 12px;">
         <strong>Dochozí okruhy:</strong><br>
-        <span style="color: #10b981;">●</span> ~${displayTimes[0]} min<br>
-        <span style="color: #f59e0b;">●</span> ~${displayTimes[1]} min<br>
-        <span style="color: #ef4444;">●</span> ~${displayTimes[2]} min
+        <span style="color: #10b981;">${legendSymbol}</span> ~${displayTimes[0]} min<br>
+        <span style="color: #f59e0b;">${legendSymbol}</span> ~${displayTimes[1]} min<br>
+        <span style="color: #ef4444;">${legendSymbol}</span> ~${displayTimes[2]} min
       </div>
     `;
     legend.style.position = 'absolute';
@@ -120,6 +159,11 @@ function renderIsochrones(geojson, ranges, userSettings = null) {
  * Odstraní isochrones z mapy
  */
 function clearIsochrones() {
+  // V režimu prozkoumávání nevyčistit isochrony
+  if (exploreMode) {
+    return;
+  }
+  
   if (isochronesLayer && window.map) {
     window.map.removeLayer(isochronesLayer);
     isochronesLayer = null;
@@ -131,6 +175,123 @@ function clearIsochrones() {
   try { document.body.classList.remove('has-isochrones'); } catch(_) {}
   
   removeIsochronesAttribution();
+}
+
+/**
+ * Aktivuje režim prozkoumávání s uzamčenými isochronami
+ */
+function activateExploreMode(feature) {
+  exploreMode = true;
+  lockedIsochronesFeature = feature;
+  
+  // Vytvořit plovoucí křížek
+  createFloatingCrosshair();
+  
+  // Zobrazit isochrony pro uzamčený bod - počkat až bude funkce dostupná
+  if (lockedIsochronesFeature && typeof loadAndRenderNearby === 'function') {
+    loadAndRenderNearby(lockedIsochronesFeature);
+  } else if (lockedIsochronesFeature) {
+    // Pokud funkce ještě není dostupná, počkat
+    setTimeout(() => {
+      if (typeof loadAndRenderNearby === 'function') {
+        loadAndRenderNearby(lockedIsochronesFeature);
+      }
+    }, 100);
+  }
+  
+  // Přidat CSS třídu pro režim prozkoumávání
+  document.body.classList.add('explore-mode');
+  
+  console.log('Režim prozkoumávání aktivován');
+}
+
+/**
+ * Deaktivuje režim prozkoumávání
+ */
+function deactivateExploreMode() {
+  exploreMode = false;
+  lockedIsochronesFeature = null;
+  
+  // Odstranit plovoucí křížek
+  if (floatingCrosshair) {
+    floatingCrosshair.remove();
+    floatingCrosshair = null;
+  }
+  
+  // Vyčistit isochrony
+  clearIsochrones();
+  
+  // Odstranit CSS třídu
+  document.body.classList.remove('explore-mode');
+  
+  console.log('Režim prozkoumávání deaktivován');
+}
+
+/**
+ * Vytvoří plovoucí křížek pro zrušení režimu prozkoumávání
+ */
+function createFloatingCrosshair() {
+  if (floatingCrosshair) {
+    floatingCrosshair.remove();
+  }
+  
+  floatingCrosshair = document.createElement('div');
+  floatingCrosshair.id = 'db-explore-crosshair';
+  floatingCrosshair.innerHTML = `
+    <div style="
+      position: fixed;
+      top: 50%;
+      right: 8px;
+      transform: translateY(-50%);
+      z-index: 10000;
+      background: rgba(255, 193, 7, 0.8);
+      color: white;
+      padding: 0;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      transition: all 0.2s ease;
+      width: 24px;
+      height: 24px;
+    " onmouseover="this.style.background='rgba(255, 193, 7, 0.9)'" onmouseout="this.style.background='rgba(255, 193, 7, 0.8)'" title="Ukončit prozkoumávání">
+      <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <style>
+            .c{stroke:#049FE8;}
+            .c,.d,.e,.f{fill:none;stroke-linecap:round;stroke-linejoin:round;}
+            .d,.e,.f{stroke:#FF6A4B;}
+            .e{stroke-dasharray:0 0 3 3;}
+            .f{stroke-dasharray:0 0 3.34 3.34;}
+          </style>
+        </defs>
+        <g id="a"/>
+        <g id="b">
+          <g>
+            <polyline class="d" points="7.99 19.5 2.5 19.5 2.5 16.5"/>
+            <line class="e" x1="2.5" x2="2.5" y1="13.5" y2="9"/>
+            <polyline class="d" points="2.5 7.5 2.5 4.5 5.5 4.5"/>
+            <line class="f" x1="8.83" x2="13.84" y1="4.5" y2="4.5"/>
+            <polyline class="d" points="15.5 4.5 18.5 4.5 18.5 7"/>
+          </g>
+          <path class="c" d="M18.8,13.39c0,2.98-2.42,5.4-5.4,5.4s-5.4-2.42-5.4-5.4,2.42-5.4,5.4-5.4,5.4,2.42,5.4,5.4Z"/>
+          <line class="c" x1="17.35" x2="21.5" y1="17.31" y2="21.5"/>
+          <!-- plus -> X (oranžová) -->
+          <line class="d" x1="10.5" y1="10.5" x2="16.5" y2="16.5"/>
+          <line class="d" x1="16.5" y1="10.5" x2="10.5" y2="16.5"/>
+        </g>
+      </svg>
+    </div>
+  `;
+  
+  // Event listener pro kliknutí
+  floatingCrosshair.addEventListener('click', () => {
+    deactivateExploreMode();
+  });
+  
+  document.body.appendChild(floatingCrosshair);
 }
 
 /**
@@ -261,12 +422,40 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (!isochronesCache) {
     isochronesCache = new Map();
   }
-  // Přidat CSS pro loading spinner
+  // Přidat CSS pro loading spinner a režim prozkoumávání
   const style = document.createElement('style');
   style.textContent = `
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    
+    /* Styly pro režim prozkoumávání */
+    .explore-mode .db-map-card {
+      opacity: 0.7;
+      pointer-events: none;
+    }
+    
+    .explore-mode .db-map-card:hover {
+      opacity: 0.9;
+      pointer-events: auto;
+    }
+    
+    .explore-mode .leaflet-marker-icon {
+      opacity: 0.7;
+    }
+    
+    .explore-mode .leaflet-marker-icon:hover {
+      opacity: 1;
+    }
+    
+    #db-explore-crosshair {
+      animation: fadeIn 0.3s ease-in-out;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   `;
   document.head.appendChild(style);
@@ -1002,6 +1191,17 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (!map) {
     return;
   }
+  
+  // Event listener pro klikání na mapu
+  map.on('click', (e) => {
+    // Pokud je aktivní režim prozkoumávání, nevykreslovat isochrony
+    if (exploreMode) {
+      return;
+    }
+    
+    // Pokud není režim prozkoumávání, vyčistit isochrony při kliknutí mimo body
+    clearIsochrones();
+  });
   
   // Přidání LocateControl přesunuto níže po definici isMobile
   function makeClusterGroup(style) {
@@ -1974,6 +2174,31 @@ document.addEventListener('DOMContentLoaded', async function() {
             <line x1="12" y1="8" x2="12" y2="8"/>
           </svg>
         </button>
+        <button class="btn-icon" type="button" data-db-action="explore-area" title="Prozkoumat okolí">
+          <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <style>
+                .c{stroke:#049FE8;}
+                .c,.d,.e,.f{fill:none;stroke-linecap:round;stroke-linejoin:round;}
+                .d,.e,.f{stroke:#FF6A4B;}
+                .e{stroke-dasharray:0 0 3 3;}
+                .f{stroke-dasharray:0 0 3.34 3.34;}
+              </style>
+            </defs>
+            <g id="a"/>
+            <g id="b">
+              <g>
+                <polyline class="d" points="7.99 19.5 2.5 19.5 2.5 16.5"/>
+                <line class="e" x1="2.5" x2="2.5" y1="13.5" y2="9"/>
+                <polyline class="d" points="2.5 7.5 2.5 4.5 5.5 4.5"/>
+                <line class="f" x1="8.83" x2="13.84" y1="4.5" y2="4.5"/>
+                <polyline class="d" points="15.5 4.5 18.5 4.5 18.5 7"/>
+              </g>
+              <path class="c" d="M18.8,13.39c0,2.98-2.42,5.4-5.4,5.4s-5.4-2.42-5.4-5.4,2.42-5.4,5.4-5.4,5.4,2.42,5.4,5.4Z"/>
+              <line class="c" x1="17.35" x2="21.5" y1="17.31" y2="21.5"/>
+            </g>
+          </svg>
+        </button>
         
         <div class="sheet-nearby">
           <div class="sheet-nearby-list" data-feature-id="${p.id}">
@@ -1995,6 +2220,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     const detailBtn = mobileSheet.querySelector('[data-db-action="open-detail"]');
     if (detailBtn) detailBtn.addEventListener('click', () => openDetailModal(feature));
+    
+    const exploreBtn = mobileSheet.querySelector('[data-db-action="explore-area"]');
+    if (exploreBtn) exploreBtn.addEventListener('click', () => activateExploreMode(feature));
     
     // Otevřít sheet
     requestAnimationFrame(() => mobileSheet.classList.add('open'));
@@ -2573,18 +2801,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Zobrazit isochrones pokud jsou k dispozici a povoleny (kombinace backend + frontend nastavení)
         const frontendSettings = JSON.parse(localStorage.getItem('db-isochrones-settings') || '{"enabled": true, "walking_speed": 4.5}');
-        const backendEnabled = data.isochrones?.user_settings?.enabled;
-        const frontendEnabled = frontendSettings.enabled;
+        const backendSettings = data.isochrones?.user_settings || {};
+        let backendEnabled = true;
+        if (Object.prototype.hasOwnProperty.call(backendSettings, 'enabled')) {
+          const raw = backendSettings.enabled;
+          backendEnabled = raw === true || raw === 1 || raw === '1';
+        }
+        const frontendEnabled = frontendSettings.enabled !== false;
         
         if (requestId === currentIsochronesRequestId && data.isochrones && backendEnabled && frontendEnabled && data.isochrones.geojson && data.isochrones.geojson.features && data.isochrones.geojson.features.length > 0) {
           
           // Aplikovat frontend nastavení rychlosti chůze
           const adjustedGeojson = adjustIsochronesForFrontendSpeed(data.isochrones.geojson, data.isochrones.ranges_s, frontendSettings);
-          
-          renderIsochrones(adjustedGeojson, data.isochrones.ranges_s, {
-            ...data.isochrones.user_settings,
-            ...frontendSettings
-          });
+          const combinedSettings = Object.assign({}, backendSettings, frontendSettings);
+          renderIsochrones(adjustedGeojson, data.isochrones.ranges_s, combinedSettings);
         } else {
           // Pokud nejsou isochrones v cache nebo jsou vypnuty, vyčistit mapu
           clearIsochrones();
@@ -3973,6 +4203,13 @@ document.addEventListener('DOMContentLoaded', async function() {
           openDetailModal(f);
           return;
         }
+        
+        // V režimu prozkoumávání pouze otevřít detail, nevykreslovat isochrony
+        if (exploreMode) {
+          openDetailModal(f);
+          return;
+        }
+        
         // Primárně otevři spodní náhled (sheet) a zvýrazni pin; modal jen když to uživatel vyžádá
         highlightCardById(p.id);
         map.setView([lat, lng], 15, {animate:true});
@@ -4206,6 +4443,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       // Klik na kartu: normální klik zvýrazní, „Detail"/ikona i/klikatelný název otevře modal
       card.addEventListener('click', (ev) => {
+        // V režimu prozkoumávání pouze otevřít detail, nevykreslovat isochrony
+        if (exploreMode) {
+          openDetailModal(f);
+          return;
+        }
+        
         highlightMarkerById(f.properties.id);
         map.setView([f.geometry.coordinates[1], f.geometry.coordinates[0]], 15, {animate:true});
         sortMode = 'distance-active';

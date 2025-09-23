@@ -9,6 +9,9 @@ namespace DB\Jobs;
 class API_Quota_Manager {
     
     private $config;
+    private const MATRIX_PER_MINUTE = 20; // omezení na 20 volání za minutu kvůli isochrones limitu
+    private const ISOCHRONES_PER_MINUTE = 20;
+    private const MAX_DESTINATIONS_PER_BATCH = 50; // bezpečný strop pro počet cílů v jednom Matrix dotazu
     
     public function __construct() {
         $this->config = get_option('db_nearby_config', array());
@@ -175,14 +178,16 @@ class API_Quota_Manager {
     /**
      * Token bucket pro minutový limit
      */
-    public function check_minute_limit() {
-        $bucket_key = 'db_ors_matrix_token_bucket';
+    public function check_minute_limit($type = 'matrix', $consume_token = true) {
+        $type = ($type === 'isochrones') ? 'isochrones' : 'matrix';
+        $limit = ($type === 'isochrones') ? self::ISOCHRONES_PER_MINUTE : self::MATRIX_PER_MINUTE;
+        $bucket_key = 'db_ors_' . $type . '_token_bucket';
         $bucket = get_transient($bucket_key);
         
         if ($bucket === false) {
-            // Nový bucket s 40 tokeny (limitu pro Matrix V2)
+            // Nový bucket s plným počtem tokenů
             $bucket = array(
-                'tokens' => 40,
+                'tokens' => $limit,
                 'last_refill' => time()
             );
         }
@@ -190,24 +195,42 @@ class API_Quota_Manager {
         $now = time();
         $elapsed = $now - $bucket['last_refill'];
         
-        // Refill tokenů (40 tokenů za minutu = 0.67 tokenů za sekundu)
+        // Refill tokenů (20 tokenů za minutu = 0.33 tokenů za sekundu)
         if ($elapsed > 0) {
-            $refill_rate = 40 / 60; // 0.67 tokenů za sekundu
-            $bucket['tokens'] = min(40, $bucket['tokens'] + ($elapsed * $refill_rate));
+            $refill_rate = $limit / 60;
+            $bucket['tokens'] = min($limit, $bucket['tokens'] + ($elapsed * $refill_rate));
             $bucket['last_refill'] = $now;
         }
         
         // Zkontrolovat, zda máme dostatek tokenů
         if ($bucket['tokens'] < 1) {
-            $wait_time = ceil((1 - $bucket['tokens']) / (40 / 60)); // Počkat na další token
+            // Vypočítat čas do dalšího tokenu (refill rate = limit/60 tokenů za sekundu)
+            $tokens_needed = 1 - $bucket['tokens'];
+            $wait_time = ceil($tokens_needed / ($limit / 60));
+            // Minimálně 3 sekundy, maximálně 60 sekund
+            $wait_time = max(3, min(60, $wait_time));
             return array('allowed' => false, 'wait_seconds' => $wait_time);
         }
         
-        // Spotřebovat token
-        $bucket['tokens']--;
-        set_transient($bucket_key, $bucket, 60); // 1 minuta TTL
+        // Spotřebovat token pouze pokud je požadováno
+        if ($consume_token) {
+            $bucket['tokens']--;
+            set_transient($bucket_key, $bucket, 60); // 1 minuta TTL
+        }
         
         return array('allowed' => true, 'tokens_remaining' => $bucket['tokens']);
+    }
+
+    public function get_max_batch_limit($requested = null) {
+        $config_limit = isset($this->config['matrix_batch_size']) ? (int)$this->config['matrix_batch_size'] : 50;
+        if ($config_limit <= 0) {
+            $config_limit = 50;
+        }
+        $hard_limit = min($config_limit, self::MAX_DESTINATIONS_PER_BATCH);
+        if ($requested !== null) {
+            $hard_limit = min($hard_limit, (int)$requested);
+        }
+        return max(1, $hard_limit);
     }
     
     /**
@@ -245,13 +268,7 @@ class API_Quota_Manager {
         $remaining = $quota['remaining'];
         
         // Doporučit menší batch, pokud zbývá málo kvóty
-        if ($remaining < 50) {
-            return min(10, $remaining);
-        } elseif ($remaining < 200) {
-            return min(25, $remaining);
-        } else {
-            return min(50, $remaining);
-        }
+        return $this->get_max_batch_limit($remaining);
     }
     
     /**
@@ -271,14 +288,16 @@ class API_Quota_Manager {
     /**
      * Naplánovat další běh fronty
      */
-    public function schedule_next_run() {
+    public function schedule_next_run($delay_seconds = null) {
         $quota = $this->check_available_quota();
         
         if ($quota['can_process']) {
-            // Může pokračovat okamžitě
+            if ($delay_seconds !== null) {
+                return time() + max(0, (int)$delay_seconds);
+            }
             return time();
         }
-        
+
         // Naplánovat na reset kvót
         $reset_time = $this->get_reset_time();
         

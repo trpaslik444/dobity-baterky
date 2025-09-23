@@ -24,7 +24,7 @@ class Nearby_Processed_Manager {
         
         $charset_collate = $wpdb->get_charset_collate();
         
-        $sql = "CREATE TABLE IF NOT EXISTS {$this->table_name} (
+        $sql = "CREATE TABLE {$this->table_name} (
             id bigint(20) NOT NULL AUTO_INCREMENT,
             origin_id bigint(20) NOT NULL,
             origin_type varchar(20) NOT NULL,
@@ -37,6 +37,9 @@ class Nearby_Processed_Manager {
             processing_time_seconds int(11) DEFAULT 0,
             api_provider varchar(20) DEFAULT 'ors',
             cache_size_kb int(11) DEFAULT 0,
+            isochrones_provider varchar(20) DEFAULT NULL,
+            isochrones_features int(11) DEFAULT NULL,
+            isochrones_error text,
             processing_date datetime DEFAULT CURRENT_TIMESTAMP,
             last_updated datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             status varchar(20) DEFAULT 'completed',
@@ -52,6 +55,58 @@ class Nearby_Processed_Manager {
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+
+        $this->maybe_upgrade_table();
+    }
+
+    /**
+     * Zajistit, že tabulka obsahuje všechny požadované sloupce
+     */
+    private function maybe_upgrade_table() {
+        global $wpdb;
+
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$this->table_name}", ARRAY_A);
+        if (!is_array($columns)) {
+            return;
+        }
+
+        $existing = array();
+        foreach ($columns as $column) {
+            if (!empty($column['Field'])) {
+                $existing[$column['Field']] = true;
+            }
+        }
+
+        $alter_parts = array();
+        $definitions = array(
+            'origin_title' => "ADD COLUMN origin_title varchar(255) AFTER origin_type",
+            'origin_lat' => "ADD COLUMN origin_lat decimal(10,8) AFTER origin_title",
+            'origin_lng' => "ADD COLUMN origin_lng decimal(11,8) AFTER origin_lat",
+            'processed_type' => "ADD COLUMN processed_type varchar(20) NOT NULL AFTER origin_lng",
+            'candidates_count' => "ADD COLUMN candidates_count int(11) DEFAULT 0 AFTER processed_type",
+            'api_calls_used' => "ADD COLUMN api_calls_used int(11) DEFAULT 0 AFTER candidates_count",
+            'processing_time_seconds' => "ADD COLUMN processing_time_seconds int(11) DEFAULT 0 AFTER api_calls_used",
+            'api_provider' => "ADD COLUMN api_provider varchar(20) DEFAULT 'ors' AFTER processing_time_seconds",
+            'cache_size_kb' => "ADD COLUMN cache_size_kb int(11) DEFAULT 0 AFTER api_provider",
+            'isochrones_provider' => "ADD COLUMN isochrones_provider varchar(20) DEFAULT NULL AFTER cache_size_kb",
+            'isochrones_features' => "ADD COLUMN isochrones_features int(11) DEFAULT NULL AFTER isochrones_provider",
+            'isochrones_error' => "ADD COLUMN isochrones_error text AFTER isochrones_features",
+            'status' => "ADD COLUMN status varchar(20) DEFAULT 'completed' AFTER isochrones_error",
+            'error_message' => "ADD COLUMN error_message text AFTER status",
+            'processing_date' => "ADD COLUMN processing_date datetime DEFAULT CURRENT_TIMESTAMP AFTER error_message",
+            'last_updated' => "ADD COLUMN last_updated datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER processing_date"
+        );
+
+        foreach ($definitions as $column => $definition) {
+            if (!isset($existing[$column])) {
+                $alter_parts[] = $definition;
+            }
+        }
+
+        if (!empty($alter_parts)) {
+            $sql = "ALTER TABLE {$this->table_name} " . implode(', ', $alter_parts);
+            $wpdb->query($sql);
+        }
     }
     
     /**
@@ -90,6 +145,9 @@ class Nearby_Processed_Manager {
             'processing_time_seconds' => (int)($stats['processing_time'] ?? 0),
             'api_provider' => $stats['api_provider'] ?? 'ors',
             'cache_size_kb' => (int)($stats['cache_size_kb'] ?? 0),
+            'isochrones_provider' => $stats['isochrones_provider'] ?? null,
+            'isochrones_features' => isset($stats['isochrones_features']) ? (int)$stats['isochrones_features'] : null,
+            'isochrones_error' => $stats['isochrones_error'] ?? null,
             'status' => $stats['status'] ?? 'completed',
             'error_message' => $stats['error_message'] ?? null,
             'processing_date' => current_time('mysql')
@@ -98,22 +156,32 @@ class Nearby_Processed_Manager {
         // Upsert: pokud existuje záznam pro origin_id, update; jinak insert
         $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$this->table_name} WHERE origin_id = %d", $origin_id));
         if ($exists) {
-            return $wpdb->update(
+            $updated = $wpdb->update(
                 $this->table_name,
                 $data,
                 array('id' => (int)$exists),
-                array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%s','%s'),
+                array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%d','%s','%s','%s','%s'),
                 array('%d')
             );
+            if ($updated === false) {
+                error_log('[DB Nearby Processed] Update failed for origin ' . $origin_id . ': ' . $wpdb->last_error);
+                return false;
+            }
+            return $this->get_processed_by_origin($origin_id);
         }
         
-        return $wpdb->insert(
+        $inserted = $wpdb->insert(
             $this->table_name,
             $data,
-            array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%s','%s')
+            array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%d','%s','%s','%s','%s')
         );
+        if ($inserted === false) {
+            error_log('[DB Nearby Processed] Insert failed for origin ' . $origin_id . ': ' . $wpdb->last_error);
+            return false;
+        }
+        return $this->get_processed_by_origin($origin_id);
     }
-    
+
     /**
      * Získat seznam zpracovaných míst s paginací
      */
@@ -137,7 +205,19 @@ class Nearby_Processed_Manager {
         );
         return $wpdb->get_results($sql);
     }
-    
+
+    /**
+     * Získat záznam pro konkrétní origin
+     */
+    public function get_processed_by_origin($origin_id) {
+        global $wpdb;
+
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE origin_id = %d",
+            $origin_id
+        ));
+    }
+
     /**
      * Získat statistiky zpracovaných míst
      */

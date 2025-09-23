@@ -9,6 +9,7 @@ namespace DB\Jobs;
 class Nearby_Queue_Manager {
     
     private $table_name;
+    private $last_processed_record = null;
     
     public function __construct() {
         global $wpdb;
@@ -52,25 +53,54 @@ class Nearby_Queue_Manager {
     public function enqueue($origin_id, $origin_type, $priority = 0) {
         global $wpdb;
         
-        // Zkontrolovat, zda už není ve frontě
+
+        // Normalize and guard the requested origin type before working with it
+        $origin_type = in_array($origin_type, array('poi','charging_location','rv_spot'), true) ? $origin_type : 'charging_location';
+        
+        // Zkontrolovat, zda má bod kandidáty v okolí
+        $has_candidates = $this->has_candidates_in_area($origin_id, $origin_type);
+
+        // Zkontrolovat, zda už není ve frontě (jakýkoliv status)
         $existing = $wpdb->get_row($wpdb->prepare(
-            "SELECT id FROM {$this->table_name} WHERE origin_id = %d AND origin_type = %s AND status IN ('pending', 'processing')",
+            "SELECT id, status FROM {$this->table_name} WHERE origin_id = %d AND origin_type = %s LIMIT 1",
             $origin_id, $origin_type
         ));
-        
+
+        if (!$has_candidates) {
+            return false;
+        }
+
         if ($existing) {
-            return false; // Už je ve frontě
+            if (in_array($existing->status, array('pending', 'processing'), true)) {
+                return false; // Už je ve frontě a čeká na zpracování
+            }
+
+            // Reaktivovat existující záznam (completed/failed) místo vytváření duplicity
+            $reactivated = $wpdb->update(
+                $this->table_name,
+                array(
+                    'status' => 'pending',
+                    'priority' => $priority,
+                    'attempts' => 0,
+                    'error_message' => '',
+                    'updated_at' => current_time('mysql')
+                ),
+                array('id' => $existing->id),
+                array('%s', '%d', '%d', '%s', '%s'),
+                array('%d')
+            );
+
+            if ($reactivated !== false) {
+                $wpdb->query($wpdb->prepare(
+                    "UPDATE {$this->table_name} SET processed_at = NULL WHERE id = %d",
+                    $existing->id
+                ));
+                $this->remove_from_processed($origin_id, $origin_type);
+                return true;
+            }
+
+            return false;
         }
-        
-        // Neblokovat zařazení na základě processed – requeue může úmyslně přepracovat
-        
-        // Server rozhoduje - zkontrolovat, zda má bod kandidáty v okolí
-        if (!$this->has_candidates_in_area($origin_id, $origin_type)) {
-            return false; // Nemá kandidáty, nezařadit do fronty
-        }
-        
-        // Normalizovat cílový typ: povoleny pouze 'poi', 'charging_location', 'rv_spot'
-        $origin_type = in_array($origin_type, array('poi','charging_location','rv_spot'), true) ? $origin_type : 'charging_location';
 
         // Přidat do fronty
         $result = $wpdb->insert(
@@ -85,23 +115,67 @@ class Nearby_Queue_Manager {
         );
         
         if ($result !== false) {
-            // Po úspěšném zařazení smaž z processed, aby nikdy nesoužily zároveň
-            $real_origin_type = get_post_type((int)$origin_id) ?: $origin_type;
-            $processed_type = ($origin_type === 'poi') ? 'poi_foot' : 'charger_foot';
-            try {
-                $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
-                $processed_manager->delete_processed($origin_id, $real_origin_type, $processed_type);
-            } catch (\Throwable $__) {}
+            $this->remove_from_processed($origin_id, $origin_type);
             return true;
         }
         
         return false;
+    }
+
+    /**
+     * Smazat případné záznamy z processed tabulky pro origin
+     */
+    private function remove_from_processed($origin_id, $origin_type) {
+        $real_origin_type = get_post_type((int)$origin_id) ?: $origin_type;
+        $processed_type = ($origin_type === 'poi') ? 'poi_foot' : 'charger_foot';
+        try {
+            $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
+            $processed_manager->delete_processed($origin_id, $real_origin_type, $processed_type);
+        } catch (\Throwable $__) {}
+    }
+
+    /**
+     * Odebrat položky z fronty pro daný origin (volitelně podle typu)
+     */
+    private function remove_from_queue($origin_id, $origin_type = null) {
+        global $wpdb;
+
+        $where = array('origin_id' => (int) $origin_id);
+        $formats = array('%d');
+
+        if ($origin_type !== null) {
+            $where['origin_type'] = $origin_type;
+            $formats[] = '%s';
+        }
+
+        $wpdb->delete($this->table_name, $where, $formats);
+    }
+
+    /**
+     * Vymazat cache nearby dat pro daný origin/typ
+     */
+    private function clear_nearby_cache($origin_id, $origin_type) {
+        $meta_key = ($origin_type === 'poi') ? '_db_nearby_cache_poi_foot' : '_db_nearby_cache_charger_foot';
+
+        if (!metadata_exists('post', $origin_id, $meta_key)) {
+            return;
+        }
+
+        $payload = array(
+            'computed_at' => current_time('c'),
+            'items' => array(),
+            'partial' => false,
+            'progress' => array('done' => 0, 'total' => 0)
+        );
+
+        update_post_meta($origin_id, $meta_key, wp_json_encode($payload, JSON_UNESCAPED_UNICODE));
     }
     
     /**
      * Zkontrolovat, zda má bod kandidáty v okolí
      */
     private function has_candidates_in_area($origin_id, $origin_type) {
+        
         // Získat souřadnice origin bodu
         $post = get_post($origin_id);
         if (!$post) {
@@ -130,22 +204,31 @@ class Nearby_Queue_Manager {
             (float)($config['radius_poi_for_charger'] ?? 5) : 
             (float)($config['radius_charger_for_poi'] ?? 5);
         
+        
         // Použít existující job helper pro získání kandidátů
         if (!class_exists('DB\\Jobs\\Nearby_Recompute_Job')) {
-            require_once dirname(__DIR__) . '/Nearby_Recompute_Job.php';
+            $job_path = dirname(__DIR__) . '/Nearby_Recompute_Job.php';
+            if (file_exists($job_path)) {
+                require_once $job_path;
+            }
         }
-        
+
+        if (!class_exists('DB\\Jobs\\Nearby_Recompute_Job')) {
+            return false;
+        }
+
         $job = new \DB\Jobs\Nearby_Recompute_Job();
         if (!method_exists($job, 'get_candidates')) {
             return false;
         }
         
-        $max_candidates = (int)($config['max_candidates'] ?? 24);
+        $max_candidates = isset($config['max_candidates']) ? (int)$config['max_candidates'] : 50;
+        $max_candidates = max(1, min(50, $max_candidates));
         $candidates = $job->get_candidates($lat, $lng, $origin_type, $radius_km, $max_candidates);
         
         return !empty($candidates);
     }
-    
+
     /**
      * Získat položky k zpracování
      */
@@ -175,14 +258,25 @@ class Nearby_Queue_Manager {
             array('%d')
         );
     }
-    
+
     /**
      * Označit položku jako dokončenou
      */
     public function mark_completed($id) {
         global $wpdb;
         
-        return $wpdb->update(
+        // Získat informace o položce
+        $item = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM {$this->table_name} WHERE id = %d",
+            $id
+        ));
+        
+        if (!$item) {
+            return false;
+        }
+        
+        // Označit jako dokončené
+        $result = $wpdb->update(
             $this->table_name,
             array(
                 'status' => 'completed',
@@ -192,6 +286,47 @@ class Nearby_Queue_Manager {
             array('%s', '%s'),
             array('%d')
         );
+        
+        if ($result !== false) {
+            // Přidat do processed tabulky
+            $this->add_to_processed($item->origin_id, $item->origin_type);
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Přidat do processed tabulky
+     */
+    private function add_to_processed($origin_id, $origin_type) {
+        global $wpdb;
+        
+        $processed_table = $wpdb->prefix . 'nearby_processed';
+        
+        // Zkontrolovat, zda už existuje
+        $existing = $wpdb->get_row($wpdb->prepare(
+            "SELECT id FROM {$processed_table} WHERE origin_id = %d AND origin_type = %s",
+            $origin_id, $origin_type
+        ));
+        
+        if (!$existing) {
+            $wpdb->insert(
+                $processed_table,
+                array(
+                    'origin_id' => $origin_id,
+                    'origin_type' => $origin_type,
+                    'processed_at' => current_time('mysql')
+                ),
+                array('%d', '%s', '%s')
+            );
+        }
+    }
+
+    /**
+     * Vrátit poslední zpracovaný záznam uložený přes mark_as_processed
+     */
+    public function get_last_processed_record() {
+        return $this->last_processed_record;
     }
     
     /**
@@ -333,7 +468,8 @@ class Nearby_Queue_Manager {
      */
     private function bulk_get_candidates_count(&$items) {
         $config = get_option('db_nearby_config', array());
-        $max_candidates = (int)($config['max_candidates'] ?? 24);
+        $max_candidates = isset($config['max_candidates']) ? (int)$config['max_candidates'] : 50;
+        $max_candidates = max(1, min(50, $max_candidates));
         
         // Skupinovat podle typu pro efektivnější dotazy
         $groups = array();
@@ -347,8 +483,8 @@ class Nearby_Queue_Manager {
         
         foreach ($groups as $origin_type => $type_items) {
             $radius_km = ($origin_type === 'poi') ? 
-                (float)($config['radius_poi_for_charger'] ?? 5) : 
-                (float)($config['radius_charger_for_poi'] ?? 5);
+                (float)(isset($config['radius_poi_for_charger']) ? $config['radius_poi_for_charger'] : 5) : 
+                (float)(isset($config['radius_charger_for_poi']) ? $config['radius_charger_for_poi'] : 5);
             
             // Použít jednou načtenou třídu pro všechny položky stejného typu
             if (!class_exists('DB\\Jobs\\Nearby_Recompute_Job')) {
@@ -402,8 +538,8 @@ class Nearby_Queue_Manager {
         
         $config = get_option('db_nearby_config', array());
         $radius_km = ($origin_type === 'poi') ? 
-            (float)($config['radius_poi_for_charger'] ?? 5) : 
-            (float)($config['radius_charger_for_poi'] ?? 5);
+            (float)(isset($config['radius_poi_for_charger']) ? $config['radius_poi_for_charger'] : 5) : 
+            (float)(isset($config['radius_charger_for_poi']) ? $config['radius_charger_for_poi'] : 5);
         
         if (!class_exists('DB\\Jobs\\Nearby_Recompute_Job')) {
             require_once dirname(__DIR__) . '/Nearby_Recompute_Job.php';
@@ -414,7 +550,8 @@ class Nearby_Queue_Manager {
             return 0;
         }
         
-        $max_candidates = (int)($config['max_candidates'] ?? 24);
+        $max_candidates = isset($config['max_candidates']) ? (int)$config['max_candidates'] : 50;
+        $max_candidates = max(1, min(50, $max_candidates));
         $candidates = $job->get_candidates($lat, $lng, $origin_type, $radius_km, $max_candidates);
         
         return count($candidates);
@@ -453,6 +590,9 @@ class Nearby_Queue_Manager {
     public function mark_as_processed($id, $stats = array()) {
         global $wpdb;
         
+        error_log("[DB DEBUG] mark_as_processed called for ID: {$id}");
+        $this->last_processed_record = null;
+        
         // Získat informace o položce
         $item = $wpdb->get_row($wpdb->prepare(
             "SELECT * FROM {$this->table_name} WHERE id = %d",
@@ -460,8 +600,11 @@ class Nearby_Queue_Manager {
         ));
         
         if (!$item) {
+            error_log("[DB DEBUG] Item not found in queue table");
             return false;
         }
+        
+        error_log("[DB DEBUG] Found item: origin_id={$item->origin_id}, origin_type={$item->origin_type}");
         
         // Přidat do zpracovaných
         $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
@@ -470,12 +613,22 @@ class Nearby_Queue_Manager {
         // Uložit reálný typ origin postu (ne cílový typ zpracování)
         $real_origin_type = get_post_type((int)$item->origin_id) ?: $item->origin_type;
         
-        $processed_manager->add_processed(
+        error_log("[DB DEBUG] Adding to processed: origin_id={$item->origin_id}, real_origin_type={$real_origin_type}, processed_type={$processed_type}");
+        
+        $processed_record = $processed_manager->add_processed(
             $item->origin_id, 
             $real_origin_type, 
             $processed_type, 
             $stats
         );
+        
+        if ($processed_record === false) {
+            error_log("[DB DEBUG] Add to processed failed for origin {$item->origin_id}");
+            $this->last_processed_record = null;
+        } else {
+            error_log("[DB DEBUG] Add to processed result: success");
+            $this->last_processed_record = $processed_record;
+        }
         
         // Označit jako dokončené ve frontě
         $res = $wpdb->update(
@@ -531,7 +684,45 @@ class Nearby_Queue_Manager {
             array('%s')
         );
     }
-    
+
+    /**
+     * Vrátit položku zpět do pending stavu po rate limitu
+     */
+    public function mark_rate_limited($id, $message) {
+        global $wpdb;
+
+        return $wpdb->update(
+            $this->table_name,
+            array(
+                'status' => 'pending',
+                'error_message' => $message,
+                'updated_at' => current_time('mysql'),
+                'created_at' => current_time('mysql')
+            ),
+            array('id' => $id),
+            array('%s', '%s', '%s', '%s'),
+            array('%d')
+        );
+    }
+
+    /**
+     * Vymazat frontu (volitelně podle statusu)
+     */
+    public function clear_queue($statuses = null) {
+        global $wpdb;
+
+        if (is_array($statuses) && !empty($statuses)) {
+            $statuses = array_map('sanitize_key', $statuses);
+            $placeholders = implode(',', array_fill(0, count($statuses), '%s'));
+            return $wpdb->query($wpdb->prepare(
+                "DELETE FROM {$this->table_name} WHERE status IN ({$placeholders})",
+                ...$statuses
+            ));
+        }
+
+        return $wpdb->query("DELETE FROM {$this->table_name}");
+    }
+
     /**
      * Přidat všechny body do fronty (pro inicializaci)
      */
@@ -540,41 +731,70 @@ class Nearby_Queue_Manager {
         
         $added_count = 0;
         
+        // Zjistit počty dostupných typů pro inteligentní plánování
+        $counts = array(
+            'charging_location' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'charging_location' AND post_status = 'publish'"),
+            'poi' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'poi' AND post_status = 'publish'"),
+            'rv_spot' => (int) $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'rv_spot' AND post_status = 'publish'")
+        );
+
+
+        $has_poi = $counts['poi'] > 0;
+        $has_rv_spot = $counts['rv_spot'] > 0;
+
         // Nabíjecí stanice
-        $charging_locations = $wpdb->get_results("
-            SELECT ID FROM {$wpdb->posts} 
-            WHERE post_type = 'charging_location' 
-            AND post_status = 'publish'
-        ");
-        
-        foreach ($charging_locations as $location) {
-            if ($this->enqueue($location->ID, 'poi', 1)) { $added_count++; }
-            if ($this->enqueue($location->ID, 'rv_spot', 1)) { $added_count++; }
-        }
-        
-        // POI
-        $pois = $wpdb->get_results("
-            SELECT ID FROM {$wpdb->posts} 
-            WHERE post_type = 'poi' 
-            AND post_status = 'publish'
-        ");
-        
-        foreach ($pois as $poi) {
-            if ($this->enqueue($poi->ID, 'charging_location', 1)) {
-                $added_count++;
+        if ($counts['charging_location'] > 0) {
+            $charging_locations = $wpdb->get_results("
+                SELECT ID FROM {$wpdb->posts} 
+                WHERE post_type = 'charging_location' 
+                AND post_status = 'publish'
+            ");
+
+
+            foreach ($charging_locations as $location) {
+                if ($has_poi && $this->enqueue($location->ID, 'poi', 1)) {
+                    $added_count++;
+                }
+
+                if ($has_rv_spot && $this->enqueue($location->ID, 'rv_spot', 1)) {
+                    $added_count++;
+                }
             }
         }
-        
+
+        // POI
+        if ($has_poi) {
+            $pois = $wpdb->get_results("
+                SELECT ID FROM {$wpdb->posts} 
+                WHERE post_type = 'poi' 
+                AND post_status = 'publish'
+            ");
+
+
+            foreach ($pois as $poi) {
+                if ($this->enqueue($poi->ID, 'charging_location', 1)) {
+                    $added_count++;
+                }
+            }
+        }
+
         // RV spoty
-        $rv_spots = $wpdb->get_results("
-            SELECT ID FROM {$wpdb->posts} 
-            WHERE post_type = 'rv_spot' 
-            AND post_status = 'publish'
-        ");
-        
-        foreach ($rv_spots as $spot) {
-            if ($this->enqueue($spot->ID, 'charging_location', 1)) { $added_count++; }
-            if ($this->enqueue($spot->ID, 'poi', 1)) { $added_count++; }
+        if ($has_rv_spot) {
+            $rv_spots = $wpdb->get_results("
+                SELECT ID FROM {$wpdb->posts} 
+                WHERE post_type = 'rv_spot' 
+                AND post_status = 'publish'
+            ");
+
+
+            foreach ($rv_spots as $spot) {
+                if ($this->enqueue($spot->ID, 'charging_location', 1)) {
+                    $added_count++;
+                }
+                if ($has_poi && $this->enqueue($spot->ID, 'poi', 1)) {
+                    $added_count++;
+                }
+            }
         }
         
         return $added_count;
@@ -712,6 +932,13 @@ class Nearby_Queue_Manager {
             return;
         }
         
+        // Odebrat tento bod z fronty a processed tabulky
+        $this->remove_from_queue($post_id);
+        foreach (array('poi', 'charging_location', 'rv_spot') as $target_type) {
+            $this->remove_from_processed($post_id, $target_type);
+            $this->clear_nearby_cache($post_id, $target_type);
+        }
+
         // Přidat do fronty všechny body v okolí (pro aktualizaci jejich nearby dat)
         $this->enqueue_affected_points($post_id, $post->post_type);
     }

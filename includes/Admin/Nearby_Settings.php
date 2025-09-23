@@ -42,10 +42,10 @@ class Nearby_Settings {
         $sanitized['radius_charger_for_poi'] = max(0.1, min(50, floatval($input['radius_charger_for_poi'] ?? 5)));
         
         // Matrix batch size
-        $sanitized['matrix_batch_size'] = max(1, min(100, intval($input['matrix_batch_size'] ?? 24)));
+        $sanitized['matrix_batch_size'] = max(1, min(50, intval($input['matrix_batch_size'] ?? 50)));
         
         // Max kandidátů
-        $sanitized['max_candidates'] = max(10, min(500, intval($input['max_candidates'] ?? 24)));
+        $sanitized['max_candidates'] = max(1, min(50, intval($input['max_candidates'] ?? 50)));
         
         // TTL cache (dny)
         $sanitized['cache_ttl_days'] = max(1, min(365, intval($input['cache_ttl_days'] ?? 21)));
@@ -67,8 +67,8 @@ class Nearby_Settings {
             'ors_api_key' => '',
             'radius_poi_for_charger' => 5,
             'radius_charger_for_poi' => 5,
-            'matrix_batch_size' => 24,
-            'max_candidates' => 24,
+            'matrix_batch_size' => 50,
+            'max_candidates' => 50,
             'cache_ttl_days' => 21,
             'max_jobs_per_day' => 100,
             'max_pairs_per_day' => 1000,
@@ -134,16 +134,16 @@ class Nearby_Settings {
                     <tr>
                         <th scope="row">Matrix Batch Size</th>
                         <td>
-                            <input type="number" name="db_nearby_config[matrix_batch_size]" value="<?php echo esc_attr($config['matrix_batch_size']); ?>" min="1" max="100" />
-                            <p class="description">Počet cílů v jedné Matrix API dávce (max 24 doporučeno pro dynamic arguments).</p>
+                            <input type="number" name="db_nearby_config[matrix_batch_size]" value="<?php echo esc_attr($config['matrix_batch_size']); ?>" min="1" max="50" />
+                            <p class="description">Počet cílů v jedné Matrix API dávce (max 50 kvůli limitu ORS).</p>
                         </td>
                     </tr>
                     
                     <tr>
                         <th scope="row">Max kandidátů na origin</th>
                         <td>
-                            <input type="number" name="db_nearby_config[max_candidates]" value="<?php echo esc_attr($config['max_candidates']); ?>" min="10" max="500" />
-                            <p class="description">Maximální počet kandidátů pro routing (prefiltr vzduchem).</p>
+                            <input type="number" name="db_nearby_config[max_candidates]" value="<?php echo esc_attr($config['max_candidates']); ?>" min="1" max="50" />
+                            <p class="description">Maximální počet kandidátů pro routing (prefiltr vzduchem, limit 50).</p>
                         </td>
                     </tr>
                     

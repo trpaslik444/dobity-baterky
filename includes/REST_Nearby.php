@@ -284,9 +284,12 @@ class REST_Nearby {
         // Zkontrolovat, zda jsou isochrones povoleny
         $isochrones_settings = get_option('db_isochrones_settings', ['enabled' => 1]);
         
-        if ($isochrones_cache && $isochrones_settings['enabled']) {
+        if ($isochrones_cache && ($isochrones_settings['enabled'] ?? 1)) {
             $isochrones_payload = is_string($isochrones_cache) ? json_decode($isochrones_cache, true) : $isochrones_cache;
             if ($isochrones_payload && isset($isochrones_payload['geojson']) && isset($isochrones_payload['geojson']['features'])) {
+                if (!isset($isochrones_payload['user_settings']) || !is_array($isochrones_payload['user_settings'])) {
+                    $isochrones_payload['user_settings'] = $isochrones_settings;
+                }
                 
                 // Aplikovat uživatelské nastavení rychlosti chůze
                 $adjusted_geojson = $this->adjust_isochrones_for_walking_speed(
@@ -330,7 +333,8 @@ class REST_Nearby {
     private function build_basic_fallback($origin_id, $type) {
         $cfg = get_option('db_nearby_config', []);
         $radiusKm = (float)($cfg['radius_km'] ?? 5);
-        $maxCand  = (int)($cfg['max_candidates'] ?? 24);
+        $maxCand  = (int)($cfg['max_candidates'] ?? 50);
+        $maxCand  = max(1, min(50, $maxCand));
         $speed    = (float)($cfg['walking_speed_m_s'] ?? 1.3);
 
         // Souřadnice originu
@@ -409,8 +413,8 @@ class REST_Nearby {
         $cfg['provider'] = $provider;
         $cfg['ors_api_key'] = sanitize_text_field($cfg['ors_api_key'] ?? '');
         $cfg['radius_km'] = floatval($cfg['radius_km'] ?? 5);
-        $cfg['max_candidates'] = intval($cfg['max_candidates'] ?? 60);
-        $cfg['matrix_batch_size'] = intval($cfg['matrix_batch_size'] ?? 60);
+        $cfg['max_candidates'] = max(1, min(50, intval($cfg['max_candidates'] ?? 50)));
+        $cfg['matrix_batch_size'] = max(1, min(50, intval($cfg['matrix_batch_size'] ?? 50)));
         $cfg['cache_ttl_days'] = intval($cfg['cache_ttl_days'] ?? 30);
         $cfg['walking_speed_m_s'] = isset($cfg['walking_speed_m_s']) ? floatval($cfg['walking_speed_m_s']) : 1.3;
         
@@ -579,7 +583,9 @@ class REST_Nearby {
 
         // kolik máme kandidátů teď
         $job   = new \DB\Jobs\Nearby_Recompute_Job();
-        $cands = method_exists($job, 'get_candidates') ? $job->get_candidates($lat, $lng, $type, (float)($cfg['radius_km'] ?? 5), (int)($cfg['max_candidates'] ?? 60)) : [];
+        $max_cand_cfg = (int)($cfg['max_candidates'] ?? 50);
+        $max_cand_cfg = max(1, min(50, $max_cand_cfg));
+        $cands = method_exists($job, 'get_candidates') ? $job->get_candidates($lat, $lng, $type, (float)($cfg['radius_km'] ?? 5), $max_cand_cfg) : [];
 
         return rest_ensure_response([
             'has_key'      => $keyOk,
@@ -803,7 +809,7 @@ class REST_Nearby {
             'ors_api_key' => '',
             'radius_poi_for_charger' => 2,
             'radius_charger_for_poi' => 5,
-            'matrix_batch_size' => 25,
+            'matrix_batch_size' => 50,
             'max_candidates' => 50,
             'cache_ttl_days' => 30,
             'max_jobs_per_day' => 100,
@@ -919,7 +925,7 @@ class REST_Nearby {
             'ors_api_key' => '',
             'radius_poi_for_charger' => 2,
             'radius_charger_for_poi' => 5,
-            'matrix_batch_size' => 25,
+            'matrix_batch_size' => 50,
             'max_candidates' => 50,
             'cache_ttl_days' => 30,
             'max_jobs_per_day' => 100,

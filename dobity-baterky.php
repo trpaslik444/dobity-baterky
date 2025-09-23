@@ -551,17 +551,17 @@ if (is_admin()) {
                 new DB\Admin\Nearby_Queue_Admin();
             }
         }
-        
-        // Inicializovat automatické zpracování
-        if ( file_exists( __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php' ) ) {
-            require_once __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php';
-            if ( class_exists( 'DB\Jobs\Nearby_Auto_Processor' ) ) {
-                new DB\Jobs\Nearby_Auto_Processor();
-            }
-        }
     } catch (\Exception $e) {
         error_log('[PROVIDER MANAGER] Failed to initialize: ' . $e->getMessage());
         // Don't break admin - just log the error
+    }
+}
+
+// Inicializovat automatické zpracování i mimo administraci
+if ( file_exists( __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php' ) ) {
+    require_once __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php';
+    if ( class_exists( 'DB\Jobs\Nearby_Auto_Processor' ) ) {
+        DB\Jobs\Nearby_Auto_Processor::get_instance();
     }
 }
 
