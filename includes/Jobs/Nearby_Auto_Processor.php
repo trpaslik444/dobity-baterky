@@ -32,8 +32,8 @@ class Nearby_Auto_Processor {
      */
     public function add_cron_interval($schedules) {
         $schedules['db_nearby_auto_process_interval'] = array(
-            'interval' => 30 * MINUTE_IN_SECONDS, // 30 minut
-            'display' => __('Každých 30 minut')
+            'interval' => MINUTE_IN_SECONDS, // 1 minuta
+            'display' => __('Každou minutu')
         );
         return $schedules;
     }
@@ -42,7 +42,7 @@ class Nearby_Auto_Processor {
      * Naplánovat automatické zpracování
      */
     public function schedule_auto_processing() {
-        // Spustit každých 30 minut pouze pokud je povoleno
+        // Spustit každou minutu pouze pokud je povoleno
         $auto_enabled = get_option('db_nearby_auto_enabled', false);
         if ($auto_enabled && !wp_next_scheduled('db_nearby_auto_process')) {
             wp_schedule_event(time(), 'db_nearby_auto_process_interval', 'db_nearby_auto_process');
@@ -72,7 +72,7 @@ class Nearby_Auto_Processor {
         
         // Získat doporučený batch size
         $batch_size = $this->quota_manager->get_recommended_batch_size();
-        
+
         if ($batch_size <= 0) {
             error_log("[DB Nearby Auto] Žádná kvóta k dispozici");
             return;
@@ -89,7 +89,7 @@ class Nearby_Auto_Processor {
         // Pokud jsou ještě položky ve frontě, naplánovat další běh
         $stats = $this->queue_manager->get_stats();
         if ($stats->pending > 0) {
-            $next_run = time() + (30 * MINUTE_IN_SECONDS); // Za 30 minut
+            $next_run = time() + MINUTE_IN_SECONDS; // další položka za minutu
             wp_schedule_single_event($next_run, 'db_nearby_auto_process');
         }
     }
