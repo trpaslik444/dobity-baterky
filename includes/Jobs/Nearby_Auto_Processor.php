@@ -32,8 +32,8 @@ class Nearby_Auto_Processor {
      */
     public function add_cron_interval($schedules) {
         $schedules['db_nearby_auto_process_interval'] = array(
-            'interval' => 30 * MINUTE_IN_SECONDS, // 30 minut
-            'display' => __('Každých 30 minut')
+            'interval' => MINUTE_IN_SECONDS, // 1 minuta
+            'display' => __('Každou minutu')
         );
         return $schedules;
     }
@@ -41,11 +41,26 @@ class Nearby_Auto_Processor {
     /**
      * Naplánovat automatické zpracování
      */
-    public function schedule_auto_processing() {
-        // Spustit každých 30 minut pouze pokud je povoleno
-        $auto_enabled = get_option('db_nearby_auto_enabled', false);
-        if ($auto_enabled && !wp_next_scheduled('db_nearby_auto_process')) {
-            wp_schedule_event(time(), 'db_nearby_auto_process_interval', 'db_nearby_auto_process');
+    public function schedule_auto_processing($force = false) {
+        $auto_enabled = (bool)get_option('db_nearby_auto_enabled', false);
+
+        if (!$auto_enabled) {
+            $this->stop_auto_processing();
+            return;
+        }
+
+        $next_run = wp_next_scheduled('db_nearby_auto_process');
+
+        if ($force && $next_run) {
+            $this->stop_auto_processing();
+            $next_run = false;
+        }
+
+        if (!$next_run) {
+            $first_recurring_run = time() + MINUTE_IN_SECONDS;
+            wp_schedule_event($first_recurring_run, 'db_nearby_auto_process_interval', 'db_nearby_auto_process');
+            // Naplánovat okamžitý jednorázový běh, aby se zpracovala první položka hned
+            wp_schedule_single_event(time(), 'db_nearby_auto_process');
         }
     }
     
@@ -60,38 +75,17 @@ class Nearby_Auto_Processor {
             return;
         }
         
-        // Zkontrolovat, zda může pokračovat
-        if (!$this->quota_manager->can_process_queue()) {
-            $reset_time = $this->quota_manager->get_reset_time();
-            error_log("[DB Nearby Auto] Nelze pokračovat, reset v " . date('Y-m-d H:i:s', $reset_time));
-            
-            // Naplánovat další pokus
-            wp_schedule_single_event($reset_time, 'db_nearby_auto_process');
+        $result = $this->trigger_auto_processing();
+
+        if (!$result['success']) {
+            if (!empty($result['reset_at'])) {
+                wp_schedule_single_event((int)$result['reset_at'], 'db_nearby_auto_process');
+            }
+            error_log("[DB Nearby Auto] " . ($result['message'] ?? 'Žádné zpracování neproběhlo'));
             return;
         }
-        
-        // Získat doporučený batch size
-        $batch_size = $this->quota_manager->get_recommended_batch_size();
-        
-        if ($batch_size <= 0) {
-            error_log("[DB Nearby Auto] Žádná kvóta k dispozici");
-            return;
-        }
-        
-        // Zpracovat dávku
-        $result = $this->batch_processor->process_batch($batch_size);
-        
-        // Zaznamenat použití API
-        $this->quota_manager->record_api_usage($result['processed']);
-        
+
         error_log("[DB Nearby Auto] Zpracováno: {$result['processed']}, chyb: {$result['errors']}");
-        
-        // Pokud jsou ještě položky ve frontě, naplánovat další běh
-        $stats = $this->queue_manager->get_stats();
-        if ($stats->pending > 0) {
-            $next_run = time() + (30 * MINUTE_IN_SECONDS); // Za 30 minut
-            wp_schedule_single_event($next_run, 'db_nearby_auto_process');
-        }
     }
     
     /**
@@ -107,7 +101,8 @@ class Nearby_Auto_Processor {
             'queue_stats' => $queue_stats,
             'quota_stats' => $quota_stats,
             'next_run' => $next_run ? date('Y-m-d H:i:s', $next_run) : null,
-            'auto_enabled' => wp_next_scheduled('db_nearby_auto_process') !== false
+            'auto_enabled' => (bool)get_option('db_nearby_auto_enabled', false),
+            'scheduled' => $next_run !== false
         );
     }
     
@@ -115,44 +110,59 @@ class Nearby_Auto_Processor {
      * Spustit automatické zpracování ručně
      */
     public function trigger_auto_processing() {
-        // Zkontrolovat, zda může pokračovat
+        $result = array(
+            'success' => false,
+            'processed' => 0,
+            'errors' => 0,
+            'message' => ''
+        );
+
         if (!$this->quota_manager->can_process_queue()) {
             $reset_time = $this->quota_manager->get_reset_time();
+            $result['message'] = 'Nedostatečná API kvóta';
+            $result['reset_at'] = $reset_time;
             error_log("[DB Nearby Manual] Nelze pokračovat, reset v " . date('Y-m-d H:i:s', $reset_time));
-            return;
+            $result['queue_stats'] = $this->queue_manager->get_stats();
+            return $result;
         }
-        
-        // Získat doporučený batch size
-        $batch_size = $this->quota_manager->get_recommended_batch_size();
-        
-        if ($batch_size <= 0) {
+
+        $recommended = $this->quota_manager->get_recommended_batch_size();
+
+        if ($recommended <= 0) {
+            $result['message'] = 'Žádná kvóta k dispozici';
             error_log("[DB Nearby Manual] Žádná kvóta k dispozici");
-            return;
+            $result['queue_stats'] = $this->queue_manager->get_stats();
+            return $result;
         }
-        
-        // Zpracovat dávku
-        $result = $this->batch_processor->process_batch($batch_size);
-        
-        // Zaznamenat použití API
-        $this->quota_manager->record_api_usage($result['processed']);
-        
+
+        $batch_size = max(1, $recommended);
+
+        $batch_result = $this->batch_processor->process_batch($batch_size);
+
+        if (!empty($batch_result['processed'])) {
+            $this->quota_manager->record_api_usage($batch_result['processed']);
+        }
+
+        $result = array_merge($result, $batch_result);
+        $result['success'] = $batch_result['processed'] > 0;
+        $result['queue_stats'] = $this->queue_manager->get_stats();
+
         error_log("[DB Nearby Manual] Zpracováno: {$result['processed']}, chyb: {$result['errors']}");
-        
+
         return $result;
     }
-    
+
     /**
      * Zastavit automatické zpracování
      */
     public function stop_auto_processing() {
         wp_clear_scheduled_hook('db_nearby_auto_process');
     }
-    
+
     /**
      * Restartovat automatické zpracování
      */
     public function restart_auto_processing() {
-        $this->stop_auto_processing();
-        $this->schedule_auto_processing();
+        $this->schedule_auto_processing(true);
     }
 }
