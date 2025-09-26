@@ -54,6 +54,9 @@ class Nearby_Recompute_Job {
      */
     public function process_nearby_data($origin_id, $type, $candidates) {
         try {
+            $start_time = microtime(true);
+            $matrix_calls = 0;
+            $iso_calls = 0;
             $meta_key = ($type === 'poi') ? '_db_nearby_cache_poi_foot' : '_db_nearby_cache_charger_foot';
             
             // Načíst origin souřadnice podle typu postu
@@ -83,31 +86,37 @@ class Nearby_Recompute_Job {
             $orsKey = trim((string)($cfg['ors_api_key'] ?? ''));
             $provider = (string)($cfg['provider'] ?? 'ors');
             $profile = 'foot-walking';
-            $batch_size = (int)($cfg['matrix_batch_size'] ?? 24);
-            
             if (empty($orsKey) && $provider === 'ors') {
                 return array('success' => false, 'error' => 'ORS API key není nastaven');
             }
-            
+
             $items = array();
             $total = count($candidates);
-            
-            // Zpracovat po dávkách
-            for ($i = 0; $i < $total; $i += $batch_size) {
-                $chunk = array_slice($candidates, $i, $batch_size);
-                $chunk_index = (int) floor($i / $batch_size);
-                $chunk_result = $this->process_chunk($chunk, $orsKey, $provider, $profile, $origin_lat, $origin_lng, $origin_id, $chunk_index);
-                
-                if (!$chunk_result['success']) {
-                    return $chunk_result;
-                }
-                
-                $items = array_merge($items, $chunk_result['items']);
-                
-                // Pauza mezi dávkami
-                if ($i + $batch_size < $total) {
-                    usleep(150000); // 150ms
-                }
+            $original_total = $total;
+            $matrix_limit = max(1, API_Quota_Manager::ORS_MATRIX_MAX_LOCATIONS - 1);
+
+            if ($total > $matrix_limit) {
+                $this->debug_log('[Matrix] candidate limit enforced', [
+                    'origin_id' => $origin_id,
+                    'type' => $type,
+                    'original_total' => $original_total,
+                    'limited_to' => $matrix_limit
+                ]);
+                $candidates = array_slice($candidates, 0, $matrix_limit);
+                $total = count($candidates);
+            }
+            // ORS dokumentace dovoluje maximálně jeden matrix dotaz (1 origin + 49 destinací)
+            // za minutu, proto vždy zpracujeme všechny kandidáty v jediném požadavku.
+            $normalized_candidates = $this->normalize_matrix_candidates($candidates);
+            $chunk_result = $this->process_chunk($normalized_candidates, $orsKey, $provider, $profile, $origin_lat, $origin_lng, $origin_id, 0);
+
+            if (!$chunk_result['success']) {
+                return $chunk_result;
+            }
+
+            $items = $chunk_result['items'];
+            if ($provider === 'ors') {
+                $matrix_calls = 1;
             }
             
             // Uložit výsledky
@@ -115,14 +124,23 @@ class Nearby_Recompute_Job {
 
             // Současně stáhnout a uložit isochrones stejně jako v recompute_nearby_for_origin
             if (!empty($orsKey) && $provider === 'ors') {
-                $this->fetch_and_cache_isochrones($origin_id, $origin_lat, $origin_lng, $orsKey);
+                if ($this->fetch_and_cache_isochrones($origin_id, $origin_lat, $origin_lng, $orsKey)) {
+                    $iso_calls++;
+                }
             }
-            
+
             // Přidat do zpracovaných míst
+            $processing_time = round(microtime(true) - $start_time, 3);
+            $api_calls_used = array('matrix' => $matrix_calls, 'isochrones' => $iso_calls);
             $this->track_processed_location($origin_id, $type, $candidates, $api_calls_used, $processing_time);
-            
-            return array('success' => true, 'items_count' => count($items));
-            
+
+            return array(
+                'success' => true,
+                'items_count' => count($items),
+                'api_calls' => $api_calls_used,
+                'processing_time_s' => $processing_time
+            );
+
         } catch (Exception $e) {
             return array('success' => false, 'error' => $e->getMessage());
         }
@@ -256,6 +274,20 @@ class Nearby_Recompute_Job {
             // 1) Kandidáti (Haversine; vyber typ protilehlý vůči originu)
             $candidates = $this->get_candidates($lat, $lng, $type, $radiusKm, $maxCand);
             $total = count($candidates);
+            $original_total = $total;
+            $matrix_limit = max(1, API_Quota_Manager::ORS_MATRIX_MAX_LOCATIONS - 1);
+
+            if ($total > $matrix_limit) {
+                $this->debug_log('[Matrix] candidate limit enforced', [
+                    'origin_id' => $origin_id,
+                    'type' => $type,
+                    'original_total' => $original_total,
+                    'limited_to' => $matrix_limit,
+                    'context' => 'recompute'
+                ]);
+                $candidates = array_slice($candidates, 0, $matrix_limit);
+                $total = count($candidates);
+            }
 
             if ($total === 0) {
                 $this->write_cache($origin_id, $meta_key, [], false, 0, 0, current_time('c'), null);
@@ -265,6 +297,7 @@ class Nearby_Recompute_Job {
             // 2) ORS Matrix po batších
             $items = [];
             $done  = 0;
+            $batchSize = max(1, min($batchSize, $total));
 
             for ($i=0; $i<$total; $i += $batchSize) {
                 $chunk = array_slice($candidates, $i, $batchSize);
@@ -445,8 +478,11 @@ class Nearby_Recompute_Job {
     
     /**
      * Načíst a uložit isochrones data současně s nearby data
+     *
+     * @return bool True pokud proběhl HTTP request na ORS API.
      */
     private function fetch_and_cache_isochrones($origin_id, $lat, $lng, $orsKey) {
+        $did_call = false;
         try {
             $cfg = get_option('db_nearby_config', []);
             $profile = 'foot-walking';
@@ -464,11 +500,11 @@ class Nearby_Recompute_Job {
                     $ttl_days = 30; // Default TTL
                     $computed_at = isset($payload['computed_at']) ? strtotime($payload['computed_at']) : 0;
                     if ((time() - $computed_at) < ($ttl_days * DAY_IN_SECONDS)) {
-                        return; // Data jsou ještě platná
+                        return false; // Data jsou ještě platná
                     }
                 }
             }
-            
+
             // Zkontrolovat lokální minutový limit
             $quota_manager = new \DB\Jobs\API_Quota_Manager();
             $minute_check = $quota_manager->check_minute_limit('isochrones');
@@ -480,21 +516,22 @@ class Nearby_Recompute_Job {
                     'tokens_before' => $minute_check['tokens_before'] ?? null,
                     'tokens_after' => $minute_check['tokens_after'] ?? null
                 ]);
-                return;
+                return false;
             }
-            
+
             $body = [
                 'locations' => [[(float)$lng, (float)$lat]],
                 'range' => $ranges,
                 'range_type' => 'time'
             ];
-            
+
             $this->debug_log('[Isochrones] sending request', [
                 'origin_id' => $origin_id,
                 'ranges' => $ranges,
                 'tokens_after' => $minute_check['tokens_after'] ?? null
             ]);
 
+            $did_call = true;
             $response = wp_remote_post("https://api.openrouteservice.org/v2/isochrones/{$profile}", [
                 'headers' => [
                     'Authorization' => $orsKey,
@@ -511,9 +548,9 @@ class Nearby_Recompute_Job {
                     'origin_id' => $origin_id,
                     'error' => $response->get_error_message()
                 ]);
-                return;
+                return $did_call;
             }
-            
+
             $http_code = wp_remote_retrieve_response_code($response);
             $response_body = wp_remote_retrieve_body($response);
             $data = json_decode($response_body, true);
@@ -537,18 +574,18 @@ class Nearby_Recompute_Job {
                     'http_code' => $http_code
                 ]);
                 $this->set_isochrones_error($origin_id, $profile, 'unauthorized', 'API key invalid');
-                return;
+                return $did_call;
             }
-            
+
             if ($http_code === 429) {
                 $this->debug_log('[Isochrones] rate limited', [
                     'origin_id' => $origin_id,
                     'retry_after' => $retry_after_header
                 ]);
                 $this->set_isochrones_error($origin_id, $profile, 'rate_limited', 'Rate limited');
-                return;
+                return $did_call;
             }
-            
+
             if ($http_code !== 200) {
                 $this->debug_log('[Isochrones] unexpected response', [
                     'origin_id' => $origin_id,
@@ -556,9 +593,9 @@ class Nearby_Recompute_Job {
                     'body_excerpt' => $this->truncate_body($response_body)
                 ]);
                 $this->set_isochrones_error($origin_id, $profile, 'upstream_error', "HTTP $http_code: " . ($data['error']['message'] ?? 'Unknown error'));
-                return;
+                return $did_call;
             }
-            
+
             // Úspěch - uložit data
             $payload = [
                 'version' => 1,
@@ -581,11 +618,14 @@ class Nearby_Recompute_Job {
                 'ratelimit_remaining' => $remaining_header
             ]);
 
+            return $did_call;
+
         } catch (\Throwable $e) {
             $this->debug_log('[Isochrones] exception', [
                 'origin_id' => $origin_id,
                 'error' => $e->getMessage()
             ]);
+            return $did_call;
         }
     }
     
@@ -618,6 +658,9 @@ class Nearby_Recompute_Job {
      */
     public function get_candidates($lat, $lng, $type, $radiusKm, $limit) {
         global $wpdb;
+
+        $matrix_limit = max(1, API_Quota_Manager::ORS_MATRIX_MAX_LOCATIONS - 1);
+        $limit = max(1, min((int)$limit, $matrix_limit));
 
         // type='poi' znamená hledat POI pro origin (může být charging_location nebo rv_spot)
         // type='charging_location' znamená hledat charging_location pro origin (může být poi nebo rv_spot)
@@ -712,7 +755,25 @@ class Nearby_Recompute_Job {
         $c = 2 * atan2(sqrt($a), sqrt(1-$a));
         return (int) round($earth_radius_km * $c * 1000);
     }
-    
+
+    /**
+     * Převést kandidáty na stdClass pro jednotnou práci s ORS matrix API.
+     */
+    private function normalize_matrix_candidates(array $candidates) {
+        return array_map(function($candidate) {
+            if (is_object($candidate)) {
+                return $candidate;
+            }
+
+            $object = new \stdClass();
+            foreach ($candidate as $key => $value) {
+                $object->{$key} = $value;
+            }
+
+            return $object;
+        }, $candidates);
+    }
+
     /**
      * Zpracovat dávku kandidátů
      */
@@ -857,6 +918,8 @@ class Nearby_Recompute_Job {
                 'post_type' => (string)$cand->type,
                 'duration_s' => (int)round($durations[$idx] ?? -1),
                 'distance_m' => (int)round($distances[$idx] ?? -1),
+                'walk_m' => (int)round($distances[$idx] ?? -1),
+                'secs' => (int)round($durations[$idx] ?? -1),
                 'provider' => 'ors.matrix',
                 'profile' => $profile,
             );

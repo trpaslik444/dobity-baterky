@@ -36,7 +36,6 @@ class Nearby_Queue_Admin {
         add_action('wp_ajax_db_move_to_front', array($this, 'ajax_move_to_front'));
         add_action('wp_ajax_db_toggle_auto_processing', array($this, 'ajax_toggle_auto_processing'));
         add_action('wp_ajax_db_trigger_auto_processing', array($this, 'ajax_trigger_auto_processing'));
-        add_action('wp_ajax_db_test_api_call', array($this, 'ajax_test_api_call'));
         add_action('wp_ajax_db_test_token_bucket', array($this, 'ajax_test_token_bucket'));
         add_action('wp_ajax_db_test_ors_headers', array($this, 'ajax_test_ors_headers'));
         
@@ -229,23 +228,23 @@ class Nearby_Queue_Admin {
             <div class="db-queue-stats" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0;">
                 <div class="db-stat-card" style="background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #495057;">Celkem</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #007cba;"><?php echo $stats->total; ?></div>
+                    <div id="db-stat-total" style="font-size: 2em; font-weight: bold; color: #007cba;"><?php echo $stats->total; ?></div>
                 </div>
                 <div class="db-stat-card" style="background: #fff3cd; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #856404;">Čekající</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #ffc107;"><?php echo $stats->pending; ?></div>
+                    <div id="db-stat-pending" style="font-size: 2em; font-weight: bold; color: #ffc107;"><?php echo $stats->pending; ?></div>
                 </div>
                 <div class="db-stat-card" style="background: #d1ecf1; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #0c5460;">Zpracovává se</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #17a2b8;"><?php echo $stats->processing; ?></div>
+                    <div id="db-stat-processing" style="font-size: 2em; font-weight: bold; color: #17a2b8;"><?php echo $stats->processing; ?></div>
                 </div>
                 <div class="db-stat-card" style="background: #d4edda; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #155724;">Dokončené</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #28a745;"><?php echo $stats->completed; ?></div>
+                    <div id="db-stat-completed" style="font-size: 2em; font-weight: bold; color: #28a745;"><?php echo $stats->completed; ?></div>
                 </div>
                 <div class="db-stat-card" style="background: #f8d7da; padding: 20px; border-radius: 8px; text-align: center;">
                     <h3 style="margin: 0 0 10px 0; color: #721c24;">Chyby</h3>
-                    <div style="font-size: 2em; font-weight: bold; color: #dc3545;"><?php echo $stats->failed; ?></div>
+                    <div id="db-stat-failed" style="font-size: 2em; font-weight: bold; color: #dc3545;"><?php echo $stats->failed; ?></div>
                 </div>
             </div>
             
@@ -317,21 +316,19 @@ class Nearby_Queue_Admin {
                 <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
                     <div style="background: white; padding: 15px; border-radius: 6px; flex: 1; min-width: 200px;">
                         <h4 style="margin: 0 0 8px 0;">Stav</h4>
-                        <div style="font-size: 1.1em; font-weight: bold; color: <?php echo $auto_status['auto_enabled'] ? '#28a745' : '#dc3545'; ?>">
+                        <div id="db-auto-status-text" style="font-size: 1.1em; font-weight: bold; color: <?php echo $auto_status['auto_enabled'] ? '#28a745' : '#dc3545'; ?>">
                             <?php echo $auto_status['auto_enabled'] ? '✓ Zapnuto' : '✗ Vypnuto'; ?>
                         </div>
-                        <?php if ($auto_status['next_run']): ?>
-                        <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
-                            Další běh: <?php echo esc_html($auto_status['next_run']); ?>
+                        <div id="db-auto-next-run" style="font-size: 0.9em; color: #666; margin-top: 5px; <?php echo $auto_status['next_run'] ? '' : 'display:none;'; ?>">
+                            Další běh: <span id="db-auto-next-run-value"><?php echo $auto_status['next_run'] ? esc_html($auto_status['next_run']) : ''; ?></span>
                         </div>
-                        <?php endif; ?>
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button type="button" class="button button-primary" id="db-toggle-auto">
+                        <button type="button" class="button button-primary" id="db-toggle-auto" data-enabled="<?php echo $auto_status['auto_enabled'] ? '1' : '0'; ?>">
                             <?php echo $auto_status['auto_enabled'] ? 'Vypnout automatické zpracování' : 'Zapnout automatické zpracování'; ?>
                         </button>
                         <button type="button" class="button button-secondary" id="db-trigger-auto">
-                            Zpracovat jednu dávku (ručně)
+                            Zpracovat 1 položku
                         </button>
                     </div>
                 </div>
@@ -341,12 +338,6 @@ class Nearby_Queue_Admin {
             <div class="db-queue-actions" style="margin: 20px 0;">
                 <h2>Ruční akce</h2>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button type="button" class="button button-primary" id="db-process-batch">
-                        Zpracovat dávku (50 bodů)
-                    </button>
-                    <button type="button" class="button button-secondary" id="db-process-all">
-                        Zpracovat všechny čekající
-                    </button>
                     <button type="button" class="button button-secondary" id="db-enqueue-all">
                         Přidat všechny body do fronty
                     </button>
@@ -366,8 +357,8 @@ class Nearby_Queue_Admin {
                     <button type="button" class="button button-secondary" id="db-refresh-details">
                         Obnovit
                     </button>
-                    <button type="button" class="button button-primary" id="db-test-api-call">
-                        Test API (1 bod)
+                    <button type="button" class="button button-primary" id="db-process-single">
+                        Zpracovat 1 položku
                     </button>
                     <button type="button" class="button button-secondary" id="db-test-token-bucket">
                         Test Token Bucket
@@ -521,30 +512,86 @@ class Nearby_Queue_Admin {
         function showResult(message, type = 'success') {
             jQuery('#db-queue-results').show();
             const color = type === 'error' ? '#dc3545' : '#28a745';
-            jQuery('#db-queue-output').html('<div style="color: ' + color + ';">✓ ' + message + '</div>');
+            const icon = type === 'error' ? '✗' : '✓';
+            jQuery('#db-queue-output').html('<div style="color: ' + color + ';">' + icon + ' ' + message + '</div>');
         }
-        
-        function testApiCall() {
-            showLoading('Testuje se API volání na 1 bod...');
-            
+
+        function renderAutoStatus(status) {
+            if (!status) {
+                return;
+            }
+
+            const enabled = !!status.auto_enabled;
+            const $statusText = jQuery('#db-auto-status-text');
+            $statusText.text(enabled ? '✓ Zapnuto' : '✗ Vypnuto');
+            $statusText.css('color', enabled ? '#28a745' : '#dc3545');
+
+            const $nextRunWrap = jQuery('#db-auto-next-run');
+            const $nextRunValue = jQuery('#db-auto-next-run-value');
+
+            if (status.next_run) {
+                $nextRunValue.text(status.next_run);
+                $nextRunWrap.show();
+            } else {
+                $nextRunValue.text('');
+                $nextRunWrap.hide();
+            }
+
+            const $toggle = jQuery('#db-toggle-auto');
+            $toggle.data('enabled', enabled ? '1' : '0');
+            $toggle.text(enabled ? 'Vypnout automatické zpracování' : 'Zapnout automatické zpracování');
+        }
+
+        function processSingleItem() {
+            showLoading('Zpracovává se 1 položka...');
+
             jQuery.post(ajaxurl, {
-                action: 'db_test_api_call',
+                action: 'db_trigger_auto_processing',
                 nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
             }, function(response) {
-                if (response.success) {
-                    const message = response.data?.message || response.data || 'Test proběhl úspěšně';
-                    showResult(`Test API úspěšný: ${message}`, 'success');
-                    // Aktualizovat kvóty po testu
-                    setTimeout(() => {
-                        location.reload();
-                    }, 2000);
-                } else {
-                    const message = response.data?.message || response.data || 'Neznámá chyba';
-                    showResult(`Test API selhal: ${message}`, 'error');
+                const payload = response.data || {};
+                const message = payload.message || (response.success
+                    ? 'Položka úspěšně zpracována'
+                    : 'Chyba při zpracování položky');
+
+                let messageType = response.success ? 'success' : 'error';
+
+                if (!response.success && (payload.processed === 0 || payload.processed === '0') && (payload.errors === 0 || payload.errors === '0') && !payload.reset_at) {
+                    messageType = 'success';
                 }
+
+                showResult(message, messageType);
+
+                if (payload.queue_stats) {
+                    updateStats(payload.queue_stats);
+                }
+
+                setTimeout(() => {
+                    loadQueueDetails();
+                }, 500);
             }).fail(function() {
-                showResult('Chyba při testování API', 'error');
+                showResult('Chyba při ručním zpracování', 'error');
             });
+        }
+
+        function updateStats(stats) {
+            if (!stats) {
+                return;
+            }
+
+            const normalised = {
+                total: parseInt(stats.total ?? stats['total'] ?? 0, 10) || 0,
+                pending: parseInt(stats.pending ?? stats['pending'] ?? 0, 10) || 0,
+                processing: parseInt(stats.processing ?? stats['processing'] ?? 0, 10) || 0,
+                completed: parseInt(stats.completed ?? stats['completed'] ?? 0, 10) || 0,
+                failed: parseInt(stats.failed ?? stats['failed'] ?? 0, 10) || 0
+            };
+
+            jQuery('#db-stat-total').text(normalised.total);
+            jQuery('#db-stat-pending').text(normalised.pending);
+            jQuery('#db-stat-processing').text(normalised.processing);
+            jQuery('#db-stat-completed').text(normalised.completed);
+            jQuery('#db-stat-failed').text(normalised.failed);
         }
         
         function testTokenBucket() {
@@ -619,72 +666,42 @@ class Nearby_Queue_Admin {
         jQuery(document).ready(function($) {
             // Automaticky načíst frontu při načtení stránky
             loadQueueDetails();
-            
-            // Zpracovat dávku
-            $('#db-process-batch').on('click', function() {
-                processBatch(50);
-            });
-            
-            // Zpracovat všechny
-            $('#db-process-all').on('click', function() {
-                if (confirm('Opravdu chcete zpracovat všechny čekající položky? Může to trvat dlouho.')) {
-                    processAll();
-                }
-            });
-            
+
             // Přidat všechny body
             $('#db-enqueue-all').on('click', function() {
                 if (confirm('Opravdu chcete přidat všechny body do fronty?')) {
                     enqueueAll();
                 }
             });
-            
+
             // Resetovat chybné
             $('#db-reset-failed').on('click', function() {
                 if (confirm('Opravdu chcete resetovat všechny chybné položky?')) {
                     resetFailed();
                 }
             });
-            
+
             // Vyčistit staré
             $('#db-cleanup-old').on('click', function() {
                 if (confirm('Opravdu chcete vyčistit staré dokončené položky?')) {
                     cleanupOld();
                 }
             });
-            
-            function processBatch(size) {
-                showLoading('Zpracovává se dávka...');
-                $.post(ajaxurl, {
-                    action: 'db_process_nearby_batch',
-                    batch_size: size,
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
-                }, function(response) {
-                    showResult(response.data.message);
-                    if (response.data.stats) {
-                        updateStats(response.data.stats);
-                    }
-                }).fail(function() {
-                    showResult('Chyba při zpracování dávky', 'error');
-                });
-            }
-            
-            function processAll() {
-                showLoading('Zpracovávají se všechny položky...');
-                $.post(ajaxurl, {
-                    action: 'db_process_nearby_batch',
-                    batch_size: 'all',
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
-                }, function(response) {
-                    showResult(response.data.message);
-                    if (response.data.stats) {
-                        updateStats(response.data.stats);
-                    }
-                }).fail(function() {
-                    showResult('Chyba při zpracování', 'error');
-                });
-            }
-            
+
+            // Ruční zpracování jedné položky
+            $('#db-process-single').on('click', function() {
+                processSingleItem();
+            });
+
+            $('#db-trigger-auto').on('click', function() {
+                processSingleItem();
+            });
+
+            // Toggle automatické zpracování
+            $('#db-toggle-auto').on('click', function() {
+                toggleAutoProcessing();
+            });
+
             function enqueueAll() {
                 showLoading('Přidávají se všechny body do fronty...');
                 $.post(ajaxurl, {
@@ -730,27 +747,11 @@ class Nearby_Queue_Admin {
                 });
             }
             
-            function showLoading(message) {
-                $('#db-queue-results').show();
-                $('#db-queue-output').html('<div style="color: #007cba;">⏳ ' + message + '</div>');
-            }
-            
-            function showResult(message, type = 'success') {
-                $('#db-queue-results').show();
-                const color = type === 'error' ? '#dc3545' : '#28a745';
-                $('#db-queue-output').html('<div style="color: ' + color + ';">✓ ' + message + '</div>');
-            }
-            
-            function updateStats(stats) {
-                // Aktualizovat statistiky na stránce
-                location.reload();
-            }
-            
             // Nové funkce pro podrobnosti fronty
             $('#db-refresh-details').on('click', function() {
                 loadQueueDetails();
             });
-            
+
             $('#db-details-limit').on('change', function() {
                 currentPage = 1; // Reset na první stránku při změně limitu
                 loadQueueDetails();
@@ -768,79 +769,55 @@ class Nearby_Queue_Admin {
                 loadQueueDetails();
             });
             
-            $('#db-test-api-call').on('click', function() {
-                testApiCall();
-            });
-            
             $('#db-test-token-bucket').on('click', function() {
                 testTokenBucket();
             });
-            
+
             $('#db-test-ors-headers').on('click', function() {
                 testOrsHeaders();
             });
-            
-            // Toggle automatické zpracování
-            $('#db-toggle-auto').on('click', function() {
-                toggleAutoProcessing();
-            });
-            
-            // Spustit automatické zpracování nyní
-            $('#db-trigger-auto').on('click', function() {
-                triggerAutoProcessing();
-            });
-            
+
             function toggleAutoProcessing() {
-                const isEnabled = jQuery('#db-toggle-auto').text().includes('Vypnout');
+                const $toggle = jQuery('#db-toggle-auto');
+                const dataEnabled = $toggle.data('enabled');
+                const isEnabled = dataEnabled === 1 || dataEnabled === '1';
                 const action = isEnabled ? 'vypnout' : 'zapnout';
-                
+
                 if (!confirm(`Opravdu chcete ${action} automatické zpracování fronty?`)) {
                     return;
                 }
-                
+
                 showLoading(`${isEnabled ? 'Vypíná' : 'Zapíná'} se automatické zpracování...`);
-                
+
                 $.post(ajaxurl, {
-                    action: 'db_trigger_auto_processing',
+                    action: 'db_toggle_auto_processing',
                     nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
                 }, function(response) {
                     if (response.success) {
-                        const action = jQuery('#db-toggle-auto').text().includes('Vypnout') ? 'vypnuto' : 'zapnuto';
-                        showResult(`Automatické zpracování ${action}`);
-                        // Načíst aktualizované podrobnosti fronty
+                        const data = response.data || {};
+                        const message = data.message || `Automatické zpracování ${isEnabled ? 'vypnuto' : 'zapnuto'}`;
+                        showResult(message, 'success');
+
+                        if (data.auto_status) {
+                            renderAutoStatus(data.auto_status);
+                        }
+
+                        if (data.queue_stats) {
+                            updateStats(data.queue_stats);
+                        }
+
                         setTimeout(() => {
                             loadQueueDetails();
-                            location.reload();
-                        }, 2000);
+                        }, 500);
                     } else {
-                        showResult('Chyba při přepínání automatického zpracování', 'error');
+                        const message = response.data?.message || 'Chyba při přepínání automatického zpracování';
+                        showResult(message, 'error');
                     }
                 }).fail(function() {
                     showResult('Chyba při přepínání automatického zpracování', 'error');
                 });
             }
-            
-            function triggerAutoProcessing() {
-                showLoading('Zpracovává se jedna dávka ručně...');
-                
-                $.post(ajaxurl, {
-                    action: 'db_trigger_auto_processing',
-                    nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
-                }, function(response) {
-                    if (response.success) {
-                        showResult('Jedna dávka zpracována ručně: ' + response.data.message);
-                        // Načíst aktualizované podrobnosti fronty
-                        setTimeout(() => {
-                            loadQueueDetails();
-                        }, 1000);
-                    } else {
-                        showResult('Chyba při ručním zpracování', 'error');
-                    }
-                }).fail(function() {
-                    showResult('Chyba při ručním zpracování', 'error');
-                });
-            }
-            
+
             // Globální funkce pro akce v tabulce
             window.moveToFront = function(id) {
                 if (confirm('Opravdu chcete přesunout tuto položku na začátek fronty?')) {
@@ -861,8 +838,6 @@ class Nearby_Queue_Admin {
                 }
             };
             
-            // Načíst podrobnosti při načtení stránky
-            loadQueueDetails();
         });
         </script>
         <?php
@@ -956,46 +931,6 @@ class Nearby_Queue_Admin {
             'data' => $items,
             'pagination' => $pagination
         ));
-    }
-    
-    public function ajax_test_api_call() {
-        check_ajax_referer('db_nearby_batch', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_die('Nedostatečná oprávnění');
-        }
-        
-        // Najít první pending položku ve frontě
-        $test_item = $this->queue_manager->get_next_pending_item();
-        
-        if (!$test_item) {
-            wp_send_json_error(array('message' => 'Žádná položka k testování ve frontě'));
-        }
-        
-        // Načíst recompute job pro test
-        $recompute_job = new \DB\Jobs\Nearby_Recompute_Job();
-        
-        // Log testu
-        error_log("[DB Nearby Test] Testování API volání pro položku ID: {$test_item->id}");
-        
-        try {
-            // Zkusit zpracovat 1 položku
-            $result = $recompute_job->process_single_item($test_item->id);
-            
-            if ($result['success']) {
-                $message = "Úspěšně zpracováno: {$result['processed']} kandidátů, použito {$result['api_calls']} API volání";
-                error_log("[DB Nearby Test] Test úspěšný: {$message}");
-                wp_send_json_success(array('message' => $message, 'result' => $result));
-            } else {
-                $message = "Chyba při zpracování: " . $result['error'];
-                error_log("[DB Nearby Test] Test selhal: {$message}");
-                wp_send_json_error(array('message' => $message));
-            }
-        } catch (Exception $e) {
-            $message = "Výjimka při testování: " . $e->getMessage();
-            error_log("[DB Nearby Test] Výjimka: {$message}");
-            wp_send_json_error(array('message' => $message));
-        }
     }
     
     public function ajax_test_token_bucket() {
@@ -1153,39 +1088,48 @@ class Nearby_Queue_Admin {
             wp_die('Nedostatečná oprávnění');
         }
         
-        $auto_status = $this->auto_processor->get_auto_status();
-        
-        if ($auto_status['auto_enabled']) {
-            $this->auto_processor->stop_auto_processing();
+        $currently_enabled = (bool)get_option('db_nearby_auto_enabled', false);
+
+        if ($currently_enabled) {
             update_option('db_nearby_auto_enabled', false);
+            $this->auto_processor->stop_auto_processing();
             $message = 'Automatické zpracování vypnuto';
         } else {
-            $this->auto_processor->restart_auto_processing();
             update_option('db_nearby_auto_enabled', true);
+            $this->auto_processor->schedule_auto_processing(true);
             $message = 'Automatické zpracování zapnuto';
         }
-        
-        wp_send_json_success(array('message' => $message));
+
+        $auto_status = $this->auto_processor->get_auto_status();
+        $queue_stats = $this->queue_manager->get_stats();
+
+        wp_send_json_success(array(
+            'message' => $message,
+            'auto_status' => $auto_status,
+            'queue_stats' => $queue_stats
+        ));
     }
-    
+
     public function ajax_trigger_auto_processing() {
         check_ajax_referer('db_nearby_batch', 'nonce');
-        
+
         if (!current_user_can('manage_options')) {
             wp_die('Nedostatečná oprávnění');
         }
-        
+
         $result = $this->auto_processor->trigger_auto_processing();
-        
-        if ($result) {
-            wp_send_json_success(array(
-                'message' => "Zpracováno: {$result['processed']} položek, chyb: {$result['errors']}",
-                'processed' => $result['processed'],
-                'errors' => $result['errors']
-            ));
-        } else {
-            wp_send_json_success(array('message' => 'Žádné položky k zpracování nebo nedostatečná kvóta'));
+
+        if (empty($result['message'])) {
+            $result['message'] = $result['success']
+                ? sprintf('Zpracováno: %d položek, chyb: %d', (int)$result['processed'], (int)$result['errors'])
+                : 'Žádné položky k zpracování nebo nedostatečná kvóta';
         }
+
+        if (!empty($result['success'])) {
+            wp_send_json_success($result);
+        }
+
+        wp_send_json_error($result);
     }
     
     /**
