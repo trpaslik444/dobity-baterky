@@ -21,7 +21,7 @@ class Nearby_Batch_Processor {
     /**
      * Zpracovat dávku položek z fronty
      */
-    public function process_batch($max_items = 10) {
+    public function process_batch($max_items = 1) {
         $processed = 0;
         $errors = 0;
         
@@ -36,7 +36,7 @@ class Nearby_Batch_Processor {
         }
         
         // Získat položky k zpracování
-        $items = $this->queue_manager->get_pending_items($max_items);
+        $items = $this->queue_manager->get_pending_items(min(1, max(1, (int)$max_items)));
         
         if (empty($items)) {
             return array(

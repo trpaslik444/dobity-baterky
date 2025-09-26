@@ -7,6 +7,15 @@
 namespace DB\Jobs;
 
 class API_Quota_Manager {
+
+    /**
+     * Hodnoty podle dokumentace ORS pro free tier.
+     * Viz https://openrouteservice.org/dev/#/signup - matrix i isochrones maximálně 1 požadavek za minutu
+     * a jeden matrix request může obsahovat nejvýše 50 souřadnic (1 origin + 49 destinací).
+     */
+    public const MATRIX_PER_MINUTE = 1;
+    public const ISOCHRONES_PER_MINUTE = 1;
+    public const ORS_MATRIX_MAX_LOCATIONS = 50;
     
     private $config;
     
@@ -268,13 +277,12 @@ class API_Quota_Manager {
         $remaining = $quota['remaining'];
         
         // Doporučit menší batch, pokud zbývá málo kvóty
-        if ($remaining < 50) {
-            return min(10, $remaining);
-        } elseif ($remaining < 200) {
-            return min(25, $remaining);
-        } else {
-            return min(50, $remaining);
+        if ($remaining <= 0) {
+            return 0;
         }
+
+        // ORS limity dovolují 1 matrix+isochron request za minutu, proto zpracujeme max. 1 položku.
+        return min(1, (int)$remaining);
     }
     
     /**
