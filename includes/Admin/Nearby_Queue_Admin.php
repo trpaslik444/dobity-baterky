@@ -1009,7 +1009,7 @@ class Nearby_Queue_Admin {
             $quota_manager = new \DB\Jobs\API_Quota_Manager();
             
             // Test token bucket
-            $result = $quota_manager->check_minute_limit();
+            $result = $quota_manager->check_minute_limit('matrix');
             
             // Získat raw bucket data pro debug
             $bucket_key = 'db_ors_matrix_token_bucket';
@@ -1018,6 +1018,8 @@ class Nearby_Queue_Admin {
             $debug_info = array(
                 'allowed' => $result['allowed'],
                 'tokens_remaining' => $result['tokens_remaining'] ?? 0,
+                'tokens_before' => $result['tokens_before'] ?? null,
+                'tokens_after' => $result['tokens_after'] ?? null,
                 'wait_seconds' => $result['wait_seconds'] ?? 0,
                 'bucket_data' => $bucket_data,
                 'current_time' => time(),

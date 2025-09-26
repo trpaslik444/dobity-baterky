@@ -93,10 +93,12 @@ if ( ! function_exists('db_user_can_see_map') ) {
             
             // Debug informace (pouze pro adminy)
             if ( current_user_can('administrator') && defined('WP_DEBUG') && WP_DEBUG ) {
-                error_log('[DB MAP DEBUG] User: ' . wp_get_current_user()->user_login . 
-                         ', Cap: ' . $cap . 
-                         ', Has cap: ' . (current_user_can($cap) ? 'YES' : 'NO') .
-                         ', Is logged in: ' . (is_user_logged_in() ? 'YES' : 'NO'));
+                $current_user = wp_get_current_user();
+                $user_login = ($current_user instanceof WP_User) ? $current_user->user_login : '';
+                $has_cap = current_user_can($cap) ? 'YES' : 'NO';
+                $is_logged = is_user_logged_in() ? 'YES' : 'NO';
+                $message = sprintf('[DB MAP DEBUG] User: %s, Cap: %s, Has cap: %s, Is logged in: %s', $user_login, $cap, $has_cap, $is_logged);
+                error_log($message);
             }
             
             // Pokud má uživatel požadovanou capability, má přístup

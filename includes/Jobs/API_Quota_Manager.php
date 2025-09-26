@@ -175,39 +175,62 @@ class API_Quota_Manager {
     /**
      * Token bucket pro minutový limit
      */
-    public function check_minute_limit() {
-        $bucket_key = 'db_ors_matrix_token_bucket';
+    public function check_minute_limit($type = 'matrix', $consume_token = true) {
+        $type = ($type === 'isochrones') ? 'isochrones' : 'matrix';
+        $limit = ($type === 'isochrones') ? self::ISOCHRONES_PER_MINUTE : self::MATRIX_PER_MINUTE;
+        $bucket_key = 'db_ors_' . $type . '_token_bucket';
         $bucket = get_transient($bucket_key);
-        
+
         if ($bucket === false) {
-            // Nový bucket s 40 tokeny (limitu pro Matrix V2)
+            // Nový bucket s plným počtem tokenů
             $bucket = array(
-                'tokens' => 40,
+                'tokens' => $limit,
                 'last_refill' => time()
             );
         }
-        
+
         $now = time();
         $elapsed = $now - $bucket['last_refill'];
-        
-        // Refill tokenů (40 tokenů za minutu = 0.67 tokenů za sekundu)
+        $tokens_before_refill = $bucket['tokens'];
+
         if ($elapsed > 0) {
-            $refill_rate = 40 / 60; // 0.67 tokenů za sekundu
-            $bucket['tokens'] = min(40, $bucket['tokens'] + ($elapsed * $refill_rate));
+            $refill_rate = $limit / 60;
+            $bucket['tokens'] = min($limit, $bucket['tokens'] + ($elapsed * $refill_rate));
             $bucket['last_refill'] = $now;
         }
-        
-        // Zkontrolovat, zda máme dostatek tokenů
+
+        // Zkontrolovat dostupnost tokenů
         if ($bucket['tokens'] < 1) {
-            $wait_time = ceil((1 - $bucket['tokens']) / (40 / 60)); // Počkat na další token
-            return array('allowed' => false, 'wait_seconds' => $wait_time);
+            $tokens_needed = 1 - $bucket['tokens'];
+            $wait_time = ceil($tokens_needed / ($limit / 60));
+            $wait_time = max(3, min(60, $wait_time));
+            error_log(sprintf('[DB Quota] type=%s allowed=0 tokens_before=%.2f tokens_after=%.2f limit=%d wait=%d', $type, $tokens_before_refill, $bucket['tokens'], $limit, $wait_time));
+            return array(
+                'allowed' => false,
+                'wait_seconds' => $wait_time,
+                'tokens_before' => $tokens_before_refill,
+                'tokens_after' => $bucket['tokens'],
+                'limit' => $limit
+            );
         }
-        
-        // Spotřebovat token
-        $bucket['tokens']--;
-        set_transient($bucket_key, $bucket, 60); // 1 minuta TTL
-        
-        return array('allowed' => true, 'tokens_remaining' => $bucket['tokens']);
+
+        $tokens_before_consume = $bucket['tokens'];
+        if ($consume_token) {
+            $bucket['tokens']--;
+            set_transient($bucket_key, $bucket, 60);
+        } else {
+            set_transient($bucket_key, $bucket, 60);
+        }
+
+        error_log(sprintf('[DB Quota] type=%s allowed=1 tokens_before=%.2f tokens_after=%.2f limit=%d', $type, $tokens_before_consume, $bucket['tokens'], $limit));
+
+        return array(
+            'allowed' => true,
+            'tokens_remaining' => $bucket['tokens'],
+            'tokens_before' => $tokens_before_consume,
+            'tokens_after' => $bucket['tokens'],
+            'limit' => $limit
+        );
     }
     
     /**

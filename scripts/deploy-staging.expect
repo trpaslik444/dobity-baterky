@@ -1,0 +1,56 @@
+#!/usr/bin/expect -f
+
+# Usage: STAGING_PASS=heslo ./scripts/deploy-staging.expect /cesta/k/build/dobity-baterky
+
+set timeout 600
+
+if { [llength $argv] < 1 } {
+    puts "ERROR: Musíš předat cestu k build složce (např. build/dobity-baterky)."
+    exit 2
+}
+
+set local_dir [lindex $argv 0]
+
+if { ! [file isdirectory $local_dir] } {
+    puts "ERROR: Složka $local_dir neexistuje nebo není adresář."
+    exit 2
+}
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč ondraplas-default."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+set timestamp [clock format [clock seconds] -format "%Y%m%d%H%M%S"]
+set backup_dir "dobity-baterky.backup-$timestamp"
+
+set user "staging-f576-dobitybaterky.wordpress.com"
+set host "sftp.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "cd wp-content/plugins\r"
+
+expect "sftp>"
+send "rename dobity-baterky $backup_dir\r"
+
+expect "sftp>"
+send "mkdir dobity-baterky\r"
+
+expect "sftp>"
+send "lcd $local_dir\r"
+
+expect "sftp>"
+send "put -r * dobity-baterky/\r"
+
+expect "sftp>"
+puts "✅ Nasazeno na staging. Záloha: $backup_dir"
+send "exit\r"
+
+expect eof

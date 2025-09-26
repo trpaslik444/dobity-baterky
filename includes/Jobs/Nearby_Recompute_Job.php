@@ -3,7 +3,37 @@
 namespace DB\Jobs;
 
 class Nearby_Recompute_Job {
-    
+
+    /**
+     * Jednoduchý logger; zapisuje do PHP logu i do souboru v uploads.
+     */
+    private function debug_log($message, array $context = []) {
+        if (!empty($context)) {
+            $context_json = wp_json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $message .= ' | ' . $context_json;
+        }
+
+        $line = '[DB Nearby] ' . $message;
+        error_log($line);
+
+        $uploads = function_exists('wp_upload_dir') ? wp_upload_dir() : null;
+        if (!empty($uploads['basedir']) && is_dir($uploads['basedir']) && is_writable($uploads['basedir'])) {
+            $log_path = trailingslashit($uploads['basedir']) . 'db-nearby-debug.log';
+            $timestamp = gmdate('Y-m-d H:i:s');
+            @file_put_contents($log_path, "[{$timestamp}] {$line}\n", FILE_APPEND | LOCK_EX);
+        }
+    }
+
+    private function truncate_body($body) {
+        if (!is_string($body)) {
+            $body = wp_json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        if ($body === false || $body === null) {
+            return '';
+        }
+        return function_exists('mb_substr') ? mb_substr($body, 0, 500) : substr($body, 0, 500);
+    }
+
     public function __construct() {
         // Registrace hooku s podporou pro oba formáty (AS: assoc array, WP-Cron: dva scalary)
         add_action('db_nearby_recompute', function($arg1, $arg2 = null) {
@@ -65,7 +95,8 @@ class Nearby_Recompute_Job {
             // Zpracovat po dávkách
             for ($i = 0; $i < $total; $i += $batch_size) {
                 $chunk = array_slice($candidates, $i, $batch_size);
-                $chunk_result = $this->process_chunk($chunk, $orsKey, $provider, $profile, $origin_lat, $origin_lng);
+                $chunk_index = (int) floor($i / $batch_size);
+                $chunk_result = $this->process_chunk($chunk, $orsKey, $provider, $profile, $origin_lat, $origin_lng, $origin_id, $chunk_index);
                 
                 if (!$chunk_result['success']) {
                     return $chunk_result;
@@ -237,6 +268,12 @@ class Nearby_Recompute_Job {
 
             for ($i=0; $i<$total; $i += $batchSize) {
                 $chunk = array_slice($candidates, $i, $batchSize);
+                $chunk_index = (int) floor($i / $batchSize);
+                $dest_ids = array_values(array_filter(array_map(function($cand) {
+                    return isset($cand['id']) ? (int)$cand['id'] : null;
+                }, $chunk), function($value) {
+                    return $value !== null;
+                }));
 
                 $locations = [ [ (float)$lng, (float)$lat ] ];
                 foreach ($chunk as $c) {
@@ -249,17 +286,39 @@ class Nearby_Recompute_Job {
                     'destinations' => range(1, count($chunk)),
                     'metrics'      => ['distance','duration']
                 ];
+                $body_json = wp_json_encode($body, JSON_UNESCAPED_UNICODE);
 
-                // Zkontrolovat lokální minutový limit
+                $this->debug_log('[Matrix] preparing request', [
+                    'origin_id' => $origin_id,
+                    'type' => $type,
+                    'chunk_index' => $chunk_index,
+                    'chunk_size' => count($chunk),
+                    'destination_ids' => $dest_ids,
+                    'context' => 'recompute'
+                ]);
+
                 $quota_manager = new \DB\Jobs\API_Quota_Manager();
-                $minute_check = $quota_manager->check_minute_limit();
-                
+                $minute_check = $quota_manager->check_minute_limit('matrix');
+
                 if (!$minute_check['allowed']) {
-                    error_log("[DB Nearby] Lokální minutový limit. Počkej {$minute_check['wait_seconds']}s");
+                    $this->debug_log('[Matrix] token bucket blocked', [
+                        'origin_id' => $origin_id,
+                        'chunk_index' => $chunk_index,
+                        'wait_seconds' => $minute_check['wait_seconds'] ?? null,
+                        'tokens_before' => $minute_check['tokens_before'] ?? null,
+                        'tokens_after' => $minute_check['tokens_after'] ?? null
+                    ]);
                     $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, null, 'rate_limited');
                     return;
                 }
-                
+
+                $this->debug_log('[Matrix] sending request', [
+                    'origin_id' => $origin_id,
+                    'chunk_index' => $chunk_index,
+                    'minute_tokens_after' => $minute_check['tokens_after'] ?? null,
+                    'body_excerpt' => $this->truncate_body($body_json)
+                ]);
+
                 $res = wp_remote_post("https://api.openrouteservice.org/v2/matrix/{$profile}", [
                     'headers' => [
                         'Authorization' => $orsKey,
@@ -267,13 +326,16 @@ class Nearby_Recompute_Job {
                         'Accept'        => 'application/json',
                         'User-Agent'    => 'DobityBaterky/nearby (+https://dobitybaterky.cz)'
                     ],
-                    'body'    => wp_json_encode($body, JSON_UNESCAPED_UNICODE),
+                    'body'    => $body_json,
                     'timeout' => 20
                 ]);
 
                 if (is_wp_error($res)) {
-                    error_log("[DB Nearby] ORS error: ".$res->get_error_message());
-                    // uložíme, ale partial zůstane true => GET ukáže stale/partial
+                    $this->debug_log('[Matrix] wp_remote_post error', [
+                        'origin_id' => $origin_id,
+                        'chunk_index' => $chunk_index,
+                        'error' => $res->get_error_message()
+                    ]);
                     $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, null, 'wp_error');
                     return;
                 }
@@ -281,41 +343,60 @@ class Nearby_Recompute_Job {
                 $code = (int) wp_remote_retrieve_response_code($res);
                 $headers = wp_remote_retrieve_headers($res);
                 $json = json_decode(wp_remote_retrieve_body($res), true);
-                
-                // Uložit kvóty z hlaviček
+                $remaining_header = isset($headers['x-ratelimit-remaining']) ? (int)$headers['x-ratelimit-remaining'] : null;
+                $retry_after_header = isset($headers['retry-after']) ? (int)$headers['retry-after'] : null;
+
+                $this->debug_log('[Matrix] response received', [
+                    'origin_id' => $origin_id,
+                    'chunk_index' => $chunk_index,
+                    'http_code' => $code,
+                    'ratelimit_remaining' => $remaining_header,
+                    'retry_after' => $retry_after_header
+                ]);
+
                 $quota_manager = new \DB\Jobs\API_Quota_Manager();
                 $quota_manager->save_ors_headers($headers);
 
                 if ($code === 401 || $code === 403) {
-                    error_log("[DB Nearby] ORS unauthorized (key invalid?) code={$code}");
+                    $this->debug_log('[Matrix] unauthorized', [
+                        'origin_id' => $origin_id,
+                        'chunk_index' => $chunk_index,
+                        'http_code' => $code
+                    ]);
                     $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, current_time('c'), 'unauthorized', 6 * HOUR_IN_SECONDS);
                     return;
                 }
                 if ($code === 429) {
-                    error_log("[DB Nearby] ORS rate limit (429) – partial save and stop");
+                    $this->debug_log('[Matrix] rate limited', [
+                        'origin_id' => $origin_id,
+                        'chunk_index' => $chunk_index,
+                        'retry_after' => $retry_after_header
+                    ]);
                     $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, current_time('c'), 'rate_limited', 120);
-                    // Naplánovat opakování s backoffem (např. za 2 minuty)
                     if (!wp_next_scheduled('db_nearby_recompute', [$origin_id, $type])) {
                         wp_schedule_single_event(time() + 120, 'db_nearby_recompute', [$origin_id, $type]);
                     }
                     return;
                 }
                 if ($code < 200 || $code >= 300 || empty($json['durations'])) {
-                    error_log("[DB Nearby] ORS bad response: ".$code);
-                    continue; // přeskočíme batch, ale běžíme dál
+                    $this->debug_log('[Matrix] unexpected response', [
+                        'origin_id' => $origin_id,
+                        'chunk_index' => $chunk_index,
+                        'http_code' => $code,
+                        'body_excerpt' => $this->truncate_body(wp_json_encode($json))
+                    ]);
+                    continue;
                 }
 
                 $dur = $json['durations'][0];
                 $dist= $json['distances'][0] ?? array_fill(0, count($chunk), null);
 
                 foreach ($chunk as $idx => $cand) {
-                    // Uložit pouze základní data - ikony a metadata se načtou dynamicky
                     $items[] = [
                         'id'         => (int)$cand['id'],
                         'post_type'  => (string)$cand['type'],
                         'duration_s' => (int) round($dur[$idx] ?? -1),
                         'distance_m' => (int) round($dist[$idx] ?? -1),
-                        // aliasy pro FE zpětná kompatibilita
                         'walk_m'     => (int) round($dist[$idx] ?? -1),
                         'secs'       => (int) round($dur[$idx] ?? -1),
                         'provider'   => 'ors.matrix',
@@ -323,18 +404,32 @@ class Nearby_Recompute_Job {
                     ];
                 }
 
+                $this->debug_log('[Matrix] chunk processed', [
+                    'origin_id' => $origin_id,
+                    'chunk_index' => $chunk_index,
+                    'items_added' => count($chunk),
+                    'tokens_remaining' => $minute_check['tokens_after'] ?? null,
+                    'ratelimit_remaining' => $remaining_header
+                ]);
+
                 $done += count($chunk);
 
-                // průběžně ukládat
                 $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, null, null);
 
-                // Lehký throttling mezi dávkami, aby se nevytočila kvóta
                 usleep(150000); // 150 ms
             }
 
             // 3) finální uložení
             usort($items, fn($a,$b) => ($a['duration_s'] <=> $b['duration_s']));
             $this->write_cache($origin_id, $meta_key, $items, false, $total, $total, current_time('c'), null);
+
+            $this->debug_log('[Matrix] recompute completed', [
+                'origin_id' => $origin_id,
+                'type' => $type,
+                'total_candidates' => $total,
+                'saved_items' => count($items),
+                'batch_size' => $batchSize
+            ]);
 
             // 4) Načíst isochrones data současně s nearby data
             $this->fetch_and_cache_isochrones($origin_id, $lat, $lng, $orsKey);
@@ -376,10 +471,15 @@ class Nearby_Recompute_Job {
             
             // Zkontrolovat lokální minutový limit
             $quota_manager = new \DB\Jobs\API_Quota_Manager();
-            $minute_check = $quota_manager->check_minute_limit();
+            $minute_check = $quota_manager->check_minute_limit('isochrones');
             
             if (!$minute_check['allowed']) {
-                error_log("[DB Isochrones] Lokální minutový limit. Přeskočeno pro origin_id {$origin_id}");
+                $this->debug_log('[Isochrones] token bucket blocked', [
+                    'origin_id' => $origin_id,
+                    'wait_seconds' => $minute_check['wait_seconds'] ?? null,
+                    'tokens_before' => $minute_check['tokens_before'] ?? null,
+                    'tokens_after' => $minute_check['tokens_after'] ?? null
+                ]);
                 return;
             }
             
@@ -389,6 +489,12 @@ class Nearby_Recompute_Job {
                 'range_type' => 'time'
             ];
             
+            $this->debug_log('[Isochrones] sending request', [
+                'origin_id' => $origin_id,
+                'ranges' => $ranges,
+                'tokens_after' => $minute_check['tokens_after'] ?? null
+            ]);
+
             $response = wp_remote_post("https://api.openrouteservice.org/v2/isochrones/{$profile}", [
                 'headers' => [
                     'Authorization' => $orsKey,
@@ -401,7 +507,10 @@ class Nearby_Recompute_Job {
             ]);
             
             if (is_wp_error($response)) {
-                error_log("[DB Isochrones] Network error for origin_id {$origin_id}: " . $response->get_error_message());
+                $this->debug_log('[Isochrones] wp_remote_post error', [
+                    'origin_id' => $origin_id,
+                    'error' => $response->get_error_message()
+                ]);
                 return;
             }
             
@@ -412,21 +521,40 @@ class Nearby_Recompute_Job {
             // Uložit kvóty z hlaviček
             $headers = wp_remote_retrieve_headers($response);
             $quota_manager->save_ors_headers($headers);
-            
+            $remaining_header = isset($headers['x-ratelimit-remaining']) ? (int)$headers['x-ratelimit-remaining'] : null;
+            $retry_after_header = isset($headers['retry-after']) ? (int)$headers['retry-after'] : null;
+
+            $this->debug_log('[Isochrones] response received', [
+                'origin_id' => $origin_id,
+                'http_code' => $http_code,
+                'ratelimit_remaining' => $remaining_header,
+                'retry_after' => $retry_after_header
+            ]);
+
             if ($http_code === 401 || $http_code === 403) {
-                error_log("[DB Isochrones] Unauthorized for origin_id {$origin_id}");
+                $this->debug_log('[Isochrones] unauthorized', [
+                    'origin_id' => $origin_id,
+                    'http_code' => $http_code
+                ]);
                 $this->set_isochrones_error($origin_id, $profile, 'unauthorized', 'API key invalid');
                 return;
             }
             
             if ($http_code === 429) {
-                error_log("[DB Isochrones] Rate limited for origin_id {$origin_id}");
+                $this->debug_log('[Isochrones] rate limited', [
+                    'origin_id' => $origin_id,
+                    'retry_after' => $retry_after_header
+                ]);
                 $this->set_isochrones_error($origin_id, $profile, 'rate_limited', 'Rate limited');
                 return;
             }
             
             if ($http_code !== 200) {
-                error_log("[DB Isochrones] HTTP error {$http_code} for origin_id {$origin_id}");
+                $this->debug_log('[Isochrones] unexpected response', [
+                    'origin_id' => $origin_id,
+                    'http_code' => $http_code,
+                    'body_excerpt' => $this->truncate_body($response_body)
+                ]);
                 $this->set_isochrones_error($origin_id, $profile, 'upstream_error', "HTTP $http_code: " . ($data['error']['message'] ?? 'Unknown error'));
                 return;
             }
@@ -447,10 +575,17 @@ class Nearby_Recompute_Job {
             ];
             
             update_post_meta($origin_id, $meta_key, json_encode($payload));
-            error_log("[DB Isochrones] Successfully cached for origin_id {$origin_id}, features: " . count($data['features'] ?? []));
-            
+            $this->debug_log('[Isochrones] cached', [
+                'origin_id' => $origin_id,
+                'features' => count($data['features'] ?? []),
+                'ratelimit_remaining' => $remaining_header
+            ]);
+
         } catch (\Throwable $e) {
-            error_log("[DB Isochrones] Exception for origin_id {$origin_id}: " . $e->getMessage());
+            $this->debug_log('[Isochrones] exception', [
+                'origin_id' => $origin_id,
+                'error' => $e->getMessage()
+            ]);
         }
     }
     
@@ -581,10 +716,10 @@ class Nearby_Recompute_Job {
     /**
      * Zpracovat dávku kandidátů
      */
-    private function process_chunk($chunk, $orsKey, $provider, $profile, $origin_lat, $origin_lng) {
+    private function process_chunk($chunk, $orsKey, $provider, $profile, $origin_lat, $origin_lng, $origin_id = null, $chunk_index = null) {
         try {
             if ($provider === 'ors') {
-                return $this->process_ors_chunk($chunk, $orsKey, $profile, $origin_lat, $origin_lng);
+                return $this->process_ors_chunk($chunk, $orsKey, $profile, $origin_lat, $origin_lng, $origin_id, $chunk_index);
             } else {
                 return $this->process_osrm_chunk($chunk, $profile, $origin_lat, $origin_lng);
             }
@@ -596,30 +731,54 @@ class Nearby_Recompute_Job {
     /**
      * Zpracovat dávku přes ORS Matrix API
      */
-    private function process_ors_chunk($chunk, $orsKey, $profile, $origin_lat, $origin_lng) {
-        // Origin bod je vždy na indexu 0
+    private function process_ors_chunk($chunk, $orsKey, $profile, $origin_lat, $origin_lng, $origin_id = null, $chunk_index = null) {
         $locations = array(array((float)$origin_lng, (float)$origin_lat));
-        
-        // Přidat kandidáty
         foreach ($chunk as $cand) {
             $locations[] = array((float)$cand->lng, (float)$cand->lat);
         }
-        
+
         $body = array(
             'locations' => $locations,
-            'sources' => array(0), // Origin bod je vždy na indexu 0
-            'destinations' => range(1, count($chunk)), // Kandidáti jsou od indexu 1
+            'sources' => array(0),
+            'destinations' => range(1, count($chunk)),
             'metrics' => array('distance', 'duration')
         );
-        
-        // Zkontrolovat lokální minutový limit
+        $body_json = wp_json_encode($body, JSON_UNESCAPED_UNICODE);
+
+        $dest_ids = array_map(function($cand) {
+            return isset($cand->id) ? (int)$cand->id : null;
+        }, $chunk);
+
+        $this->debug_log('[Matrix] preparing request', [
+            'origin_id' => $origin_id,
+            'chunk_index' => $chunk_index,
+            'chunk_size' => count($chunk),
+            'destination_ids' => array_values(array_filter($dest_ids, fn($v) => $v !== null)),
+            'context' => 'process_chunk'
+        ]);
+
         $quota_manager = new \DB\Jobs\API_Quota_Manager();
-        $minute_check = $quota_manager->check_minute_limit();
-        
+        $minute_check = $quota_manager->check_minute_limit('matrix');
+
         if (!$minute_check['allowed']) {
-            return array('success' => false, 'error' => "Lokální minutový limit. Počkej {$minute_check['wait_seconds']}s");
+            $wait = $minute_check['wait_seconds'] ?? null;
+            $this->debug_log('[Matrix] token bucket blocked', [
+                'origin_id' => $origin_id,
+                'chunk_index' => $chunk_index,
+                'wait_seconds' => $wait,
+                'tokens_before' => $minute_check['tokens_before'] ?? null,
+                'tokens_after' => $minute_check['tokens_after'] ?? null
+            ]);
+            return array('success' => false, 'error' => $wait ? "Lokální minutový limit. Počkej {$wait}s" : 'Lokální minutový limit');
         }
-        
+
+        $this->debug_log('[Matrix] sending request', [
+            'origin_id' => $origin_id,
+            'chunk_index' => $chunk_index,
+            'minute_tokens_after' => $minute_check['tokens_after'] ?? null,
+            'body_excerpt' => $this->truncate_body($body_json)
+        ]);
+
         $response = wp_remote_post("https://api.openrouteservice.org/v2/matrix/{$profile}", array(
             'headers' => array(
                 'Authorization' => $orsKey,
@@ -627,17 +786,32 @@ class Nearby_Recompute_Job {
                 'Accept' => 'application/json',
                 'User-Agent' => 'DobityBaterky/batch (+https://dobitybaterky.cz)'
             ),
-            'body' => json_encode($body),
+            'body' => $body_json,
             'timeout' => 20
         ));
         
         if (is_wp_error($response)) {
+            $this->debug_log('[Matrix] wp_remote_post error', [
+                'origin_id' => $origin_id,
+                'chunk_index' => $chunk_index,
+                'error' => $response->get_error_message()
+            ]);
             return array('success' => false, 'error' => $response->get_error_message());
         }
         
         $code = (int)wp_remote_retrieve_response_code($response);
         $headers = wp_remote_retrieve_headers($response);
         $data = json_decode(wp_remote_retrieve_body($response), true);
+        $remaining_header = isset($headers['x-ratelimit-remaining']) ? (int)$headers['x-ratelimit-remaining'] : null;
+        $retry_after_header = isset($headers['retry-after']) ? (int)$headers['retry-after'] : null;
+
+        $this->debug_log('[Matrix] response received', [
+            'origin_id' => $origin_id,
+            'chunk_index' => $chunk_index,
+            'http_code' => $code,
+            'ratelimit_remaining' => $remaining_header,
+            'retry_after' => $retry_after_header
+        ]);
         
         // Uložit kvóty z hlaviček
         $quota_manager = new \DB\Jobs\API_Quota_Manager();
@@ -645,21 +819,37 @@ class Nearby_Recompute_Job {
         
         // Obsluha limitů
         if ($code === 429) {
-            $retry_after = isset($headers['retry-after']) ? (int)$headers['retry-after'] : 10;
+            $retry_after = $retry_after_header ?? 10;
+            $this->debug_log('[Matrix] rate limited', [
+                'origin_id' => $origin_id,
+                'chunk_index' => $chunk_index,
+                'retry_after' => $retry_after
+            ]);
             return array('success' => false, 'error' => "ORS minute limit hit. Retry after {$retry_after}s");
         }
         
         if ($code === 401 || $code === 403) {
+            $this->debug_log('[Matrix] unauthorized', [
+                'origin_id' => $origin_id,
+                'chunk_index' => $chunk_index,
+                'http_code' => $code
+            ]);
             return array('success' => false, 'error' => 'ORS unauthorized/daily quota exhausted');
         }
         
         if ($code < 200 || $code >= 300 || empty($data['durations'])) {
+            $this->debug_log('[Matrix] unexpected response', [
+                'origin_id' => $origin_id,
+                'chunk_index' => $chunk_index,
+                'http_code' => $code,
+                'body_excerpt' => $this->truncate_body(json_encode($data))
+            ]);
             return array('success' => false, 'error' => 'ORS bad response: ' . $code);
         }
         
         $durations = $data['durations'][0];
         $distances = $data['distances'][0] ?? array_fill(0, count($chunk), null);
-        
+
         $items = array();
         foreach ($chunk as $idx => $cand) {
             $items[] = array(
@@ -671,14 +861,21 @@ class Nearby_Recompute_Job {
                 'profile' => $profile,
             );
         }
-        
+        $this->debug_log('[Matrix] chunk processed', [
+            'origin_id' => $origin_id,
+            'chunk_index' => $chunk_index,
+            'items_added' => count($items),
+            'tokens_remaining' => $minute_check['tokens_after'] ?? null,
+            'ratelimit_remaining' => $remaining_header
+        ]);
+
         return array('success' => true, 'items' => $items);
     }
     
     /**
      * Zpracovat dávku přes OSRM Matrix API
      */
-    private function process_osrm_chunk($chunk, $profile, $origin_lat, $origin_lng) {
+    private function process_osrm_chunk($chunk, $profile, $origin_lat, $origin_lng, $origin_id = null, $chunk_index = null) {
         // Origin bod je vždy na indexu 0
         $locations = array(array((float)$origin_lng, (float)$origin_lat));
         
