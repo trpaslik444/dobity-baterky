@@ -21,9 +21,11 @@ class Nearby_Batch_Processor {
     /**
      * Zpracovat dávku položek z fronty
      */
-    public function process_batch($max_items = 10) {
+    public function process_batch($max_items = 1) {
         $processed = 0;
         $errors = 0;
+        $retry_after = null;
+        $last_error = null;
         
         // Zkontrolovat API kvóty před zpracováním
         $quota_manager = new \DB\Jobs\API_Quota_Manager();
@@ -36,7 +38,7 @@ class Nearby_Batch_Processor {
         }
         
         // Získat položky k zpracování
-        $items = $this->queue_manager->get_pending_items($max_items);
+        $items = $this->queue_manager->get_pending_items(min(1, max(1, (int)$max_items)));
         
         if (empty($items)) {
             return array(
@@ -50,10 +52,10 @@ class Nearby_Batch_Processor {
             try {
                 // Označit jako zpracovávanou
                 $this->queue_manager->mark_processing($item->id);
-                
+
                 // Zpracovat nearby data
                 $result = $this->process_single_item($item);
-                
+
                 if ($result['success']) {
                     // Označit jako zpracované v queue i v processed tabulce
                     $this->queue_manager->mark_as_processed($item->id, $result);
@@ -61,18 +63,27 @@ class Nearby_Batch_Processor {
                 } else {
                     $this->queue_manager->mark_failed($item->id, $result['error']);
                     $errors++;
+                    $last_error = $result['error'];
+                    if (!empty($result['retry_after'])) {
+                        $retry_after = is_null($retry_after)
+                            ? (int)$result['retry_after']
+                            : min($retry_after, (int)$result['retry_after']);
+                    }
                 }
-                
+
             } catch (Exception $e) {
                 $this->queue_manager->mark_failed($item->id, $e->getMessage());
                 $errors++;
+                $last_error = $e->getMessage();
             }
         }
-        
+
         return array(
             'processed' => $processed,
             'errors' => $errors,
-            'message' => "Zpracováno: {$processed}, chyb: {$errors}"
+            'message' => "Zpracováno: {$processed}, chyb: {$errors}",
+            'retry_after' => $retry_after,
+            'last_error' => $last_error
         );
     }
     
@@ -134,10 +145,20 @@ class Nearby_Batch_Processor {
         );
         
         if ($result['success']) {
-            return array('success' => true, 'message' => 'Nearby data zpracována');
-        } else {
-            return array('success' => false, 'error' => $result['error']);
+            return array(
+                'success' => true,
+                'message' => 'Nearby data zpracována',
+                'isochrones' => $result['isochrones'] ?? null,
+                'retry_after' => $result['retry_after'] ?? null
+            );
         }
+
+        return array(
+            'success' => false,
+            'error' => $result['error'],
+            'isochrones' => $result['isochrones'] ?? null,
+            'retry_after' => $result['retry_after'] ?? null
+        );
     }
     
     /**
