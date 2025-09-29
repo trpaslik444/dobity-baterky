@@ -801,7 +801,7 @@ class Nearby_Queue_Admin {
                 showLoading(`${isEnabled ? 'Vypíná' : 'Zapíná'} se automatické zpracování...`);
                 
                 $.post(ajaxurl, {
-                    action: 'db_trigger_auto_processing',
+                    action: 'db_toggle_auto_processing',
                     nonce: '<?php echo wp_create_nonce('db_nearby_batch'); ?>'
                 }, function(response) {
                     if (response.success) {
@@ -991,7 +991,7 @@ class Nearby_Queue_Admin {
                 error_log("[DB Nearby Test] Test selhal: {$message}");
                 wp_send_json_error(array('message' => $message));
             }
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $message = "Výjimka při testování: " . $e->getMessage();
             error_log("[DB Nearby Test] Výjimka: {$message}");
             wp_send_json_error(array('message' => $message));
@@ -1030,7 +1030,7 @@ class Nearby_Queue_Admin {
             
             wp_send_json_success($debug_info);
             
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $message = "Výjimka při testování token bucket: " . $e->getMessage();
             error_log("[DB Token Bucket Test] Výjimka: {$message}");
             wp_send_json_error(array('message' => $message));
@@ -1102,7 +1102,7 @@ class Nearby_Queue_Admin {
             
             wp_send_json_success($result);
             
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             $message = "Výjimka při testování ORS headers: " . $e->getMessage();
             error_log("[DB ORS Headers Test] Výjimka: {$message}");
             wp_send_json_error(array('message' => $message));

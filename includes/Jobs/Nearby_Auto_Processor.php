@@ -89,8 +89,15 @@ class Nearby_Auto_Processor {
         // Pokud jsou ještě položky ve frontě, naplánovat další běh
         $stats = $this->queue_manager->get_stats();
         if ($stats->pending > 0) {
-            $next_run = time() + MINUTE_IN_SECONDS; // další položka za minutu
+            if ($result['processed'] > 0) {
+                // Úspěšně zpracováno - další běh za minutu
+                $next_run = time() + MINUTE_IN_SECONDS;
+            } else {
+                // Nic se nezpracovalo (pravděpodobně kvůli token bucket) - zkusit za 60 sekund
+                $next_run = time() + MINUTE_IN_SECONDS;
+            }
             wp_schedule_single_event($next_run, 'db_nearby_auto_process');
+            error_log("[DB Nearby Auto] Naplánován další běh na " . date('Y-m-d H:i:s', $next_run));
         }
     }
     
@@ -107,7 +114,7 @@ class Nearby_Auto_Processor {
             'queue_stats' => $queue_stats,
             'quota_stats' => $quota_stats,
             'next_run' => $next_run ? date('Y-m-d H:i:s', $next_run) : null,
-            'auto_enabled' => wp_next_scheduled('db_nearby_auto_process') !== false
+            'auto_enabled' => get_option('db_nearby_auto_enabled', false)
         );
     }
     
