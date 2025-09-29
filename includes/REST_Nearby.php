@@ -9,6 +9,7 @@ namespace DB;
 use DB\Jobs\Nearby_Cron_Tools;
 use DB\Jobs\Nearby_Logger;
 use DB\Jobs\Nearby_Queue_Manager;
+use DB\Jobs\Nearby_Worker;
 
 class REST_Nearby {
     
@@ -180,6 +181,12 @@ class REST_Nearby {
             'methods' => 'POST',
             'callback' => array($this, 'clear_cache'),
             'permission_callback' => function() { return current_user_can('manage_options'); }
+        ));
+
+        register_rest_route('db/v1', '/nearby/worker', array(
+            'methods' => 'POST',
+            'callback' => array($this, 'run_nearby_worker'),
+            'permission_callback' => '__return_true',
         ));
         
         
@@ -652,6 +659,18 @@ class REST_Nearby {
             'deleted' => $deleted,
             'message' => "Vymazáno {$deleted} cache záznamů"
         ));
+    }
+
+    public function run_nearby_worker($request) {
+        $token = $request->get_param('token');
+        if (!Nearby_Worker::verify_token(is_string($token) ? $token : '')) {
+            return new \WP_Error('unauthorized', 'Invalid token', array('status' => 403));
+        }
+
+        $delay = max(0, (int) $request->get_param('delay'));
+        $result = Nearby_Worker::run($delay);
+
+        return rest_ensure_response($result);
     }
     
     

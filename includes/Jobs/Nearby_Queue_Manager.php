@@ -92,6 +92,12 @@ class Nearby_Queue_Manager {
                 $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
                 $processed_manager->delete_processed($origin_id, $real_origin_type, $processed_type);
             } catch (\Throwable $__) {}
+
+            if (get_option('db_nearby_auto_enabled', false)) {
+                try {
+                    Nearby_Worker::dispatch();
+                } catch (\Throwable $__) {}
+            }
             return true;
         }
         
