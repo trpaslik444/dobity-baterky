@@ -102,6 +102,9 @@ class Nearby_Recompute_Job {
                 $chunk_result = $this->process_chunk($normalized_chunk, $orsKey, $provider, $profile, $origin_lat, $origin_lng, $origin_id, $chunk_index);
 
                 if (!$chunk_result['success']) {
+                    if (!empty($chunk_result['retry_after_s'])) {
+                        $chunk_result['api_calls'] = array('matrix' => $matrix_calls, 'isochrones' => $iso_calls);
+                    }
                     return $chunk_result;
                 }
 
@@ -831,7 +834,11 @@ class Nearby_Recompute_Job {
                 'tokens_before' => $minute_check['tokens_before'] ?? null,
                 'tokens_after' => $minute_check['tokens_after'] ?? null
             ]);
-            return array('success' => false, 'error' => $wait ? "Lokální minutový limit. Počkej {$wait}s" : 'Lokální minutový limit');
+            return array(
+                'success' => false,
+                'error' => $wait ? "Lokální minutový limit. Počkej {$wait}s" : 'Lokální minutový limit',
+                'retry_after_s' => $wait
+            );
         }
 
         $this->debug_log('[Matrix] sending request', [

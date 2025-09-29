@@ -171,29 +171,54 @@ class Nearby_Batch_Processor {
             return array('success' => true, 'message' => 'Žádní kandidáti');
         }
 
-        // Zpracovat nearby data pomocí existujícího jobu
-        $result = $this->recompute_job->process_nearby_data(
-            $item->origin_id, 
-            $item->origin_type, 
-            $candidates
-        );
+        $max_retries = 3;
+        $attempt = 0;
+        $last_error = null;
 
-        if ($result['success']) {
-            Nearby_Logger::log('BATCH', 'Recompute completed', [
-                'origin_id' => $item->origin_id,
-                'origin_type' => $item->origin_type,
-                'items' => $result['items_count'] ?? null,
-                'api_calls' => $result['api_calls'] ?? null
-            ]);
-            return array('success' => true, 'message' => 'Nearby data zpracována');
-        } else {
-            Nearby_Logger::log('BATCH', 'Recompute failed', [
-                'origin_id' => $item->origin_id,
-                'origin_type' => $item->origin_type,
-                'error' => $result['error'] ?? 'unknown'
-            ]);
-            return array('success' => false, 'error' => $result['error']);
+        while ($attempt < $max_retries) {
+            $attempt++;
+            $result = $this->recompute_job->process_nearby_data(
+                $item->origin_id,
+                $item->origin_type,
+                $candidates
+            );
+
+            if (!empty($result['success'])) {
+                Nearby_Logger::log('BATCH', 'Recompute completed', [
+                    'origin_id' => $item->origin_id,
+                    'origin_type' => $item->origin_type,
+                    'items' => $result['items_count'] ?? null,
+                    'api_calls' => $result['api_calls'] ?? null,
+                    'attempt' => $attempt
+                ]);
+                return array('success' => true, 'message' => 'Nearby data zpracována');
+            }
+
+            $last_error = $result['error'] ?? 'Neznámá chyba';
+            $retry_after = isset($result['retry_after_s']) ? (int)$result['retry_after_s'] : null;
+
+            if ($retry_after !== null && $retry_after > 0 && $attempt < $max_retries) {
+                $sleep_for = max(1, min(60, $retry_after));
+                Nearby_Logger::log('BATCH', 'Token bucket wait before retry', [
+                    'origin_id' => $item->origin_id,
+                    'origin_type' => $item->origin_type,
+                    'retry_after_s' => $sleep_for,
+                    'attempt' => $attempt
+                ]);
+                sleep($sleep_for);
+                continue;
+            }
+
+            break;
         }
+
+        Nearby_Logger::log('BATCH', 'Recompute failed', [
+            'origin_id' => $item->origin_id,
+            'origin_type' => $item->origin_type,
+            'error' => $last_error,
+            'attempts' => $attempt
+        ]);
+        return array('success' => false, 'error' => $last_error);
     }
     
     /**
