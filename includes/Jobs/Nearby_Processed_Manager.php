@@ -123,20 +123,26 @@ class Nearby_Processed_Manager {
         // Upsert: pokud existuje záznam pro origin_id, update; jinak insert
         $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$this->table_name} WHERE origin_id = %d", $origin_id));
         if ($exists) {
-            return $wpdb->update(
+            $updated = $wpdb->update(
                 $this->table_name,
                 $data,
                 array('id' => (int)$exists),
-                array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%s','%s'),
+                array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%s','%s','%d','%d','%d','%d','%d'),
                 array('%d')
             );
+            $this->maybe_update_row_stats($origin_id, $this->compute_meta_stats($origin_id, $processed_type));
+            return $updated;
         }
-        
-        return $wpdb->insert(
+
+        $inserted = $wpdb->insert(
             $this->table_name,
             $data,
-            array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%s','%s')
+            array('%d','%s','%s','%f','%f','%s','%d','%d','%d','%s','%d','%s','%s','%s','%d','%d','%d','%d','%d')
         );
+        if ($inserted) {
+            $this->maybe_update_row_stats($origin_id, $this->compute_meta_stats($origin_id, $processed_type));
+        }
+        return $inserted;
     }
     
     /**
@@ -162,14 +168,45 @@ class Nearby_Processed_Manager {
             $where .= $wpdb->prepare(" AND has_isochrones = %d", $filters['has_isochrones'] ? 1 : 0);
         }
         
-        // Nezobrazovat položky, které jsou aktuálně ve frontě (pending/processing)
-        $queue_table = $wpdb->prefix . 'nearby_queue';
-        $sql = $wpdb->prepare(
-            "SELECT p.*\n             FROM {$this->table_name} p\n             LEFT JOIN {$queue_table} q\n               ON q.origin_id = p.origin_id\n              AND q.status IN ('pending','processing')\n             {$where}\n             AND q.id IS NULL\n             ORDER BY p.processing_date DESC\n             LIMIT %d OFFSET %d",
-            (int)$limit,
-            (int)$offset
-        );
-        return $wpdb->get_results($sql);
+        $limit = max(1, (int)$limit);
+        $offset = max(0, (int)$offset);
+        $batch = max($limit * 2, 100);
+        $raw_offset = 0;
+        $matched = 0;
+        $results = array();
+
+        while (count($results) < $limit) {
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT * FROM {$this->table_name} ORDER BY processing_date DESC LIMIT %d OFFSET %d",
+                $batch,
+                $raw_offset
+            ));
+            if (!$rows) {
+                break;
+            }
+            $raw_offset += $batch;
+
+            foreach ($rows as $row) {
+                $row = $this->decorate_row($row);
+                if (!$this->row_matches_filters($row, $filters)) {
+                    continue;
+                }
+
+                if ($matched < $offset) {
+                    $matched++;
+                    continue;
+                }
+
+                $results[] = $row;
+                $matched++;
+
+                if (count($results) >= $limit) {
+                    break 2;
+                }
+            }
+        }
+
+        return $results;
     }
     
     /**
@@ -212,14 +249,6 @@ class Nearby_Processed_Manager {
             FROM {$this->table_name}
         ");
 
-        $stats['missing_nearby'] = (int)$wpdb->get_var("
-            SELECT COUNT(*) FROM {$this->table_name} WHERE has_nearby = 0
-        ");
-
-        $stats['missing_isochrones'] = (int)$wpdb->get_var("
-            SELECT COUNT(*) FROM {$this->table_name} WHERE has_isochrones = 0
-        ");
-        
         // Poslední zpracování
         $stats['last_processed'] = $wpdb->get_var("
             SELECT MAX(processing_date) 
@@ -232,6 +261,22 @@ class Nearby_Processed_Manager {
             FROM {$this->table_name}
             WHERE processing_time_seconds > 0
         ");
+
+        $rows = $wpdb->get_results("SELECT origin_id, processed_type FROM {$this->table_name}");
+        $missing_nearby = 0;
+        $missing_iso = 0;
+        foreach ($rows as $row) {
+            $computed = $this->compute_meta_stats((int)$row->origin_id, $row->processed_type);
+            if ($computed['has_nearby'] === 0) {
+                $missing_nearby++;
+            }
+            if ($computed['has_isochrones'] === 0) {
+                $missing_iso++;
+            }
+            $this->maybe_update_row_stats((int)$row->origin_id, $computed);
+        }
+        $stats['missing_nearby'] = $missing_nearby;
+        $stats['missing_isochrones'] = $missing_iso;
         
         return $stats;
     }
@@ -302,36 +347,8 @@ class Nearby_Processed_Manager {
      * Získat paginaci pro zpracovaná místa
      */
     public function get_processed_pagination($limit = 50, $offset = 0, $filters = array()) {
-        global $wpdb;
-
-        $where = "WHERE 1=1";
-        if (!empty($filters['origin_type'])) {
-            $where .= $wpdb->prepare(" AND origin_type = %s", $filters['origin_type']);
-        }
-        if (!empty($filters['status'])) {
-            $where .= $wpdb->prepare(" AND status = %s", $filters['status']);
-        }
-        if (!empty($filters['api_provider'])) {
-            $where .= $wpdb->prepare(" AND api_provider = %s", $filters['api_provider']);
-        }
-        if (isset($filters['has_nearby']) && $filters['has_nearby'] !== '') {
-            $where .= $wpdb->prepare(" AND has_nearby = %d", $filters['has_nearby'] ? 1 : 0);
-        }
-        if (isset($filters['has_isochrones']) && $filters['has_isochrones'] !== '') {
-            $where .= $wpdb->prepare(" AND has_isochrones = %d", $filters['has_isochrones'] ? 1 : 0);
-        }
-
-        $queue_table = $wpdb->prefix . 'nearby_queue';
-        $total = (int)$wpdb->get_var(
-            "SELECT COUNT(*)
-             FROM {$this->table_name} p
-             LEFT JOIN {$queue_table} q
-               ON q.origin_id = p.origin_id
-              AND q.status IN ('pending','processing')
-             {$where}
-             AND q.id IS NULL"
-        );
-
+        $total = $this->count_processed_matching($filters);
+        $limit = max(1, (int)$limit);
         $total_pages = $limit > 0 ? max(1, (int)ceil($total / $limit)) : 1;
         $current_page = $limit > 0 ? (int)floor($offset / $limit) + 1 : 1;
 
@@ -345,41 +362,180 @@ class Nearby_Processed_Manager {
     }
 
     public function get_filtered_origin_ids(array $filters = array(), $limit = 500) {
-        global $wpdb;
-
         $limit = max(1, (int)$limit);
 
-        $where = "WHERE 1=1";
-        if (!empty($filters['origin_type'])) {
-            $where .= $wpdb->prepare(" AND origin_type = %s", $filters['origin_type']);
+        global $wpdb;
+        $batch = max($limit * 2, 100);
+        $raw_offset = 0;
+        $results = array();
+
+        while (count($results) < $limit) {
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT * FROM {$this->table_name} ORDER BY processing_date DESC LIMIT %d OFFSET %d",
+                $batch,
+                $raw_offset
+            ));
+            if (!$rows) {
+                break;
+            }
+            $raw_offset += $batch;
+            foreach ($rows as $row) {
+                $row = $this->decorate_row($row);
+                if ($this->row_matches_filters($row, $filters)) {
+                    $results[] = array(
+                        'origin_id' => (int)$row->origin_id,
+                        'processed_type' => $row->processed_type,
+                    );
+                    if (count($results) >= $limit) {
+                        break 2;
+                    }
+                }
+            }
         }
-        if (!empty($filters['status'])) {
-            $where .= $wpdb->prepare(" AND status = %s", $filters['status']);
+
+        return $results;
+    }
+
+    private function count_processed_matching($filters) {
+        global $wpdb;
+
+        $batch = 500;
+        $raw_offset = 0;
+        $count = 0;
+
+        while (true) {
+            $rows = $wpdb->get_results($wpdb->prepare(
+                "SELECT * FROM {$this->table_name} ORDER BY processing_date DESC LIMIT %d OFFSET %d",
+                $batch,
+                $raw_offset
+            ));
+            if (!$rows) {
+                break;
+            }
+            $raw_offset += $batch;
+            foreach ($rows as $row) {
+                $row = $this->decorate_row($row, false);
+                if ($this->row_matches_filters($row, $filters)) {
+                    $count++;
+                }
+            }
         }
-        if (!empty($filters['api_provider'])) {
-            $where .= $wpdb->prepare(" AND api_provider = %s", $filters['api_provider']);
+
+        return $count;
+    }
+
+    private function row_matches_filters($row, $filters) {
+        if (!empty($filters['origin_type']) && $row->origin_type !== $filters['origin_type']) {
+            return false;
+        }
+        if (!empty($filters['status']) && $row->status !== $filters['status']) {
+            return false;
+        }
+        if (!empty($filters['api_provider']) && $row->api_provider !== $filters['api_provider']) {
+            return false;
         }
         if (isset($filters['has_nearby']) && $filters['has_nearby'] !== '') {
-            $where .= $wpdb->prepare(" AND has_nearby = %d", $filters['has_nearby'] ? 1 : 0);
+            if ((int)$row->has_nearby !== ($filters['has_nearby'] ? 1 : 0)) {
+                return false;
+            }
         }
         if (isset($filters['has_isochrones']) && $filters['has_isochrones'] !== '') {
-            $where .= $wpdb->prepare(" AND has_isochrones = %d", $filters['has_isochrones'] ? 1 : 0);
+            if ((int)$row->has_isochrones !== ($filters['has_isochrones'] ? 1 : 0)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private function decorate_row($row, $update_db = true) {
+        $computed = $this->compute_meta_stats((int)$row->origin_id, $row->processed_type);
+        $row->cache_size_kb = (int)round($computed['cache_size_kb']);
+        $row->nearby_items_count = (int)$computed['nearby_items'];
+        $row->iso_features = (int)$computed['iso_features'];
+        $row->iso_calls = (int)$computed['iso_calls'];
+        $row->has_nearby = (int)$computed['has_nearby'];
+        $row->has_isochrones = (int)$computed['has_isochrones'];
+
+        if ($update_db) {
+            $this->maybe_update_row_stats((int)$row->origin_id, $computed);
         }
 
-        $queue_table = $wpdb->prefix . 'nearby_queue';
-        $sql = $wpdb->prepare(
-            "SELECT p.origin_id, p.processed_type
-             FROM {$this->table_name} p
-             LEFT JOIN {$queue_table} q
-               ON q.origin_id = p.origin_id
-              AND q.status IN ('pending','processing')
-             {$where}
-             AND q.id IS NULL
-             ORDER BY p.processing_date DESC
-             LIMIT %d",
-            $limit
+        return $row;
+    }
+
+    private function compute_meta_stats($origin_id, $processed_type) {
+        static $cache = array();
+        if (isset($cache[$origin_id][$processed_type])) {
+            return $cache[$origin_id][$processed_type];
+        }
+
+        $meta_key = $this->get_nearby_meta_key($processed_type);
+        $cache_raw = get_post_meta($origin_id, $meta_key, true);
+        $nearby_items = 0;
+        $cache_size_kb = 0;
+        if (!empty($cache_raw)) {
+            if (is_string($cache_raw)) {
+                $cache_size_kb = strlen($cache_raw) / 1024;
+                $payload = json_decode($cache_raw, true);
+            } else {
+                $cache_size_kb = strlen(serialize($cache_raw)) / 1024;
+                $payload = $cache_raw;
+            }
+            if (is_array($payload) && isset($payload['items']) && is_array($payload['items'])) {
+                $nearby_items = count($payload['items']);
+            }
+        }
+
+        $iso_raw = get_post_meta($origin_id, 'db_isochrones_v1_foot-walking', true);
+        $iso_features = 0;
+        if (!empty($iso_raw)) {
+            $iso_payload = is_string($iso_raw) ? json_decode($iso_raw, true) : (is_array($iso_raw) ? $iso_raw : array());
+            if (is_array($iso_payload) && isset($iso_payload['geojson']['features']) && is_array($iso_payload['geojson']['features'])) {
+                $iso_features = count($iso_payload['geojson']['features']);
+            }
+        }
+
+        $iso_calls = $iso_features > 0 ? 1 : 0;
+
+        $computed = array(
+            'cache_size_kb' => $cache_size_kb,
+            'nearby_items' => $nearby_items,
+            'iso_features' => $iso_features,
+            'iso_calls' => $iso_calls,
+            'has_nearby' => $nearby_items > 0 ? 1 : 0,
+            'has_isochrones' => $iso_features > 0 ? 1 : 0,
         );
 
-        return $wpdb->get_results($sql, ARRAY_A) ?: array();
+        $cache[$origin_id][$processed_type] = $computed;
+        return $computed;
+    }
+
+    private function maybe_update_row_stats($origin_id, array $computed) {
+        global $wpdb;
+        $wpdb->update(
+            $this->table_name,
+            array(
+                'cache_size_kb' => (int)round($computed['cache_size_kb']),
+                'nearby_items_count' => (int)$computed['nearby_items'],
+                'iso_features' => (int)$computed['iso_features'],
+                'iso_calls' => (int)$computed['iso_calls'],
+                'has_nearby' => (int)$computed['has_nearby'],
+                'has_isochrones' => (int)$computed['has_isochrones'],
+            ),
+            array('origin_id' => $origin_id),
+            array('%d','%d','%d','%d','%d','%d'),
+            array('%d')
+        );
+    }
+
+    private function get_nearby_meta_key($processed_type) {
+        switch ($processed_type) {
+            case 'poi_foot':
+                return '_db_nearby_cache_poi_foot';
+            case 'rv_foot':
+                return '_db_nearby_cache_rv_foot';
+            default:
+                return '_db_nearby_cache_charger_foot';
+        }
     }
 }

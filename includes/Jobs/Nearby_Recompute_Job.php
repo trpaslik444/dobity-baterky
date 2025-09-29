@@ -154,12 +154,28 @@ class Nearby_Recompute_Job {
             // Získat velikost cache
             $meta_key = ($origin_type === 'poi') ? '_db_nearby_cache_poi_foot' : '_db_nearby_cache_charger_foot';
             $cache_raw = get_post_meta($origin_id, $meta_key, true);
-            $cache_size_kb = $cache_raw ? strlen(serialize($cache_raw)) / 1024 : 0;
-            $cache_payload = is_string($cache_raw) ? json_decode($cache_raw, true) : (is_array($cache_raw) ? $cache_raw : array());
-            $nearby_items = isset($cache_payload['items']) && is_array($cache_payload['items']) ? count($cache_payload['items']) : 0;
+            $cache_size_kb = 0;
+            $nearby_items = 0;
+            if (!empty($cache_raw)) {
+                if (is_string($cache_raw)) {
+                    $cache_size_kb = strlen($cache_raw) / 1024;
+                    $cache_payload = json_decode($cache_raw, true);
+                } else {
+                    $cache_size_kb = strlen(serialize($cache_raw)) / 1024;
+                    $cache_payload = $cache_raw;
+                }
+                if (is_array($cache_payload) && isset($cache_payload['items']) && is_array($cache_payload['items'])) {
+                    $nearby_items = count($cache_payload['items']);
+                }
+            }
+
             $iso_payload_raw = get_post_meta($origin_id, 'db_isochrones_v1_foot-walking', true);
             $iso_payload = is_string($iso_payload_raw) ? json_decode($iso_payload_raw, true) : (is_array($iso_payload_raw) ? $iso_payload_raw : array());
             $iso_features = isset($iso_payload['geojson']['features']) && is_array($iso_payload['geojson']['features']) ? count($iso_payload['geojson']['features']) : 0;
+            $iso_calls = isset($api_calls_used['isochrones']) ? (int)$api_calls_used['isochrones'] : 0;
+            if ($iso_calls === 0 && $iso_features > 0) {
+                $iso_calls = 1;
+            }
             
             $stats = array(
                 'candidates_count' => count($candidates),
@@ -168,9 +184,10 @@ class Nearby_Recompute_Job {
                 'api_provider' => $provider ?: 'ors',
                 'cache_size_kb' => round($cache_size_kb),
                 'status' => 'completed',
+                'error_message' => null,
                 'nearby_items' => $nearby_items,
                 'iso_features' => $iso_features,
-                'iso_calls' => isset($api_calls_used['isochrones']) ? (int)$api_calls_used['isochrones'] : 0
+                'iso_calls' => $iso_calls
             );
             
             // origin_type zde reprezentuje cílový typ (co zpracováváme). Do processed ukládáme reálný typ origin postu.
