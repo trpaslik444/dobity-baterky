@@ -37,6 +37,11 @@ class Nearby_Processed_Manager {
             processing_time_seconds int(11) DEFAULT 0,
             api_provider varchar(20) DEFAULT 'ors',
             cache_size_kb int(11) DEFAULT 0,
+            nearby_items_count int(11) DEFAULT 0,
+            iso_features int(11) DEFAULT 0,
+            iso_calls int(11) DEFAULT 0,
+            has_nearby tinyint(1) DEFAULT 0,
+            has_isochrones tinyint(1) DEFAULT 0,
             processing_date datetime DEFAULT CURRENT_TIMESTAMP,
             last_updated datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             status varchar(20) DEFAULT 'completed',
@@ -78,6 +83,21 @@ class Nearby_Processed_Manager {
             $lng = (float)get_post_meta($origin_id, '_rv_lng', true);
         }
         
+        $api_calls = $stats['api_calls'] ?? 0;
+        $matrix_calls = 0;
+        $iso_calls = 0;
+        if (is_array($api_calls)) {
+            $matrix_calls = (int)($api_calls['matrix'] ?? 0);
+            $iso_calls = (int)($api_calls['isochrones'] ?? 0);
+            $api_calls = $matrix_calls + $iso_calls;
+        } else {
+            $api_calls = (int)$api_calls;
+            $iso_calls = (int)($stats['iso_calls'] ?? 0);
+        }
+
+        $nearby_items = (int)($stats['nearby_items'] ?? $stats['nearby_items_count'] ?? 0);
+        $iso_features = (int)($stats['iso_features'] ?? 0);
+
         $data = array(
             'origin_id' => $origin_id,
             'origin_type' => $origin_type,
@@ -86,13 +106,18 @@ class Nearby_Processed_Manager {
             'origin_lng' => $lng,
             'processed_type' => $processed_type,
             'candidates_count' => (int)($stats['candidates_count'] ?? 0),
-            'api_calls_used' => (int)($stats['api_calls'] ?? 0),
+            'api_calls_used' => $api_calls,
             'processing_time_seconds' => (int)($stats['processing_time'] ?? 0),
             'api_provider' => $stats['api_provider'] ?? 'ors',
             'cache_size_kb' => (int)($stats['cache_size_kb'] ?? 0),
             'status' => $stats['status'] ?? 'completed',
             'error_message' => $stats['error_message'] ?? null,
-            'processing_date' => current_time('mysql')
+            'processing_date' => current_time('mysql'),
+            'nearby_items_count' => $nearby_items,
+            'iso_features' => $iso_features,
+            'iso_calls' => $iso_calls,
+            'has_nearby' => $nearby_items > 0 ? 1 : 0,
+            'has_isochrones' => ($iso_features > 0 || $iso_calls > 0) ? 1 : 0
         );
         
         // Upsert: pokud existuje záznam pro origin_id, update; jinak insert
@@ -126,6 +151,15 @@ class Nearby_Processed_Manager {
         }
         if (!empty($filters['status'])) {
             $where .= $wpdb->prepare(" AND status = %s", $filters['status']);
+        }
+        if (!empty($filters['api_provider'])) {
+            $where .= $wpdb->prepare(" AND api_provider = %s", $filters['api_provider']);
+        }
+        if (isset($filters['has_nearby']) && $filters['has_nearby'] !== '') {
+            $where .= $wpdb->prepare(" AND has_nearby = %d", $filters['has_nearby'] ? 1 : 0);
+        }
+        if (isset($filters['has_isochrones']) && $filters['has_isochrones'] !== '') {
+            $where .= $wpdb->prepare(" AND has_isochrones = %d", $filters['has_isochrones'] ? 1 : 0);
         }
         
         // Nezobrazovat položky, které jsou aktuálně ve frontě (pending/processing)
@@ -176,6 +210,14 @@ class Nearby_Processed_Manager {
         $stats['total_cache_size_kb'] = (int)$wpdb->get_var("
             SELECT SUM(cache_size_kb) 
             FROM {$this->table_name}
+        ");
+
+        $stats['missing_nearby'] = (int)$wpdb->get_var("
+            SELECT COUNT(*) FROM {$this->table_name} WHERE has_nearby = 0
+        ");
+
+        $stats['missing_isochrones'] = (int)$wpdb->get_var("
+            SELECT COUNT(*) FROM {$this->table_name} WHERE has_isochrones = 0
         ");
         
         // Poslední zpracování
@@ -260,7 +302,84 @@ class Nearby_Processed_Manager {
      * Získat paginaci pro zpracovaná místa
      */
     public function get_processed_pagination($limit = 50, $offset = 0, $filters = array()) {
-        // Placeholder - zachovat signaturu
-        return array('limit' => $limit, 'offset' => $offset);
+        global $wpdb;
+
+        $where = "WHERE 1=1";
+        if (!empty($filters['origin_type'])) {
+            $where .= $wpdb->prepare(" AND origin_type = %s", $filters['origin_type']);
+        }
+        if (!empty($filters['status'])) {
+            $where .= $wpdb->prepare(" AND status = %s", $filters['status']);
+        }
+        if (!empty($filters['api_provider'])) {
+            $where .= $wpdb->prepare(" AND api_provider = %s", $filters['api_provider']);
+        }
+        if (isset($filters['has_nearby']) && $filters['has_nearby'] !== '') {
+            $where .= $wpdb->prepare(" AND has_nearby = %d", $filters['has_nearby'] ? 1 : 0);
+        }
+        if (isset($filters['has_isochrones']) && $filters['has_isochrones'] !== '') {
+            $where .= $wpdb->prepare(" AND has_isochrones = %d", $filters['has_isochrones'] ? 1 : 0);
+        }
+
+        $queue_table = $wpdb->prefix . 'nearby_queue';
+        $total = (int)$wpdb->get_var(
+            "SELECT COUNT(*)
+             FROM {$this->table_name} p
+             LEFT JOIN {$queue_table} q
+               ON q.origin_id = p.origin_id
+              AND q.status IN ('pending','processing')
+             {$where}
+             AND q.id IS NULL"
+        );
+
+        $total_pages = $limit > 0 ? max(1, (int)ceil($total / $limit)) : 1;
+        $current_page = $limit > 0 ? (int)floor($offset / $limit) + 1 : 1;
+
+        return array(
+            'total_items' => $total,
+            'total_pages' => $total_pages,
+            'current_page' => $current_page,
+            'limit' => $limit,
+            'offset' => $offset
+        );
+    }
+
+    public function get_filtered_origin_ids(array $filters = array(), $limit = 500) {
+        global $wpdb;
+
+        $limit = max(1, (int)$limit);
+
+        $where = "WHERE 1=1";
+        if (!empty($filters['origin_type'])) {
+            $where .= $wpdb->prepare(" AND origin_type = %s", $filters['origin_type']);
+        }
+        if (!empty($filters['status'])) {
+            $where .= $wpdb->prepare(" AND status = %s", $filters['status']);
+        }
+        if (!empty($filters['api_provider'])) {
+            $where .= $wpdb->prepare(" AND api_provider = %s", $filters['api_provider']);
+        }
+        if (isset($filters['has_nearby']) && $filters['has_nearby'] !== '') {
+            $where .= $wpdb->prepare(" AND has_nearby = %d", $filters['has_nearby'] ? 1 : 0);
+        }
+        if (isset($filters['has_isochrones']) && $filters['has_isochrones'] !== '') {
+            $where .= $wpdb->prepare(" AND has_isochrones = %d", $filters['has_isochrones'] ? 1 : 0);
+        }
+
+        $queue_table = $wpdb->prefix . 'nearby_queue';
+        $sql = $wpdb->prepare(
+            "SELECT p.origin_id, p.processed_type
+             FROM {$this->table_name} p
+             LEFT JOIN {$queue_table} q
+               ON q.origin_id = p.origin_id
+              AND q.status IN ('pending','processing')
+             {$where}
+             AND q.id IS NULL
+             ORDER BY p.processing_date DESC
+             LIMIT %d",
+            $limit
+        );
+
+        return $wpdb->get_results($sql, ARRAY_A) ?: array();
     }
 }

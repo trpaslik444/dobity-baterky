@@ -1205,6 +1205,14 @@ class Nearby_Queue_Admin {
         if (!empty($_GET['api_provider'])) {
             $filters['api_provider'] = sanitize_text_field($_GET['api_provider']);
         }
+        $has_nearby_selected = isset($_GET['has_nearby']) ? sanitize_text_field($_GET['has_nearby']) : '';
+        if ($has_nearby_selected !== '') {
+            $filters['has_nearby'] = $has_nearby_selected === '1';
+        }
+        $has_iso_selected = isset($_GET['has_isochrones']) ? sanitize_text_field($_GET['has_isochrones']) : '';
+        if ($has_iso_selected !== '') {
+            $filters['has_isochrones'] = $has_iso_selected === '1';
+        }
         // Datové filtry odstraněny - způsobují jen nepořádek
         
         $items = $this->processed_manager->get_processed_locations($limit, $offset, $filters);
@@ -1233,6 +1241,14 @@ class Nearby_Queue_Admin {
                         <h3 style="margin: 0 0 10px 0; color: #721c24;">Průměrný čas</h3>
                         <div style="font-size: 2em; font-weight: bold; color: #dc3545;"><?php echo round($stats['avg_processing_time'], 1); ?>s</div>
                     </div>
+                    <div class="db-stat-card" style="background: #fde2e1; padding: 20px; border-radius: 8px; text-align: center;">
+                        <h3 style="margin: 0 0 10px 0; color: #842029;">Chybí nearby data</h3>
+                        <div style="font-size: 2em; font-weight: bold; color: #dc3545;"><?php echo (int)$stats['missing_nearby']; ?></div>
+                    </div>
+                    <div class="db-stat-card" style="background: #e2e3f3; padding: 20px; border-radius: 8px; text-align: center;">
+                        <h3 style="margin: 0 0 10px 0; color: #383d7c;">Chybí isochrones</h3>
+                        <div style="font-size: 2em; font-weight: bold; color: #4951c2;"><?php echo (int)$stats['missing_isochrones']; ?></div>
+                    </div>
                 </div>
             </div>
             
@@ -1257,6 +1273,22 @@ class Nearby_Queue_Admin {
                             <option value="osrm" <?php selected($filters['api_provider'] ?? '', 'osrm'); ?>>OSRM</option>
                         </select>
                     </div>
+                    <div>
+                        <label for="has_nearby">Nearby data:</label>
+                        <select name="has_nearby" id="has_nearby">
+                            <option value="" <?php selected($has_nearby_selected, ''); ?>>Vše</option>
+                            <option value="1" <?php selected($has_nearby_selected, '1'); ?>>Má data</option>
+                            <option value="0" <?php selected($has_nearby_selected, '0'); ?>>Chybí data</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="has_isochrones">Isochrones:</label>
+                        <select name="has_isochrones" id="has_isochrones">
+                            <option value="" <?php selected($has_iso_selected, ''); ?>>Vše</option>
+                            <option value="1" <?php selected($has_iso_selected, '1'); ?>>Má isochrones</option>
+                            <option value="0" <?php selected($has_iso_selected, '0'); ?>>Chybí isochrones</option>
+                        </select>
+                    </div>
                     <!-- Datové filtry odstraněny -->
                     <div>
                         <input type="submit" class="button" value="Filtrovat">
@@ -1275,6 +1307,8 @@ class Nearby_Queue_Admin {
                             <th>Název</th>
                             <th>Typ</th>
                             <th>Kandidáti</th>
+							<th>Nearby</th>
+							<th>Isochrones</th>
 							<th>Čas zpracování</th>
                             <th>API Provider</th>
                             <th>Velikost cache</th>
@@ -1296,7 +1330,9 @@ class Nearby_Queue_Admin {
                                     <td><?php echo esc_html($item->origin_title); ?></td>
                                     <td><?php echo esc_html($item->origin_type); ?></td>
                                     <td><?php echo esc_html($item->candidates_count); ?></td>
-									<td><?php echo esc_html(((int)$item->processing_time_seconds) * 1000); ?> ms</td>
+									<td><?php echo esc_html($item->nearby_items_count); ?></td>
+									<td><?php echo esc_html($item->iso_features > 0 ? $item->iso_features : ($item->iso_calls > 0 ? $item->iso_calls . ' call(s)' : '0')); ?></td>
+									<td><?php echo esc_html(number_format_i18n((float)$item->processing_time_seconds, 2)); ?> s</td>
                                     <td><?php echo esc_html(strtoupper($item->api_provider)); ?></td>
                                     <td><?php echo esc_html($item->cache_size_kb); ?> KB</td>
                                     <td><?php echo esc_html(date('d.m.Y H:i', strtotime($item->processing_date))); ?></td>
@@ -1317,8 +1353,9 @@ class Nearby_Queue_Admin {
             </div>
             
             <!-- Hromadné akce -->
-            <div style="margin:15px 0; display:flex; gap:10px; align-items:center;">
+            <div style="margin:15px 0; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
                 <button class="button" onclick="requeueSelected()">Odeslat vybrané do fronty</button>
+                <button class="button button-secondary" onclick="requeueFiltered()">Odeslat filtrované (max 500)</button>
             </div>
 
             <!-- Paginace -->
@@ -1328,7 +1365,9 @@ class Nearby_Queue_Admin {
                     $base_url = add_query_arg(array(
                         'page' => 'db-nearby-processed',
                         'origin_type' => $filters['origin_type'] ?? '',
-                        'api_provider' => $filters['api_provider'] ?? ''
+                        'api_provider' => $filters['api_provider'] ?? '',
+                        'has_nearby' => $has_nearby_selected,
+                        'has_isochrones' => $has_iso_selected
                     ), admin_url('tools.php'));
                     
                     echo paginate_links(array(
@@ -1345,6 +1384,13 @@ class Nearby_Queue_Admin {
         </div>
         
         <script>
+        const processedFilters = <?php echo wp_json_encode(array(
+            'origin_type' => $filters['origin_type'] ?? '',
+            'api_provider' => $filters['api_provider'] ?? '',
+            'has_nearby' => $has_nearby_selected,
+            'has_isochrones' => $has_iso_selected,
+        )); ?>;
+
         function viewDetails(originId, originType) {
             // Otevřít detaily místa v novém okně nebo modalu
             window.open('<?php echo admin_url('post.php?action=edit&post='); ?>' + originId, '_blank');
@@ -1395,6 +1441,32 @@ class Nearby_Queue_Admin {
                     const msg = 'Zařazeno: ' + enq.length + ' / ' + ids.length
                       + (enq.length ? ('\nID: ' + enq.map(r=>r[0]).join(', ')) : '')
                       + (skp.length ? ('\nPřeskočeno: ' + skp.length + ' (důvod: ' + skp.map(r=>r[1]).join(', ') + ')\nID: ' + skp.map(r=>r[0]).join(', ')) : '');
+                    alert(msg);
+                } else {
+                    alert('Chyba: ' + (json.message || 'Nepodařilo se odeslat do fronty'));
+                }
+            } catch (e) {
+                alert('Chyba při volání API: ' + e);
+            }
+        }
+        async function requeueFiltered(){
+            try {
+                const payload = {
+                    filters: processedFilters,
+                    limit: 500
+                };
+                const res = await fetch('<?php echo esc_url_raw( rest_url('db/v1/admin/nearby/requeue') ); ?>', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': '<?php echo esc_js( wp_create_nonce('wp_rest') ); ?>' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (res.ok) {
+                    const enq = json.enqueued || [];
+                    const skp = json.skipped || [];
+                    const msg = 'Zařazeno: ' + enq.length + (payload.limit ? ' / max ' + payload.limit : '')
+                      + (enq.length ? ('\nID: ' + enq.map(r=>r[0]).join(', ')) : '')
+                      + (skp.length ? ('\nPřeskočeno: ' + skp.length + ' (důvod: ' + skp.map(r=>r[1]).join(', ') + ')') : '');
                     alert(msg);
                 } else {
                     alert('Chyba: ' + (json.message || 'Nepodařilo se odeslat do fronty'));

@@ -489,35 +489,58 @@ class REST_Nearby {
     public function requeue_processed($request) {
         $origin_ids = (array)($request->get_param('origin_ids') ?? []);
         $target_type = sanitize_key($request->get_param('target_type') ?? '');
-        
+        $filters_raw = $request->get_param('filters');
+        $limit = max(1, min(2000, (int)($request->get_param('limit') ?? 500)));
+        $processed_types_map = array();
+
         $origin_ids = array_values(array_filter(array_map('intval', $origin_ids), function($v){ return $v > 0; }));
+
+        if (empty($origin_ids) && is_array($filters_raw)) {
+            if (!class_exists('DB\\Jobs\\Nearby_Processed_Manager')) {
+                require_once __DIR__ . '/Jobs/Nearby_Processed_Manager.php';
+            }
+            $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
+            $filters = $this->sanitize_processed_filters($filters_raw);
+            $rows = $processed_manager->get_filtered_origin_ids($filters, $limit);
+            foreach ($rows as $row) {
+                $oid = (int)($row['origin_id'] ?? 0);
+                if ($oid > 0) {
+                    $origin_ids[] = $oid;
+                    if (!empty($row['processed_type'])) {
+                        $processed_types_map[$oid] = $row['processed_type'];
+                    }
+                }
+            }
+        }
+
         if (empty($origin_ids)) {
             return new \WP_Error('bad_request', 'origin_ids required', ['status'=>400]);
         }
-        
+
         $enqueued = [];
         $skipped  = [];
-        
+
         if (!class_exists('DB\\Jobs\\Nearby_Queue_Manager')) {
             require_once __DIR__ . '/Jobs/Nearby_Queue_Manager.php';
         }
         $qm = new \DB\Jobs\Nearby_Queue_Manager();
         global $wpdb;
         $queue_table = $wpdb->prefix . 'nearby_queue';
-        
+
         foreach ($origin_ids as $oid) {
             $post = get_post($oid);
             if (!$post) { $skipped[] = [$oid,'not_found']; continue; }
-            
+
             // Určit default target podle skutečného typu originu, pokud není dán
             $type = $target_type;
             if ($type === '') {
-                if ($post->post_type === 'charging_location') {
-                    // charger: chceme poi i rv
+                if (!empty($processed_types_map[$oid])) {
+                    $types_to_enqueue = ($processed_types_map[$oid] === 'poi_foot') ? ['poi'] : ['charging_location'];
+                } elseif ($post->post_type === 'charging_location') {
                     $types_to_enqueue = ['poi','rv_spot'];
                 } elseif ($post->post_type === 'poi') {
                     $types_to_enqueue = ['charging_location'];
-                } else { // rv_spot
+                } else {
                     $types_to_enqueue = ['charging_location','poi'];
                 }
             } else {
@@ -671,6 +694,23 @@ class REST_Nearby {
         $result = Nearby_Worker::run($delay);
 
         return rest_ensure_response($result);
+    }
+
+    private function sanitize_processed_filters($input) {
+        $filters = array();
+        if (!empty($input['origin_type'])) {
+            $filters['origin_type'] = sanitize_key($input['origin_type']);
+        }
+        if (!empty($input['api_provider'])) {
+            $filters['api_provider'] = sanitize_text_field($input['api_provider']);
+        }
+        if (isset($input['has_nearby']) && $input['has_nearby'] !== '') {
+            $filters['has_nearby'] = (int)$input['has_nearby'] === 1;
+        }
+        if (isset($input['has_isochrones']) && $input['has_isochrones'] !== '') {
+            $filters['has_isochrones'] = (int)$input['has_isochrones'] === 1;
+        }
+        return $filters;
     }
     
     

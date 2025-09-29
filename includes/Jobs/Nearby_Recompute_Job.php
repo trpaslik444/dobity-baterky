@@ -130,7 +130,7 @@ class Nearby_Recompute_Job {
             // Přidat do zpracovaných míst
             $processing_time = round(microtime(true) - $start_time, 3);
             $api_calls_used = array('matrix' => $matrix_calls, 'isochrones' => $iso_calls);
-            $this->track_processed_location($origin_id, $type, $candidates, $api_calls_used, $processing_time);
+            $this->track_processed_location($origin_id, $type, $candidates, $api_calls_used, $processing_time, $provider);
 
             return array(
                 'success' => true,
@@ -147,22 +147,30 @@ class Nearby_Recompute_Job {
     /**
      * Track zpracované místo v databázi
      */
-    private function track_processed_location($origin_id, $origin_type, $candidates, $api_calls_used, $processing_time) {
+    private function track_processed_location($origin_id, $origin_type, $candidates, $api_calls_used, $processing_time, $provider = 'ors') {
         try {
             $processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
             
             // Získat velikost cache
             $meta_key = ($origin_type === 'poi') ? '_db_nearby_cache_poi_foot' : '_db_nearby_cache_charger_foot';
-            $cache_data = get_post_meta($origin_id, $meta_key, true);
-            $cache_size_kb = $cache_data ? strlen(serialize($cache_data)) / 1024 : 0;
+            $cache_raw = get_post_meta($origin_id, $meta_key, true);
+            $cache_size_kb = $cache_raw ? strlen(serialize($cache_raw)) / 1024 : 0;
+            $cache_payload = is_string($cache_raw) ? json_decode($cache_raw, true) : (is_array($cache_raw) ? $cache_raw : array());
+            $nearby_items = isset($cache_payload['items']) && is_array($cache_payload['items']) ? count($cache_payload['items']) : 0;
+            $iso_payload_raw = get_post_meta($origin_id, 'db_isochrones_v1_foot-walking', true);
+            $iso_payload = is_string($iso_payload_raw) ? json_decode($iso_payload_raw, true) : (is_array($iso_payload_raw) ? $iso_payload_raw : array());
+            $iso_features = isset($iso_payload['geojson']['features']) && is_array($iso_payload['geojson']['features']) ? count($iso_payload['geojson']['features']) : 0;
             
             $stats = array(
                 'candidates_count' => count($candidates),
                 'api_calls' => $api_calls_used,
                 'processing_time' => $processing_time,
-                'api_provider' => 'ors', // TODO: určit dynamicky
+                'api_provider' => $provider ?: 'ors',
                 'cache_size_kb' => round($cache_size_kb),
-                'status' => 'completed'
+                'status' => 'completed',
+                'nearby_items' => $nearby_items,
+                'iso_features' => $iso_features,
+                'iso_calls' => isset($api_calls_used['isochrones']) ? (int)$api_calls_used['isochrones'] : 0
             );
             
             // origin_type zde reprezentuje cílový typ (co zpracováváme). Do processed ukládáme reálný typ origin postu.
@@ -252,7 +260,7 @@ class Nearby_Recompute_Job {
                 $speed = (float)($cfg['walking_speed_m_s'] ?? 1.3); // default ~4.7 km/h
                 foreach ($candidates as $cand) {
                     $distance_m = isset($cand['dist_km']) ? (int) round(((float)$cand['dist_km']) * 1000) : (int) round($this->haversine_m($lat, $lng, (float)$cand['lat'], (float)$cand['lng']));
-                    $duration_s = $speed > 0 ? (int) round($distance_m / $speed) : (int) $distance_m; // fallback bez dělení
+                    $duration_s = $speed > 0 ? (int) round($distance_m / $speed) : (int) $distance_m;
                     $items[] = [
                         'id'         => (int)$cand['id'],
                         'post_type'  => (string)$cand['type'],
@@ -266,6 +274,9 @@ class Nearby_Recompute_Job {
                 }
                 usort($items, fn($a,$b) => ($a['duration_s'] <=> $b['duration_s']));
                 $this->write_cache($origin_id, $meta_key, $items, false, $total, $total, current_time('c'), null);
+                $api_calls_used = array('matrix' => 0, 'isochrones' => 0);
+                $processing_time = 0;
+                $this->track_processed_location($origin_id, $type, $candidates, $api_calls_used, $processing_time, 'basic');
                 return;
             }
 
