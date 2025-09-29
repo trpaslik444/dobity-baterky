@@ -4,24 +4,8 @@ namespace DB\Jobs;
 
 class Nearby_Recompute_Job {
 
-    /**
-     * Jednoduchý logger; zapisuje do PHP logu i do souboru v uploads.
-     */
     private function debug_log($message, array $context = []) {
-        if (!empty($context)) {
-            $context_json = wp_json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $message .= ' | ' . $context_json;
-        }
-
-        $line = '[DB Nearby] ' . $message;
-        error_log($line);
-
-        $uploads = function_exists('wp_upload_dir') ? wp_upload_dir() : null;
-        if (!empty($uploads['basedir']) && is_dir($uploads['basedir']) && is_writable($uploads['basedir'])) {
-            $log_path = trailingslashit($uploads['basedir']) . 'db-nearby-debug.log';
-            $timestamp = gmdate('Y-m-d H:i:s');
-            @file_put_contents($log_path, "[{$timestamp}] {$line}\n", FILE_APPEND | LOCK_EX);
-        }
+        Nearby_Logger::log('RECOMPUTE', $message, $context);
     }
 
     private function truncate_body($body) {
@@ -152,7 +136,7 @@ class Nearby_Recompute_Job {
                 'processing_time_s' => $processing_time
             );
 
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return array('success' => false, 'error' => $e->getMessage());
         }
     }
@@ -183,7 +167,7 @@ class Nearby_Recompute_Job {
             $processed_type = ($origin_type === 'poi') ? 'poi_foot' : 'charger_foot';
             $processed_manager->add_processed($origin_id, $real_origin_type, $processed_type, $stats);
             
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             error_log("[DB Processed Tracking] Chyba při trackingu: " . $e->getMessage());
         }
     }
@@ -417,8 +401,14 @@ class Nearby_Recompute_Job {
                         'retry_after' => $retry_after_header
                     ]);
                     $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, current_time('c'), 'rate_limited', 120);
-                    if (!wp_next_scheduled('db_nearby_recompute', [$origin_id, $type])) {
-                        wp_schedule_single_event(time() + 120, 'db_nearby_recompute', [$origin_id, $type]);
+                    if (!Nearby_Cron_Tools::schedule_recompute(120, $origin_id, $type)) {
+                        // fallback do fronty, aby se neztratila práce
+                        try {
+                            $queue = new Nearby_Queue_Manager();
+                            $queue->enqueue($origin_id, $type, 2);
+                        } catch (\Throwable $__) {
+                            // tichý fallback – chyba už je zalogována v debug logu
+                        }
                     }
                     return;
                 }
@@ -795,7 +785,7 @@ class Nearby_Recompute_Job {
             } else {
                 return $this->process_osrm_chunk($chunk, $profile, $origin_lat, $origin_lng);
             }
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return array('success' => false, 'error' => $e->getMessage());
         }
     }
@@ -1127,7 +1117,7 @@ class Nearby_Recompute_Job {
                     sin(radians(%f)) * sin(radians(pm_lat.meta_value))
                 )
             )
-            LIMIT 50
+            LIMIT 1000
         ", $candidate_type, $origin_id, $origin->lat, $origin->lng, $origin->lat, $origin->lat, $origin->lng, $origin->lat));
         
         return $candidates;

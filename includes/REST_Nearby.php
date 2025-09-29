@@ -6,6 +6,10 @@
 
 namespace DB;
 
+use DB\Jobs\Nearby_Cron_Tools;
+use DB\Jobs\Nearby_Logger;
+use DB\Jobs\Nearby_Queue_Manager;
+
 class REST_Nearby {
     
     private static $instance = null;
@@ -658,20 +662,27 @@ class REST_Nearby {
         $origin_id = (int)$origin_id;
         $type = sanitize_key($type);
 
-        // Action Scheduler, pokud je k dispozici
-        if (function_exists('as_enqueue_async_action')) {
-            // unikátní args = 1 úloha / origin+type
-            as_enqueue_async_action('db_nearby_recompute', [
-                'origin_id' => $origin_id,
-                'type'      => $type,
-            ], 'db-nearby');
-            return true;
+        $scheduled = Nearby_Cron_Tools::schedule_recompute(1, $origin_id, $type);
+
+        if (!$scheduled) {
+            // Fallback: zajistit, že položka je ve frontě k pozdějšímu zpracování
+            try {
+                $queue = new Nearby_Queue_Manager();
+                $enqueued = $queue->enqueue($origin_id, $type, 2);
+                Nearby_Logger::log('CRON', 'Cron scheduling skipped – queued instead', [
+                    'origin_id' => $origin_id,
+                    'type' => $type,
+                    'queue_enqueued' => $enqueued,
+                ]);
+            } catch (\Throwable $e) {
+                Nearby_Logger::log('CRON', 'Failed to enqueue fallback after cron skip', [
+                    'origin_id' => $origin_id,
+                    'type' => $type,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
-        // Fallback na WP-Cron
-        if (!wp_next_scheduled('db_nearby_recompute', [ $origin_id, $type ])) {
-            wp_schedule_single_event(time() + 1, 'db_nearby_recompute', [ $origin_id, $type ]);
-        }
         return true;
     }
     
