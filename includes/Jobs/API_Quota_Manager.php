@@ -13,9 +13,9 @@ class API_Quota_Manager {
      * Viz https://openrouteservice.org/dev/#/signup - matrix i isochrones maximálně 1 požadavek za minutu
      * a jeden matrix request může obsahovat nejvýše 50 souřadnic (1 origin + 49 destinací).
      */
-    public const MATRIX_PER_MINUTE = 1;
+    public const MATRIX_PER_MINUTE = 2;
     public const ISOCHRONES_PER_MINUTE = 1;
-    public const ORS_MATRIX_MAX_LOCATIONS = 50;
+    public const ORS_MATRIX_MAX_LOCATIONS = 3500;
     
     private $config;
     
@@ -120,7 +120,7 @@ class API_Quota_Manager {
             
             return array('status' => 'ok');
             
-        } catch (Exception $e) {
+        } catch (\Exception $e) {
             return array('error' => $e->getMessage());
         }
     }
@@ -177,8 +177,12 @@ class API_Quota_Manager {
             $retry_until = time() + $retry_after;
             set_transient('db_ors_matrix_retry_until', $retry_until, $retry_after);
         }
-        
-        error_log("[DB ORS Headers] Saved: remaining={$remaining}, reset={$reset_epoch}, retry_after={$retry_after}");
+
+        Nearby_Logger::log('QUOTA', 'Saved ORS headers', [
+            'remaining' => $remaining,
+            'reset_epoch' => $reset_epoch,
+            'retry_after' => $retry_after
+        ]);
     }
     
     /**
@@ -213,7 +217,13 @@ class API_Quota_Manager {
             $tokens_needed = 1 - $bucket['tokens'];
             $wait_time = ceil($tokens_needed / ($limit / 60));
             $wait_time = max(3, min(60, $wait_time));
-            error_log(sprintf('[DB Quota] type=%s allowed=0 tokens_before=%.2f tokens_after=%.2f limit=%d wait=%d', $type, $tokens_before_refill, $bucket['tokens'], $limit, $wait_time));
+            Nearby_Logger::log('QUOTA', 'Token bucket blocked', [
+                'type' => $type,
+                'tokens_before' => round($tokens_before_refill, 2),
+                'tokens_after' => round($bucket['tokens'], 2),
+                'limit' => $limit,
+                'wait_seconds' => $wait_time
+            ]);
             return array(
                 'allowed' => false,
                 'wait_seconds' => $wait_time,
@@ -231,7 +241,12 @@ class API_Quota_Manager {
             set_transient($bucket_key, $bucket, 60);
         }
 
-        error_log(sprintf('[DB Quota] type=%s allowed=1 tokens_before=%.2f tokens_after=%.2f limit=%d', $type, $tokens_before_consume, $bucket['tokens'], $limit));
+        Nearby_Logger::log('QUOTA', 'Token consumed', [
+            'type' => $type,
+            'tokens_before' => round($tokens_before_consume, 2),
+            'tokens_after' => round($bucket['tokens'], 2),
+            'limit' => $limit
+        ]);
 
         return array(
             'allowed' => true,
@@ -255,7 +270,17 @@ class API_Quota_Manager {
             set_transient($usage_key, $current_usage + $count, DAY_IN_SECONDS);
         }
     }
-    
+
+    /**
+     * Resetovat lokální minutový bucket (pomocník pro testování)
+     */
+    public function reset_minute_bucket($type = 'matrix') {
+        $type = ($type === 'isochrones') ? 'isochrones' : 'matrix';
+        $bucket_key = 'db_ors_' . $type . '_token_bucket';
+        delete_transient($bucket_key);
+        Nearby_Logger::log('QUOTA', 'Manual minute bucket reset', ['type' => $type]);
+    }
+
     /**
      * Zkontrolovat, zda může fronta pokračovat
      */
