@@ -1160,8 +1160,8 @@ class Nearby_Queue_Admin {
             update_option('db_nearby_auto_enabled', false);
             $message = 'Automatické zpracování vypnuto';
         } else {
-            $this->auto_processor->restart_auto_processing();
             update_option('db_nearby_auto_enabled', true);
+            $this->auto_processor->restart_auto_processing();
             $message = 'Automatické zpracování zapnuto';
         }
         
