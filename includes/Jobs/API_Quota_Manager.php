@@ -341,21 +341,32 @@ class API_Quota_Manager {
      */
     public function schedule_next_run() {
         $quota = $this->check_available_quota();
-        
+
         if ($quota['can_process']) {
-            // Může pokračovat okamžitě
             return time();
         }
-        
-        // Naplánovat na reset kvót
+
+        $retry_until = $this->get_retry_until();
+        if ($retry_until) {
+            $delay = max(0, $retry_until - time() + 30 * MINUTE_IN_SECONDS);
+            return time() + $delay;
+        }
+
         $reset_time = $this->get_reset_time();
-        
-        // Naplánovat WordPress cron
+
         if (!wp_next_scheduled('db_nearby_auto_process')) {
             wp_schedule_single_event($reset_time, 'db_nearby_auto_process');
         }
-        
+
         return $reset_time;
+    }
+
+    public function get_retry_until() {
+        $retry_until = get_transient('db_ors_matrix_retry_until');
+        if ($retry_until && $retry_until > time()) {
+            return $retry_until;
+        }
+        return null;
     }
     
     /**

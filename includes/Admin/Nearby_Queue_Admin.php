@@ -188,6 +188,7 @@ class Nearby_Queue_Admin {
         $stats = $this->queue_manager->get_stats();
         $auto_status = $this->auto_processor->get_auto_status();
         $quota_stats = $this->quota_manager->get_usage_stats();
+        $retry_until = $this->quota_manager->get_retry_until();
         ?>
         <div class="wrap">
             <h1>Nearby Queue Management</h1>
@@ -1223,6 +1224,13 @@ class Nearby_Queue_Admin {
             <p>Správa míst, která už mají zpracovaná nearby data přes API.</p>
             
             <!-- Statistiky -->
+            <?php if ($retry_until): ?>
+                <div class="notice notice-warning" style="margin-top:15px;">
+                    <p><strong>ORS API je momentálně limitované.</strong><br>
+                    Další pokus: <?php echo esc_html(date('d.m.Y H:i', $retry_until + 30 * MINUTE_IN_SECONDS)); ?></p>
+                </div>
+            <?php endif; ?>
+
             <div class="db-stats" style="margin: 20px 0;">
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                     <div class="db-stat-card" style="background: #d4edda; padding: 20px; border-radius: 8px; text-align: center;">

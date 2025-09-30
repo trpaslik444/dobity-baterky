@@ -432,12 +432,16 @@ class Nearby_Recompute_Job {
                         'retry_after' => $retry_after_header
                     ]);
                     $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, current_time('c'), 'rate_limited', 120);
-                    if (!Nearby_Cron_Tools::schedule_recompute(120, $origin_id, $type)) {
-                        // fallback do fronty, aby se neztratila práce
-                        try {
-                            $queue = new Nearby_Queue_Manager();
-                            $queue->enqueue($origin_id, $type, 2);
-                        } catch (\Throwable $__) {
+                $manager = new \DB\Jobs\API_Quota_Manager();
+                $retry_until = $manager->get_retry_until();
+                $delay = $retry_until ? max(120, ($retry_until - time()) + 30 * MINUTE_IN_SECONDS) : 120;
+
+                if (!Nearby_Cron_Tools::schedule_recompute($delay, $origin_id, $type)) {
+                    // fallback do fronty, aby se neztratila práce
+                    try {
+                        $queue = new Nearby_Queue_Manager();
+                        $queue->enqueue($origin_id, $type, 2);
+                    } catch (\Throwable $__) {
                             // tichý fallback – chyba už je zalogována v debug logu
                         }
                     }

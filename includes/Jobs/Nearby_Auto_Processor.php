@@ -60,7 +60,10 @@ class Nearby_Auto_Processor {
 
         $stats = $this->queue_manager->get_stats();
         if (($stats->pending ?? 0) > 0) {
-            wp_schedule_single_event(time() + MINUTE_IN_SECONDS, 'db_nearby_auto_process');
+            $next = $this->quota_manager->schedule_next_run();
+            if ($next && $next > time()) {
+                wp_schedule_single_event($next, 'db_nearby_auto_process');
+            }
         }
     }
 
@@ -94,6 +97,10 @@ class Nearby_Auto_Processor {
         $this->quota_manager->record_api_usage($result['processed']);
 
         if (($this->queue_manager->get_stats()->pending ?? 0) > 0) {
+            $next = $this->quota_manager->schedule_next_run();
+            if ($next && $next > time()) {
+                wp_schedule_single_event($next, 'db_nearby_auto_process');
+            }
             Nearby_Worker::dispatch();
         }
 
@@ -111,4 +118,3 @@ class Nearby_Auto_Processor {
         Nearby_Worker::dispatch();
     }
 }
-
