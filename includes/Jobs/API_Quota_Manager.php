@@ -190,7 +190,7 @@ class API_Quota_Manager {
     /**
      * Token bucket pro minutový limit
      */
-    public function check_minute_limit($type = 'matrix', $consume_token = true) {
+    public function check_minute_limit($type = 'matrix', $consume_token = true, $log = true) {
         $bucket_enabled = !empty($this->config['enable_token_bucket']);
         if (!$bucket_enabled) {
             $limit = ($type === 'isochrones') ? self::ISOCHRONES_PER_MINUTE : self::MATRIX_PER_MINUTE;
@@ -231,13 +231,16 @@ class API_Quota_Manager {
             $tokens_needed = 1 - $bucket['tokens'];
             $wait_time = ceil($tokens_needed / ($limit / 60));
             $wait_time = max(3, min(60, $wait_time));
-            Nearby_Logger::log('QUOTA', 'Token bucket blocked', [
-                'type' => $type,
-                'tokens_before' => round($tokens_before_refill, 2),
-                'tokens_after' => round($bucket['tokens'], 2),
-                'limit' => $limit,
-                'wait_seconds' => $wait_time
-            ]);
+            set_transient($bucket_key, $bucket, 60);
+            if ($log) {
+                Nearby_Logger::log('QUOTA', 'Token bucket blocked', [
+                    'type' => $type,
+                    'tokens_before' => round($tokens_before_refill, 2),
+                    'tokens_after' => round($bucket['tokens'], 2),
+                    'limit' => $limit,
+                    'wait_seconds' => $wait_time
+                ]);
+            }
             return array(
                 'allowed' => false,
                 'wait_seconds' => $wait_time,
@@ -255,12 +258,14 @@ class API_Quota_Manager {
             set_transient($bucket_key, $bucket, 60);
         }
 
-        Nearby_Logger::log('QUOTA', 'Token consumed', [
-            'type' => $type,
-            'tokens_before' => round($tokens_before_consume, 2),
-            'tokens_after' => round($bucket['tokens'], 2),
-            'limit' => $limit
-        ]);
+        if ($log) {
+            Nearby_Logger::log('QUOTA', 'Token consumed', [
+                'type' => $type,
+                'tokens_before' => round($tokens_before_consume, 2),
+                'tokens_after' => round($bucket['tokens'], 2),
+                'limit' => $limit
+            ]);
+        }
 
         return array(
             'allowed' => true,
@@ -268,6 +273,21 @@ class API_Quota_Manager {
             'tokens_before' => $tokens_before_consume,
             'tokens_after' => $bucket['tokens'],
             'limit' => $limit
+        );
+    }
+
+    private function minute_status_snapshot() {
+        $provider = $this->config['provider'] ?? 'ors';
+        if ($provider !== 'ors') {
+            return array(
+                'matrix' => array('allowed' => true, 'wait_seconds' => 0),
+                'isochrones' => array('allowed' => true, 'wait_seconds' => 0),
+            );
+        }
+
+        return array(
+            'matrix' => $this->check_minute_limit('matrix', false, false),
+            'isochrones' => $this->check_minute_limit('isochrones', false, false)
         );
     }
     
@@ -300,7 +320,12 @@ class API_Quota_Manager {
      */
     public function can_process_queue() {
         $quota = $this->check_available_quota();
-        return $quota['can_process'];
+        if (!$quota['can_process']) {
+            return false;
+        }
+
+        $minute_status = $this->minute_status_snapshot();
+        return !empty($minute_status['matrix']['allowed']) && !empty($minute_status['isochrones']['allowed']);
     }
     
     /**
@@ -312,7 +337,12 @@ class API_Quota_Manager {
         if (!$quota['can_process']) {
             return 0;
         }
-        
+
+        $minute_status = $this->minute_status_snapshot();
+        if (empty($minute_status['matrix']['allowed']) || empty($minute_status['isochrones']['allowed'])) {
+            return 0;
+        }
+
         $remaining = $quota['remaining'];
         
         // Doporučit menší batch, pokud zbývá málo kvóty
@@ -345,6 +375,16 @@ class API_Quota_Manager {
         $quota = $this->check_available_quota();
 
         if ($quota['can_process']) {
+            $minute_status = $this->minute_status_snapshot();
+            $matrix_allowed = !empty($minute_status['matrix']['allowed']);
+            $iso_allowed = !empty($minute_status['isochrones']['allowed']);
+
+            if (!$matrix_allowed || !$iso_allowed) {
+                $wait_matrix = $matrix_allowed ? 0 : (int)($minute_status['matrix']['wait_seconds'] ?? 0);
+                $wait_iso = $iso_allowed ? 0 : (int)($minute_status['isochrones']['wait_seconds'] ?? 0);
+                $delay = max($wait_matrix, $wait_iso, 3);
+                return time() + $delay;
+            }
             return time();
         }
 

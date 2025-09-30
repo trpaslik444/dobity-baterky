@@ -108,7 +108,14 @@ class Nearby_Worker {
             $pending = (int)($stats->pending ?? 0);
 
             if ($pending > 0) {
-                self::dispatch(1);
+                try {
+                    $quota_manager = new API_Quota_Manager();
+                    $next_run = $quota_manager->schedule_next_run();
+                    $delay = max(1, $next_run - time());
+                } catch (\Throwable $__) {
+                    $delay = 1;
+                }
+                self::dispatch($delay);
             }
 
             return array(
@@ -123,4 +130,3 @@ class Nearby_Worker {
         }
     }
 }
-
