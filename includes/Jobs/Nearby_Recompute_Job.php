@@ -230,11 +230,8 @@ class Nearby_Recompute_Job {
             $profile   = 'foot-walking'; // Vždy používáme pěší trasu pro všechny typy
             $radiusKm  = (float)($cfg['radius_km'] ?? 5);
             $maxCand   = (int)($cfg['max_candidates'] ?? 60);
-            // U type=poi (typicky klik na nabíječku) držet menší dávky
-            $batchSize = (int)($cfg['matrix_batch_size'] ?? 60);
-            if ($type === 'poi') {
-                $batchSize = min($batchSize, 30);
-            }
+            // Zvýšit implicitní batch pro Matrix, aby se minimalizoval počet requestů
+            $batchSize = (int)($cfg['matrix_batch_size'] ?? 1000);
 
             // Získat souřadnice origin postu podle jeho typu
             $origin_post = get_post($origin_id);
