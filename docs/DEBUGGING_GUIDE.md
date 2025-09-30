@@ -151,16 +151,26 @@ tail -100 wp-content/debug.log | grep -E "(BATCH|QUOTA|RECOMPUTE)"
 ```bash
 # 1. Kontrola ORS headers
 php wp-cli.phar eval "
-\$headers = get_transient('db_ors_headers');
-echo 'ORS Headers: ' . json_encode(\$headers);
+\$matrix = [
+    'remaining' => get_transient('db_ors_matrix_remaining_day'),
+    'reset' => get_transient('db_ors_matrix_reset_epoch'),
+    'retry_until' => get_transient('db_ors_matrix_retry_until'),
+];
+\$iso = [
+    'remaining' => get_transient('db_ors_iso_remaining_day'),
+    'reset' => get_transient('db_ors_iso_reset_epoch'),
+    'retry_until' => get_transient('db_ors_iso_retry_until'),
+];
+echo 'Matrix quota: ' . json_encode(\$matrix) . "\n";
+echo 'Iso quota: ' . json_encode(\$iso) . "\n";
 "
 
 # 2. Kontrola token bucket
 php wp-cli.phar eval "
 \$matrix_tokens = get_transient('db_ors_matrix_token_bucket');
 \$iso_tokens = get_transient('db_ors_isochrones_token_bucket');
-echo 'Matrix tokens: ' . json_encode(\$matrix_tokens);
-echo 'Isochrones tokens: ' . json_encode(\$iso_tokens);
+echo 'Matrix tokens: ' . json_encode(\$matrix_tokens) . "\n";
+echo 'Isochrones tokens: ' . json_encode(\$iso_tokens) . "\n";
 "
 
 # 3. Kontrola logů

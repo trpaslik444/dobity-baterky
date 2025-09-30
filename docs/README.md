@@ -43,14 +43,15 @@ The plugin now includes a sophisticated queue management system for processing n
   - Bulk operations for queue management
 
 - **API Quota Management**:
-  - OpenRouteService (ORS) integration with rate limiting
-  - Token bucket algorithm (40 requests/minute)
-  - Automatic quota monitoring via API headers
-  - Fallback to OSRM when ORS quota exhausted
+  - OpenRouteService (ORS) integrace sleduje zvlášť Matrix i Isochrones limity
+  - Volitelný lokální token bucket pro oba typy volání (výchozí vypnutý)
+  - Ukládání `x-ratelimit-*` hlaviček a `retry-after` do transientů (`db_ors_matrix_*`, `db_ors_iso_*`)
+  - Automatické pozastavení fronty, pokud není k dispozici token pro Matrix nebo Isochrones (včetně 30 min buffferu po `retry-after`)
+  - Fallback na OSRM, když ORS kvóty dojdou
 
 - **Admin Interface**:
   - Queue statistics dashboard
-  - Real-time quota monitoring
+  - Real-time quota monitoring (Matrix + Isochrones)
   - Test buttons for API functionality
   - Batch processing controls
 
