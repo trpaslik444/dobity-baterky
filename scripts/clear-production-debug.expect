@@ -1,0 +1,42 @@
+#!/usr/bin/expect -f
+
+# Usage: PROD_PASS=... ./scripts/clear-production-debug.expect <local_empty_path>
+
+set timeout 60
+
+if { [llength $argv] < 1 } {
+    puts "ERROR: Použití: clear-production-debug.expect <local_empty_path>"
+    exit 2
+}
+
+set local_path [lindex $argv 0]
+
+if { ! [file exists $local_path] } {
+    puts "ERROR: Lokální soubor $local_path neexistuje."
+    exit 2
+}
+
+if { ! [info exists env(PROD_PASS)] || $env(PROD_PASS) eq "" } {
+    puts "ERROR: Nastav PROD_PASS (passphrase k SSH klíči)."
+    exit 2
+}
+
+set password $env(PROD_PASS)
+set user "dobitybaterky.wordpress.com"
+set host "sftp.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "put $local_path wp-content/debug.log\r"
+
+expect "sftp>"
+puts "✅ Vyprázdněn wp-content/debug.log na produkci"
+send "exit\r"
+expect eof
+
+

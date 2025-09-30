@@ -1,0 +1,47 @@
+#!/usr/bin/expect -f
+
+# Usage: PROD_PASS=... ./scripts/fetch-production-log.expect <remote_path> <local_path>
+
+set timeout 120
+
+if { [llength $argv] < 2 } {
+    puts "ERROR: Použití: fetch-production-log.expect <remote_path> <local_path>"
+    exit 2
+}
+
+set remote_path [lindex $argv 0]
+set local_path [lindex $argv 1]
+
+if { ! [info exists env(PROD_PASS)] || $env(PROD_PASS) eq "" } {
+    puts "ERROR: Nastav PROD_PASS (passphrase k SSH klíči)."
+    exit 2
+}
+
+set password $env(PROD_PASS)
+set user "dobitybaterky.wordpress.com"
+set host "sftp.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "get $remote_path $local_path\r"
+
+expect {
+    -re {(?i)(no such file|not found|can't stat)} {
+        puts "❌ Soubor $remote_path na produkci neexistuje."
+        send "exit\r"
+        expect eof
+        exit 3
+    }
+    "sftp>" {
+        puts "✅ Soubor stažen: $remote_path"
+        send "exit\r"
+        expect eof
+    }
+}
+
+

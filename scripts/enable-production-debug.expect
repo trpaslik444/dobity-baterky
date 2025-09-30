@@ -1,0 +1,68 @@
+#!/usr/bin/expect -f
+
+# Zapne WP_DEBUG a WP_DEBUG_LOG na produkci (úpravou wp-config.php)
+
+set timeout 180
+
+if { ! [info exists env(PROD_PASS)] || $env(PROD_PASS) eq "" } {
+    puts "ERROR: Nastav PROD_PASS (passphrase k SSH klíči)."
+    exit 2
+}
+
+set password $env(PROD_PASS)
+set user "dobitybaterky.wordpress.com"
+set host "sftp.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+set tmp_local [file normalize [exec mktemp -t wpconfig.enabledebug.prod.XXXX.php]]
+set tmp_local_new "$tmp_local.new"
+
+proc enable_debug {src dst} {
+    set f [open $src r]
+    set data [read $f]
+    close $f
+
+    regsub -all {define\(\s*['\"]WP_DEBUG['\"]\s*,\s*(true|false|\d+)\s*\)\s*;?} $data {define('WP_DEBUG', true);} data
+    regsub -all {define\(\s*['\"]WP_DEBUG_LOG['\"]\s*,\s*(true|false|\d+)\s*\)\s*;?} $data {define('WP_DEBUG_LOG', true);} data
+    regsub -all {define\(\s*['\"]WP_DEBUG_DISPLAY['\"]\s*,\s*(true|false|\d+)\s*\)\s*;?} $data {define('WP_DEBUG_DISPLAY', false);} data
+
+    if { [string match *WP_DEBUG* $data] == 0 } {
+        append data "\ndefine('WP_DEBUG', true);\n"
+    }
+    if { [string match *WP_DEBUG_LOG* $data] == 0 } {
+        append data "define('WP_DEBUG_LOG', true);\n"
+    }
+    if { [string match *WP_DEBUG_DISPLAY* $data] == 0 } {
+        append data "define('WP_DEBUG_DISPLAY', false);\n"
+    }
+
+    set o [open $dst w]
+    puts -nonewline $o $data
+    close $o
+}
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${host}
+expect "Enter passphrase for key"
+send "$password\r"
+expect "sftp>"
+
+send "get wp-config.php $tmp_local\r"
+expect "sftp>"
+
+enable_debug $tmp_local $tmp_local_new
+
+set ts [clock format [clock seconds] -format "%Y%m%d%H%M%S"]
+send "rename wp-config.php wp-config.php.backup-$ts\r"
+expect "sftp>"
+send "put $tmp_local_new wp-config.php\r"
+expect "sftp>"
+
+# Vyprázdnit debug.log (vytvořit prázdný soubor)
+send "put /dev/null wp-content/debug.log\r"
+expect "sftp>"
+
+puts "✅ Na produkci povolen WP_DEBUG a WP_DEBUG_LOG. Záloha: wp-config.php.backup-$ts, debug.log vyprázdněn"
+send "exit\r"
+expect eof
+
+
