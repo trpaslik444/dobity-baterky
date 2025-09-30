@@ -1216,6 +1216,8 @@ class Nearby_Queue_Admin {
         }
         // Datové filtry odstraněny - způsobují jen nepořádek
         
+        $retry_until = $this->quota_manager->get_retry_until();
+
         $items = $this->processed_manager->get_processed_locations($limit, $offset, $filters);
         $pagination = $this->processed_manager->get_processed_pagination($limit, $offset, $filters);
         ?>

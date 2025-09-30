@@ -30,8 +30,14 @@ class Nearby_Cron_Tools {
                 }
             }
 
+            if (function_exists('as_schedule_single_action')) {
+                as_schedule_single_action(time() + $delay_seconds, self::RECOMPUTE_HOOK, $args, self::ACTION_SCHEDULER_GROUP);
+                Nearby_Logger::log('CRON', 'Scheduled recompute via Action Scheduler (delayed)', $args + ['delay_s' => $delay_seconds]);
+                return true;
+            }
+
             as_enqueue_async_action(self::RECOMPUTE_HOOK, $args, self::ACTION_SCHEDULER_GROUP);
-            Nearby_Logger::log('CRON', 'Scheduled recompute via Action Scheduler', $args);
+            Nearby_Logger::log('CRON', 'Scheduled recompute via Action Scheduler (async fallback)', $args);
             return true;
         }
 
@@ -123,4 +129,3 @@ class Nearby_Cron_Tools {
         return $cron;
     }
 }
-

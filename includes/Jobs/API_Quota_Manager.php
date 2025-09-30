@@ -60,9 +60,9 @@ class API_Quota_Manager {
         // Získat kvóty z cache (z posledních ORS response hlaviček)
         $cached_quotas = $this->get_cached_ors_quotas();
         $matrix_quota = $cached_quotas['matrix_v2'];
+        $retry_until = isset($matrix_quota['retry_until']) ? (int)$matrix_quota['retry_until'] : null;
         
         // Zkontrolovat retry_until (po 429)
-        $retry_until = $matrix_quota['retry_until'];
         if ($retry_until && $retry_until > time()) {
             return array(
                 'available' => false,
@@ -72,11 +72,11 @@ class API_Quota_Manager {
                 'error' => 'Rate limited do ' . date('H:i:s', $retry_until)
             );
         }
-        
+
         return array(
             'available' => $matrix_quota['remaining'] > 0,
             'remaining' => $matrix_quota['remaining'],
-            'reset_at' => $matrix_quota['reset_at'],
+            'reset_at' => $matrix_quota['reset_at'] ?? null,
             'can_process' => $matrix_quota['remaining'] > 0 && (!$retry_until || $retry_until <= time()),
             'max_daily' => $matrix_quota['total'],
             'per_minute' => $matrix_quota['per_minute'],
@@ -140,11 +140,13 @@ class API_Quota_Manager {
                     'total' => 500,
                     'per_minute' => 40,
                     'remaining' => 500,
+                    'reset_at' => null,
+                    'retry_until' => null,
                     'source' => 'fallback'
                 )
             );
         }
-        
+
         return array(
             'matrix_v2' => array(
                 'total' => 500, // Známý limit
