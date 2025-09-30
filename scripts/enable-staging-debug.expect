@@ -1,0 +1,69 @@
+#!/usr/bin/expect -f
+
+# Zapne WP_DEBUG a WP_DEBUG_LOG ve wp-config.php (pokud jsou přítomné define řádky)
+# Bezpečné: stáhne lokálně, upraví, nahraje zpět zálohu + nový soubor
+
+set timeout 180
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav STAGING_PASS (passphrase k SSH klíči)."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+set user "staging-f576-dobitybaterky.wordpress.com"
+set host "sftp.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+set tmp_local [file normalize [exec mktemp -t wpconfig.enabledebug.XXXX.php]]
+set tmp_local_new "$tmp_local.new"
+
+proc enable_debug {src dst} {
+    set f [open $src r]
+    set data [read $f]
+    close $f
+
+    # Nahraď nebo doplň definice
+    regsub -all {define\(\s*['\"]WP_DEBUG['\"]\s*,\s*(true|false|\d+)\s*\)\s*;?} $data {define('WP_DEBUG', true);} data
+    regsub -all {define\(\s*['\"]WP_DEBUG_LOG['\"]\s*,\s*(true|false|\d+)\s*\)\s*;?} $data {define('WP_DEBUG_LOG', true);} data
+    regsub -all {define\(\s*['\"]WP_DEBUG_DISPLAY['\"]\s*,\s*(true|false|\d+)\s*\)\s*;?} $data {define('WP_DEBUG_DISPLAY', false);} data
+
+    # Pokud definice chybí úplně, přidej je před konec souboru
+    if { [string match *WP_DEBUG* $data] == 0 } {
+        append data "\ndefine('WP_DEBUG', true);\n"
+    }
+    if { [string match *WP_DEBUG_LOG* $data] == 0 } {
+        append data "define('WP_DEBUG_LOG', true);\n"
+    }
+    if { [string match *WP_DEBUG_DISPLAY* $data] == 0 } {
+        append data "define('WP_DEBUG_DISPLAY', false);\n"
+    }
+
+    set o [open $dst w]
+    puts -nonewline $o $data
+    close $o
+}
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${host}
+expect "Enter passphrase for key"
+send "$password\r"
+expect "sftp>"
+
+# Stáhni wp-config.php
+send "get wp-config.php $tmp_local\r"
+expect "sftp>"
+
+# Lokální úprava
+enable_debug $tmp_local $tmp_local_new
+
+# Zálohuj a nahraj zpět
+set ts [clock format [clock seconds] -format "%Y%m%d%H%M%S"]
+send "rename wp-config.php wp-config.php.backup-$ts\r"
+expect "sftp>"
+send "put $tmp_local_new wp-config.php\r"
+expect "sftp>"
+puts "✅ WP_DEBUG a WP_DEBUG_LOG povoleny. Záloha: wp-config.php.backup-$ts"
+send "exit\r"
+expect eof
+
+

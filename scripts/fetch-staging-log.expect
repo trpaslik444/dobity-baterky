@@ -1,0 +1,48 @@
+#!/usr/bin/expect -f
+
+# Usage: STAGING_PASS=... ./scripts/fetch-staging-log.expect <remote_path> <local_path>
+
+set timeout 120
+
+if { [llength $argv] < 2 } {
+    puts "ERROR: Použití: fetch-staging-log.expect <remote_path> <local_path>"
+    exit 2
+}
+
+set remote_path [lindex $argv 0]
+set local_path [lindex $argv 1]
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav STAGING_PASS (passphrase k SSH klíči)."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+
+set user "staging-f576-dobitybaterky.wordpress.com"
+set host "sftp.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "get $remote_path $local_path\r"
+
+expect {
+    -re {(?i)(no such file|not found|can't stat)} {
+        puts "❌ Soubor $remote_path na stagingu neexistuje."
+        send "exit\r"
+        expect eof
+        exit 3
+    }
+    "sftp>" {
+        puts "✅ Soubor stažen: $remote_path"
+        send "exit\r"
+        expect eof
+    }
+}
+
+

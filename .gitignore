@@ -1,3 +1,6 @@
 .env
 build/
 dobity-baterky-FINAL.zip
+*.log
+logs/
+staging-debug.log
