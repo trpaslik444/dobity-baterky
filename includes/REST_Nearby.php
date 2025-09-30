@@ -424,6 +424,7 @@ class REST_Nearby {
         $cfg['matrix_batch_size'] = intval($cfg['matrix_batch_size'] ?? 60);
         $cfg['cache_ttl_days'] = intval($cfg['cache_ttl_days'] ?? 30);
         $cfg['walking_speed_m_s'] = isset($cfg['walking_speed_m_s']) ? floatval($cfg['walking_speed_m_s']) : 1.3;
+        $cfg['enable_token_bucket'] = !empty($cfg['enable_token_bucket']) ? 1 : 0;
         
         
         update_option('db_nearby_config', $cfg);

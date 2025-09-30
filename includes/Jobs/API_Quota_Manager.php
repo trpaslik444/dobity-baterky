@@ -189,6 +189,18 @@ class API_Quota_Manager {
      * Token bucket pro minutový limit
      */
     public function check_minute_limit($type = 'matrix', $consume_token = true) {
+        $bucket_enabled = !empty($this->config['enable_token_bucket']);
+        if (!$bucket_enabled) {
+            $limit = ($type === 'isochrones') ? self::ISOCHRONES_PER_MINUTE : self::MATRIX_PER_MINUTE;
+            return array(
+                'allowed' => true,
+                'tokens_remaining' => $limit,
+                'tokens_before' => $limit,
+                'tokens_after' => $limit,
+                'limit' => $limit
+            );
+        }
+
         $type = ($type === 'isochrones') ? 'isochrones' : 'matrix';
         $limit = ($type === 'isochrones') ? self::ISOCHRONES_PER_MINUTE : self::MATRIX_PER_MINUTE;
         $bucket_key = 'db_ors_' . $type . '_token_bucket';
