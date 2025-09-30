@@ -13,7 +13,7 @@ class API_Quota_Manager {
      * Viz https://openrouteservice.org/dev/#/signup - matrix i isochrones maximálně 1 požadavek za minutu
      * a jeden matrix request může obsahovat nejvýše 50 souřadnic (1 origin + 49 destinací).
      */
-    public const MATRIX_PER_MINUTE = 2;
+    public const MATRIX_PER_MINUTE = 1;
     public const ISOCHRONES_PER_MINUTE = 1;
     public const ORS_MATRIX_MAX_LOCATIONS = 3500;
     
@@ -129,58 +129,64 @@ class API_Quota_Manager {
      * Získat kvóty z cache (uložené z posledních ORS response hlaviček)
      */
     public function get_cached_ors_quotas() {
-        $remaining = get_transient('db_ors_matrix_remaining_day');
-        $reset_epoch = get_transient('db_ors_matrix_reset_epoch');
-        $retry_until = get_transient('db_ors_matrix_retry_until');
+        // Matrix
+        $mx_remaining = get_transient('db_ors_matrix_remaining_day');
+        $mx_reset_epoch = get_transient('db_ors_matrix_reset_epoch');
+        $mx_retry_until = get_transient('db_ors_matrix_retry_until');
+
+        // Isochrones
+        $iso_remaining = get_transient('db_ors_iso_remaining_day');
+        $iso_reset_epoch = get_transient('db_ors_iso_reset_epoch');
+        $iso_retry_until = get_transient('db_ors_iso_retry_until');
         
-        // Pokud nemáme cached data, použít fallback
-        if ($remaining === false) {
-            return array(
-                'matrix_v2' => array(
-                    'total' => 500,
-                    'per_minute' => 40,
-                    'remaining' => 500,
-                    'reset_at' => null,
-                    'retry_until' => null,
-                    'source' => 'fallback'
-                )
-            );
-        }
+        $matrix = array(
+            'total' => 500,
+            'per_minute' => 40,
+            'remaining' => ($mx_remaining === false) ? 500 : (int)$mx_remaining,
+            'reset_at' => $mx_reset_epoch ? date('c', $mx_reset_epoch) : null,
+            'retry_until' => $mx_retry_until,
+            'source' => ($mx_remaining === false) ? 'fallback' : 'headers'
+        );
+
+        $isochrones = array(
+            'total' => 500,
+            'per_minute' => 40,
+            'remaining' => ($iso_remaining === false) ? 500 : (int)$iso_remaining,
+            'reset_at' => $iso_reset_epoch ? date('c', $iso_reset_epoch) : null,
+            'retry_until' => $iso_retry_until,
+            'source' => ($iso_remaining === false) ? 'fallback' : 'headers'
+        );
 
         return array(
-            'matrix_v2' => array(
-                'total' => 500, // Známý limit
-                'per_minute' => 40, // Známý limit
-                'remaining' => (int)$remaining,
-                'reset_at' => $reset_epoch ? date('c', $reset_epoch) : null,
-                'retry_until' => $retry_until,
-                'source' => 'headers'
-            )
+            'matrix_v2' => $matrix,
+            'isochrones_v2' => $isochrones
         );
     }
     
     /**
      * Uložit kvóty z ORS response hlaviček
      */
-    public function save_ors_headers($headers) {
+    public function save_ors_headers($headers, $type = 'matrix') {
+        $type = ($type === 'isochrones') ? 'iso' : 'matrix';
         $remaining = isset($headers['x-ratelimit-remaining']) ? (int)$headers['x-ratelimit-remaining'] : null;
         $reset_epoch = isset($headers['x-ratelimit-reset']) ? (int)$headers['x-ratelimit-reset'] : null;
         $retry_after = isset($headers['retry-after']) ? (int)$headers['retry-after'] : null;
         
         if ($remaining !== null) {
-            set_transient('db_ors_matrix_remaining_day', $remaining, 15 * MINUTE_IN_SECONDS);
+            set_transient('db_ors_' . $type . '_remaining_day', $remaining, 15 * MINUTE_IN_SECONDS);
         }
         
         if ($reset_epoch !== null) {
-            set_transient('db_ors_matrix_reset_epoch', $reset_epoch, 60 * MINUTE_IN_SECONDS);
+            set_transient('db_ors_' . $type . '_reset_epoch', $reset_epoch, 60 * MINUTE_IN_SECONDS);
         }
         
         if ($retry_after !== null) {
             $retry_until = time() + $retry_after;
-            set_transient('db_ors_matrix_retry_until', $retry_until, $retry_after);
+            set_transient('db_ors_' . $type . '_retry_until', $retry_until, $retry_after);
         }
 
         Nearby_Logger::log('QUOTA', 'Saved ORS headers', [
+            'api' => $type,
             'remaining' => $remaining,
             'reset_epoch' => $reset_epoch,
             'retry_after' => $retry_after
@@ -324,6 +330,7 @@ class API_Quota_Manager {
             return false;
         }
 
+        // Oba token buckety musí mít alespoň 1 token
         $minute_status = $this->minute_status_snapshot();
         return !empty($minute_status['matrix']['allowed']) && !empty($minute_status['isochrones']['allowed']);
     }
@@ -343,15 +350,12 @@ class API_Quota_Manager {
             return 0;
         }
 
-        $remaining = $quota['remaining'];
-        
-        // Doporučit menší batch, pokud zbývá málo kvóty
+        $remaining = (int)($quota['remaining'] ?? 0);
         if ($remaining <= 0) {
             return 0;
         }
 
-        // ORS limity dovolují 1 matrix+isochron request za minutu, proto zpracujeme max. 1 položku.
-        return min(1, (int)$remaining);
+        return min(1, $remaining);
     }
     
     /**
@@ -388,8 +392,11 @@ class API_Quota_Manager {
             return time();
         }
 
-        $retry_until = $this->get_retry_until();
-        if ($retry_until) {
+        // Po 429: respektovat delší z obou retry_until a přidat 30 minut
+        $retry_until_mx = $this->get_retry_until('matrix');
+        $retry_until_iso = $this->get_retry_until('isochrones');
+        $retry_until = max((int)$retry_until_mx, (int)$retry_until_iso);
+        if ($retry_until && $retry_until > time()) {
             $delay = max(0, $retry_until - time() + 30 * MINUTE_IN_SECONDS);
             return time() + $delay;
         }
@@ -403,8 +410,9 @@ class API_Quota_Manager {
         return $reset_time;
     }
 
-    public function get_retry_until() {
-        $retry_until = get_transient('db_ors_matrix_retry_until');
+    public function get_retry_until($type = 'matrix') {
+        $type = ($type === 'isochrones') ? 'iso' : 'matrix';
+        $retry_until = get_transient('db_ors_' . $type . '_retry_until');
         if ($retry_until && $retry_until > time()) {
             return $retry_until;
         }

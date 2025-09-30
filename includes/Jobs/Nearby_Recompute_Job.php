@@ -414,7 +414,7 @@ class Nearby_Recompute_Job {
                 ]);
 
                 $quota_manager = new \DB\Jobs\API_Quota_Manager();
-                $quota_manager->save_ors_headers($headers);
+                $quota_manager->save_ors_headers($headers, 'matrix');
 
                 if ($code === 401 || $code === 403) {
                     $this->debug_log('[Matrix] unauthorized', [
@@ -593,7 +593,7 @@ class Nearby_Recompute_Job {
             
             // Uložit kvóty z hlaviček
             $headers = wp_remote_retrieve_headers($response);
-            $quota_manager->save_ors_headers($headers);
+            $quota_manager->save_ors_headers($headers, 'isochrones');
             $remaining_header = isset($headers['x-ratelimit-remaining']) ? (int)$headers['x-ratelimit-remaining'] : null;
             $retry_after_header = isset($headers['retry-after']) ? (int)$headers['retry-after'] : null;
 
@@ -916,7 +916,7 @@ class Nearby_Recompute_Job {
         
         // Uložit kvóty z hlaviček
         $quota_manager = new \DB\Jobs\API_Quota_Manager();
-        $quota_manager->save_ors_headers($headers);
+        $quota_manager->save_ors_headers($headers, 'matrix');
         
         // Obsluha limitů
         if ($code === 429) {
