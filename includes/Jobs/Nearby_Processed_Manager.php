@@ -24,7 +24,7 @@ class Nearby_Processed_Manager {
         
         $charset_collate = $wpdb->get_charset_collate();
         
-        $sql = "CREATE TABLE IF NOT EXISTS {$this->table_name} (
+        $sql = "CREATE TABLE {$this->table_name} (
             id bigint(20) NOT NULL AUTO_INCREMENT,
             origin_id bigint(20) NOT NULL,
             origin_type varchar(20) NOT NULL,
@@ -57,6 +57,55 @@ class Nearby_Processed_Manager {
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
+
+        $this->maybe_upgrade_schema();
+    }
+
+    /**
+     * Doplnit chybějící sloupce do tabulky při upgradu pluginu
+     */
+    private function maybe_upgrade_schema() {
+        global $wpdb;
+
+        $table = esc_sql($this->table_name);
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM {$table}");
+        if (!is_array($columns)) {
+            return;
+        }
+
+        $columns = array_map('strtolower', $columns);
+        $queries = [];
+
+        if (!in_array('nearby_items_count', $columns, true)) {
+            $queries[] = "ALTER TABLE {$this->table_name} ADD COLUMN nearby_items_count int(11) DEFAULT 0 AFTER cache_size_kb";
+        }
+
+        if (!in_array('iso_features', $columns, true)) {
+            $queries[] = "ALTER TABLE {$this->table_name} ADD COLUMN iso_features int(11) DEFAULT 0 AFTER nearby_items_count";
+            if (in_array('isochrones_features', $columns, true)) {
+                $queries[] = "UPDATE {$this->table_name} SET iso_features = isochrones_features WHERE iso_features = 0";
+            }
+        }
+
+        if (!in_array('iso_calls', $columns, true)) {
+            $queries[] = "ALTER TABLE {$this->table_name} ADD COLUMN iso_calls int(11) DEFAULT 0 AFTER iso_features";
+        }
+
+        if (!in_array('has_nearby', $columns, true)) {
+            $queries[] = "ALTER TABLE {$this->table_name} ADD COLUMN has_nearby tinyint(1) DEFAULT 0 AFTER iso_calls";
+            $queries[] = "UPDATE {$this->table_name} SET has_nearby = 1 WHERE nearby_items_count > 0";
+        }
+
+        if (!in_array('has_isochrones', $columns, true)) {
+            $queries[] = "ALTER TABLE {$this->table_name} ADD COLUMN has_isochrones tinyint(1) DEFAULT 0 AFTER has_nearby";
+            if (in_array('isochrones_features', $columns, true)) {
+                $queries[] = "UPDATE {$this->table_name} SET has_isochrones = 1 WHERE isochrones_features > 0";
+            }
+        }
+
+        foreach ($queries as $query) {
+            $wpdb->query($query);
+        }
     }
     
     /**
