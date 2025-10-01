@@ -75,7 +75,7 @@ class Nearby_Worker {
             $batch_processor = new Nearby_Batch_Processor();
 
             $loops = 0;
-            $max_loops = 3;
+            $max_loops = 1; // Zpracovat max 1 origin za běh (kvůli dodržení 60s intervalu)
             $last_result = null;
 
             while ($loops < $max_loops) {
@@ -87,11 +87,12 @@ class Nearby_Worker {
                 $message = (string)($last_result['message'] ?? '');
 
                 if ($processed > 0) {
+                    // Po úspěšném zpracování naplánovat další běh za 60s
                     $stats = $queue_manager->get_stats();
-                    if (($stats->pending ?? 0) === 0) {
-                        break;
+                    if (($stats->pending ?? 0) > 0) {
+                        self::dispatch(60);
                     }
-                    continue;
+                    break;
                 }
 
                 if ($processed === 0 && $errors === 0) {
@@ -104,18 +105,22 @@ class Nearby_Worker {
                 break;
             }
 
-            $stats = $queue_manager->get_stats();
-            $pending = (int)($stats->pending ?? 0);
+            // Pokud nebylo zpracováno nic (kvóty vyčerpány, chyba...), naplánovat podle quota managera
+            $processed = (int)($last_result['processed'] ?? 0);
+            if ($processed === 0) {
+                $stats = $queue_manager->get_stats();
+                $pending = (int)($stats->pending ?? 0);
 
-            if ($pending > 0) {
-                try {
-                    $quota_manager = new API_Quota_Manager();
-                    $next_run = $quota_manager->schedule_next_run();
-                    $delay = max(1, $next_run - time());
-                } catch (\Throwable $__) {
-                    $delay = 1;
+                if ($pending > 0) {
+                    try {
+                        $quota_manager = new API_Quota_Manager();
+                        $next_run = $quota_manager->schedule_next_run();
+                        $delay = max(60, $next_run - time());
+                    } catch (\Throwable $__) {
+                        $delay = 60;
+                    }
+                    self::dispatch($delay);
                 }
-                self::dispatch($delay);
             }
 
             return array(

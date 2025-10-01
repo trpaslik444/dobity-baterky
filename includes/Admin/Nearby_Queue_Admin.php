@@ -252,63 +252,85 @@ class Nearby_Queue_Admin {
             
             <!-- API Kvóty -->
             <div class="db-api-quotas" style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
-                <h2>API Kvóty</h2>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
-                    <div style="background: white; padding: 15px; border-radius: 6px;">
-                        <h4 style="margin: 0 0 8px 0;">Provider</h4>
-                        <div style="font-size: 1.2em; font-weight: bold; color: #007cba;"><?php echo esc_html($quota_stats['provider']); ?></div>
+                <h2>API Kvóty (ORS)</h2>
+                
+                <?php 
+                $quota_manager = new \DB\Jobs\API_Quota_Manager();
+                $detailed_quotas = $quota_manager->get_cached_ors_quotas();
+                $mx = $detailed_quotas['matrix_v2'];
+                $iso = $detailed_quotas['isochrones_v2'];
+                ?>
+                
+                <h3 style="margin: 15px 0 10px 0;">Matrix API</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <h4 style="margin: 0 0 6px 0; font-size: 0.9em;">Zbývá</h4>
+                        <div style="font-size: 1.3em; font-weight: bold; color: <?php echo $mx['remaining'] > 0 ? '#28a745' : '#dc3545'; ?>">
+                            <?php echo $mx['remaining']; ?> / <?php echo $mx['total']; ?>
+                        </div>
                     </div>
-                    <div style="background: white; padding: 15px; border-radius: 6px;">
-                        <h4 style="margin: 0 0 8px 0;">Denní použití</h4>
-                        <div style="font-size: 1.2em; font-weight: bold; color: #28a745;"><?php echo ($quota_stats['max_daily'] - $quota_stats['remaining']); ?> / <?php echo $quota_stats['max_daily']; ?></div>
-                    </div>
-                    <div style="background: white; padding: 15px; border-radius: 6px;">
-                        <h4 style="margin: 0 0 8px 0;">Zbývá</h4>
-                        <div style="font-size: 1.2em; font-weight: bold; color: <?php echo $quota_stats['remaining'] > 0 ? '#28a745' : '#dc3545'; ?>"><?php echo $quota_stats['remaining']; ?></div>
-                    </div>
-                    <div style="background: white; padding: 15px; border-radius: 6px;">
-                        <h4 style="margin: 0 0 8px 0;">Stav</h4>
-                        <div style="font-size: 1.2em; font-weight: bold; color: <?php echo $quota_stats['can_process'] ? '#28a745' : '#dc3545'; ?>">
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <h4 style="margin: 0 0 6px 0; font-size: 0.9em;">Reset za</h4>
+                        <div style="font-size: 1.1em; font-weight: bold; color: #6c757d;">
                             <?php 
-                            if ($quota_stats['can_process']) {
-                                echo '✓ Může pokračovat';
-                            } else {
-                                if ($quota_stats['remaining'] <= 0) {
-                                    echo '✗ Kvóty vyčerpány';
+                            if ($mx['reset_at']) {
+                                $reset_time = strtotime($mx['reset_at']);
+                                $time_diff = $reset_time - time();
+                                if ($time_diff > 0) {
+                                    $hours = floor($time_diff / 3600);
+                                    $minutes = floor(($time_diff % 3600) / 60);
+                                    echo "{$hours}h {$minutes}m";
                                 } else {
-                                    echo '✗ Čeká na reset';
+                                    echo "Nyní";
                                 }
+                            } else {
+                                echo "—";
                             }
                             ?>
                         </div>
                     </div>
-                    <div style="background: white; padding: 15px; border-radius: 6px;">
-                        <h4 style="margin: 0 0 8px 0;">Zdroj kvót</h4>
-                        <div style="font-size: 1.1em; font-weight: bold; color: #6c757d;">
-                            <?php echo isset($quota_stats['source']) && $quota_stats['source'] === 'headers' ? '🌐 Headers' : '📋 Fallback'; ?>
-                            <?php if (isset($quota_stats['per_minute'])): ?>
-                                <br><small><?php echo $quota_stats['per_minute']; ?> / min</small>
-                            <?php endif; ?>
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <h4 style="margin: 0 0 6px 0; font-size: 0.9em;">Zdroj</h4>
+                        <div style="font-size: 1em; font-weight: bold; color: #6c757d;">
+                            <?php echo $mx['source'] === 'headers' ? '🌐 Headers' : ($mx['source'] === 'unknown' ? '❓ Neznámý' : '📋 Fallback'); ?>
                         </div>
                     </div>
-                    <?php if (isset($quota_stats['reset_at']) && $quota_stats['reset_at']): ?>
-                    <div style="background: white; padding: 15px; border-radius: 6px;">
-                        <h4 style="margin: 0 0 8px 0;">Reset kvót</h4>
+                </div>
+
+                <h3 style="margin: 15px 0 10px 0;">Isochrones API</h3>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <h4 style="margin: 0 0 6px 0; font-size: 0.9em;">Zbývá</h4>
+                        <div style="font-size: 1.3em; font-weight: bold; color: <?php echo $iso['remaining'] > 0 ? '#28a745' : '#dc3545'; ?>">
+                            <?php echo $iso['remaining']; ?> / <?php echo $iso['total']; ?>
+                        </div>
+                    </div>
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <h4 style="margin: 0 0 6px 0; font-size: 0.9em;">Reset za</h4>
                         <div style="font-size: 1.1em; font-weight: bold; color: #6c757d;">
                             <?php 
-                            $reset_time = strtotime($quota_stats['reset_at']);
-                            $time_diff = $reset_time - time();
-                            if ($time_diff > 0) {
-                                $hours = floor($time_diff / 3600);
-                                $minutes = floor(($time_diff % 3600) / 60);
-                                echo "Za {$hours}h {$minutes}m";
+                            if ($iso['reset_at']) {
+                                $reset_time = strtotime($iso['reset_at']);
+                                $time_diff = $reset_time - time();
+                                if ($time_diff > 0) {
+                                    $hours = floor($time_diff / 3600);
+                                    $minutes = floor(($time_diff % 3600) / 60);
+                                    echo "{$hours}h {$minutes}m";
+                                } else {
+                                    echo "Nyní";
+                                }
                             } else {
-                                echo "Nyní";
+                                echo "—";
                             }
                             ?>
                         </div>
                     </div>
-                    <?php endif; ?>
+                    <div style="background: white; padding: 12px; border-radius: 6px;">
+                        <h4 style="margin: 0 0 6px 0; font-size: 0.9em;">Zdroj</h4>
+                        <div style="font-size: 1em; font-weight: bold; color: #6c757d;">
+                            <?php echo $iso['source'] === 'headers' ? '🌐 Headers' : ($iso['source'] === 'unknown' ? '❓ Neznámý' : '📋 Fallback'); ?>
+                        </div>
+                    </div>
                 </div>
             </div>
 

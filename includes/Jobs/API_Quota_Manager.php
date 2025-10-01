@@ -139,22 +139,24 @@ class API_Quota_Manager {
         $iso_reset_epoch = get_transient('db_ors_iso_reset_epoch');
         $iso_retry_until = get_transient('db_ors_iso_retry_until');
         
+        // Fallback: pokud není známo remaining (false/null), použít konservativní 0 místo optimistického 500
+        // (403 unauthorized často nevrací hlavičky, což by jinak způsobilo nekonečné pokusy)
         $matrix = array(
             'total' => 500,
             'per_minute' => 40,
-            'remaining' => ($mx_remaining === false) ? 500 : (int)$mx_remaining,
+            'remaining' => ($mx_remaining === false || $mx_remaining === null) ? 0 : (int)$mx_remaining,
             'reset_at' => $mx_reset_epoch ? date('c', $mx_reset_epoch) : null,
             'retry_until' => $mx_retry_until,
-            'source' => ($mx_remaining === false) ? 'fallback' : 'headers'
+            'source' => ($mx_remaining === false || $mx_remaining === null) ? 'unknown' : 'headers'
         );
 
         $isochrones = array(
             'total' => 500,
             'per_minute' => 40,
-            'remaining' => ($iso_remaining === false) ? 500 : (int)$iso_remaining,
+            'remaining' => ($iso_remaining === false || $iso_remaining === null) ? 0 : (int)$iso_remaining,
             'reset_at' => $iso_reset_epoch ? date('c', $iso_reset_epoch) : null,
             'retry_until' => $iso_retry_until,
-            'source' => ($iso_remaining === false) ? 'fallback' : 'headers'
+            'source' => ($iso_remaining === false || $iso_remaining === null) ? 'unknown' : 'headers'
         );
 
         return array(
@@ -386,10 +388,11 @@ class API_Quota_Manager {
             if (!$matrix_allowed || !$iso_allowed) {
                 $wait_matrix = $matrix_allowed ? 0 : (int)($minute_status['matrix']['wait_seconds'] ?? 0);
                 $wait_iso = $iso_allowed ? 0 : (int)($minute_status['isochrones']['wait_seconds'] ?? 0);
-                $delay = max($wait_matrix, $wait_iso, 3);
+                $delay = max($wait_matrix, $wait_iso, 60);
                 return time() + $delay;
             }
-            return time();
+            // Když jsou oba buckety OK, plánovat další běh za 60s (1 origin/min)
+            return time() + 60;
         }
 
         // Po 429: respektovat delší z obou retry_until a přidat 30 minut
