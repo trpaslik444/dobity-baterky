@@ -174,13 +174,18 @@ class API_Quota_Manager {
         $reset_epoch = isset($headers['x-ratelimit-reset']) ? (int)$headers['x-ratelimit-reset'] : null;
         $retry_after = isset($headers['retry-after']) ? (int)$headers['retry-after'] : null;
         
+        // Pokud remaining chybí (např. 403), explicitně nastavit 0 místo přeskočení
         if ($remaining !== null) {
             set_transient('db_ors_' . $type . '_remaining_day', $remaining, 15 * MINUTE_IN_SECONDS);
+        } else {
+            // 403 unauthorized často nevrací hlavičky → explicitně nastavit 0
+            set_transient('db_ors_' . $type . '_remaining_day', 0, 15 * MINUTE_IN_SECONDS);
         }
         
         if ($reset_epoch !== null) {
             set_transient('db_ors_' . $type . '_reset_epoch', $reset_epoch, 60 * MINUTE_IN_SECONDS);
         }
+        // Pokud reset_epoch chybí, zachovat poslední známou hodnotu (netřeme transient)
         
         if ($retry_after !== null) {
             $retry_until = time() + $retry_after;
@@ -189,7 +194,7 @@ class API_Quota_Manager {
 
         Nearby_Logger::log('QUOTA', 'Saved ORS headers', [
             'api' => $type,
-            'remaining' => $remaining,
+            'remaining' => $remaining !== null ? $remaining : 0,
             'reset_epoch' => $reset_epoch,
             'retry_after' => $retry_after
         ]);
