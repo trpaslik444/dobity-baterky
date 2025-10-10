@@ -4350,39 +4350,33 @@ document.addEventListener('DOMContentLoaded', async function() {
           return p.icon_color || null;
         })();
         const highlightColors = active ? getBrandHighlightColors({ baseColor: baseColorForHighlight, mode: markerMode }) : null;
-
-        let outline = '';
+        let strokeColor = 'none';
+        let strokeWidth = 0;
         if (active) {
-          const haloStroke = (highlightColors && highlightColors.haloBase) ? highlightColors.haloBase : '#FCE67D';
-          const ringStroke = (highlightColors && highlightColors.ringColor) ? highlightColors.ringColor : '#049FE8';
-          outline = `
-            <path d="${pinPath}" fill="none" stroke="${haloStroke}" stroke-width="6" opacity="0.88"/>
-            <path d="${pinPath}" fill="none" stroke="${ringStroke}" stroke-width="3.5"/>
-          `;
+          const defaultStroke = highlightColors && highlightColors.ringColor ? highlightColors.ringColor : '#FF6A4B';
+          const normalizedFill = normalizeHexColor(fill);
+          let borderColor = defaultStroke;
+          const normalizedBorder = normalizeHexColor(borderColor);
+          if (normalizedFill && normalizedBorder && normalizedFill === normalizedBorder) {
+            borderColor = (highlightColors && highlightColors.haloBase) ? highlightColors.haloBase : '#024B9B';
+          }
+          strokeColor = borderColor;
+          strokeWidth = 3.5;
         }
-        const activeRing = active ? '<span class="db-marker-active-ring" aria-hidden="true"></span>' : '';
         const styleParts = [
           'position:relative',
           `width:${size}px`,
           `height:${size}px`,
           'display:inline-block'
         ];
-        if (active && highlightColors) {
-          if (highlightColors.ringColor) styleParts.push(`--db-marker-ring-color:${highlightColors.ringColor}`);
-          if (highlightColors.haloColor) styleParts.push(`--db-marker-ring-halo:${highlightColors.haloColor}`);
-          if (highlightColors.glowColor) styleParts.push(`--db-marker-ring-glow:${highlightColors.glowColor}`);
-          if (highlightColors.innerColor) styleParts.push(`--db-marker-ring-inner:${highlightColors.innerColor}`);
-        }
         const styleAttr = styleParts.join(';');
         const dbLogo = isRecommended(p) ? `<div style="position:absolute;right:-4px;bottom:-4px;width:${overlaySize}px;height:${overlaySize}px;">${getDbLogoHtml(overlaySize)}</div>` : '';
         const markerClass = active ? 'db-marker db-marker-active' : 'db-marker';
         return `
           <div class="${markerClass}" data-idx="${i}" style="${styleAttr}">
-            ${activeRing}
             <svg class="db-marker-pin" width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
               ${defs}
-              ${outline}
-              <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}"/>
+              <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
               ${p.post_type === 'poi' && p.svg_content ? p.svg_content : (p.icon_slug && p.post_type !== 'poi' ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : '')}
