@@ -3826,17 +3826,17 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Funkce pro převod hex barvy na hue
   function getHueFromColor(hexColor) {
     if (!hexColor || !hexColor.startsWith('#')) return 0;
-    
+
     const r = parseInt(hexColor.slice(1, 3), 16) / 255;
     const g = parseInt(hexColor.slice(3, 5), 16) / 255;
     const b = parseInt(hexColor.slice(5, 7), 16) / 255;
-    
+
     const max = Math.max(r, g, b);
     const min = Math.min(r, g, b);
     const delta = max - min;
-    
+
     if (delta === 0) return 0;
-    
+
     let hue = 0;
     if (max === r) {
       hue = ((g - b) / delta) % 6;
@@ -3845,11 +3845,103 @@ document.addEventListener('DOMContentLoaded', async function() {
     } else {
       hue = (r - g) / delta + 4;
     }
-    
+
     hue = hue * 60;
     if (hue < 0) hue += 360;
-    
+
     return hue;
+  }
+  // Paleta dvojic z brandbooku Dobitý Baterky pro zvýraznění aktivních pinů
+  const DB_BRAND_HIGHLIGHT_COMBOS = [
+    {primary: '#FF6A4B', halo: '#FCE67D'},
+    {primary: '#049FE8', halo: '#FFACC4'},
+    {primary: '#024B9B', halo: '#FCE67D'},
+    {primary: '#FF8DAA', halo: '#049FE8'},
+    {primary: '#FFACC4', halo: '#024B9B'}
+  ];
+  function normalizeHexColor(color) {
+    if (typeof color !== 'string') return null;
+    const trimmed = color.trim();
+    const match = trimmed.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (!match) return null;
+    let hex = match[1];
+    if (hex.length === 3) {
+      hex = hex.split('').map(ch => ch + ch).join('');
+    }
+    return '#' + hex.toUpperCase();
+  }
+  function hexToRgbComponents(hex) {
+    const normalized = normalizeHexColor(hex);
+    if (!normalized) return null;
+    const value = normalized.slice(1);
+    const r = parseInt(value.slice(0, 2), 16);
+    const g = parseInt(value.slice(2, 4), 16);
+    const b = parseInt(value.slice(4, 6), 16);
+    return [r, g, b];
+  }
+  function hexToRgba(hex, alpha) {
+    const rgb = hexToRgbComponents(hex);
+    if (!rgb) return '';
+    const a = typeof alpha === 'number' ? Math.min(Math.max(alpha, 0), 1) : 1;
+    return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${a})`;
+  }
+  function getRelativeLuminance(hex) {
+    const rgb = hexToRgbComponents(hex);
+    if (!rgb) return 0;
+    const srgb = rgb.map(v => {
+      const channel = v / 255;
+      return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+  }
+  function getContrastRatio(colorA, colorB) {
+    const lumA = getRelativeLuminance(colorA);
+    const lumB = getRelativeLuminance(colorB);
+    const [lighter, darker] = lumA >= lumB ? [lumA, lumB] : [lumB, lumA];
+    return (lighter + 0.05) / (darker + 0.05);
+  }
+  function buildHighlightFromCombo(combo) {
+    const ringHex = normalizeHexColor(combo && combo.primary) || '#FF6A4B';
+    const haloHex = normalizeHexColor(combo && combo.halo) || '#FCE67D';
+    return {
+      ringColor: ringHex,
+      haloColor: hexToRgba(haloHex, 0.75),
+      glowColor: hexToRgba(ringHex, 0.5),
+      innerColor: hexToRgba(ringHex, 0.65),
+      haloBase: haloHex
+    };
+  }
+  function getBrandHighlightColors(opts = {}) {
+    const { baseColor = null, mode = null } = opts;
+    if (mode === 'hybrid') {
+      return buildHighlightFromCombo(DB_BRAND_HIGHLIGHT_COMBOS[0]);
+    }
+    const reference = normalizeHexColor(baseColor)
+      || (mode === 'dc' ? '#FFACC4' : mode === 'ac' ? '#049FE8' : null);
+    if (reference) {
+      let bestCombo = null;
+      let bestContrast = -1;
+      DB_BRAND_HIGHLIGHT_COMBOS.forEach(combo => {
+        const primary = normalizeHexColor(combo.primary);
+        if (!primary) return;
+        const contrast = getContrastRatio(reference, primary);
+        if (contrast > bestContrast) {
+          bestContrast = contrast;
+          bestCombo = combo;
+        }
+      });
+      if (!bestCombo) {
+        return buildHighlightFromCombo(DB_BRAND_HIGHLIGHT_COMBOS[0]);
+      }
+      if (normalizeHexColor(bestCombo.primary) === reference) {
+        const alternative = DB_BRAND_HIGHLIGHT_COMBOS.find(combo => normalizeHexColor(combo.primary) !== reference);
+        if (alternative) {
+          bestCombo = alternative;
+        }
+      }
+      return buildHighlightFromCombo(bestCombo);
+    }
+    return buildHighlightFromCombo(DB_BRAND_HIGHLIGHT_COMBOS[0]);
   }
   function getMainLabel(props) {
     if (props.post_type === 'charging_location') {
@@ -4236,25 +4328,56 @@ document.addEventListener('DOMContentLoaded', async function() {
         const size = active ? 48 : 32;
         const overlaySize = active ? 24 : 16;
         const overlayPos = active ? 12 : 8;
-        
+        const markerMode = p.post_type === 'charging_location' ? getChargerMode(p) : null;
+
         // Výplň markeru: pro nabíječky AC/DC/hybrid gradient; jiné typy berou icon_color
         let fill = p.icon_color || '#049FE8';
         let defs = '';
         const pinPath = 'M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z';
-        
+
         if (p.post_type === 'charging_location') {
           const cf = getChargerFill(p, active);
           fill = cf.fill;
           defs = cf.defs;
         }
-        
+
+        const baseColorForHighlight = (() => {
+          if (p.post_type === 'charging_location') {
+            if (markerMode === 'dc') return '#FFACC4';
+            if (markerMode === 'ac') return '#049FE8';
+            return null;
+          }
+          return p.icon_color || null;
+        })();
+        const highlightColors = active ? getBrandHighlightColors({ baseColor: baseColorForHighlight, mode: markerMode }) : null;
+
         let outline = '';
         if (active) {
-          outline = `<path d="${pinPath}" fill="none" stroke="#049FE8" stroke-width="4"/>`;
+          const haloStroke = (highlightColors && highlightColors.haloBase) ? highlightColors.haloBase : '#FCE67D';
+          const ringStroke = (highlightColors && highlightColors.ringColor) ? highlightColors.ringColor : '#049FE8';
+          outline = `
+            <path d="${pinPath}" fill="none" stroke="${haloStroke}" stroke-width="6" opacity="0.88"/>
+            <path d="${pinPath}" fill="none" stroke="${ringStroke}" stroke-width="3.5"/>
+          `;
         }
+        const activeRing = active ? '<span class="db-marker-active-ring" aria-hidden="true"></span>' : '';
+        const styleParts = [
+          'position:relative',
+          `width:${size}px`,
+          `height:${size}px`,
+          'display:inline-block'
+        ];
+        if (active && highlightColors) {
+          if (highlightColors.ringColor) styleParts.push(`--db-marker-ring-color:${highlightColors.ringColor}`);
+          if (highlightColors.haloColor) styleParts.push(`--db-marker-ring-halo:${highlightColors.haloColor}`);
+          if (highlightColors.glowColor) styleParts.push(`--db-marker-ring-glow:${highlightColors.glowColor}`);
+          if (highlightColors.innerColor) styleParts.push(`--db-marker-ring-inner:${highlightColors.innerColor}`);
+        }
+        const styleAttr = styleParts.join(';');
         const dbLogo = isRecommended(p) ? `<div style="position:absolute;right:-4px;bottom:-4px;width:${overlaySize}px;height:${overlaySize}px;">${getDbLogoHtml(overlaySize)}</div>` : '';
         return `
-          <div class="db-marker" data-idx="${i}" style="position:relative;width:${size}px;height:${size}px;display:inline-block;">
+          <div class="db-marker" data-idx="${i}" style="${styleAttr}">
+            ${activeRing}
             <svg class="db-marker-pin" width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
               ${defs}
               ${outline}
