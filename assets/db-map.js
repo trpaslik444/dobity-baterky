@@ -5,6 +5,10 @@
 let isochronesCache = null;
 let isochronesLayer = null;
 let currentIsochronesRequestId = 0;
+let isochronesLocked = false;
+let lockedIsochronesPayload = null;
+let lastIsochronesPayload = null;
+let isochronesUnlockButton = null;
 
 /**
  * Upravit isochrones podle frontend nastavení rychlosti chůze
@@ -47,9 +51,16 @@ function adjustIsochronesForFrontendSpeed(geojson, originalRanges, frontendSetti
 /**
  * Vykreslí isochrones na mapu
  */
-function renderIsochrones(geojson, ranges, userSettings = null) {
+function renderIsochrones(geojson, ranges, userSettings = null, options = {}) {
+  const { featureId = null, force = false } = options;
+
+  if (isochronesLocked && !force && lockedIsochronesPayload && lockedIsochronesPayload.featureId !== featureId) {
+    return false;
+  }
+
   // Odstranit předchozí vrstvu
-  clearIsochrones();
+  const shouldForceClear = force || (isochronesLocked && lockedIsochronesPayload && lockedIsochronesPayload.featureId === featureId);
+  clearIsochrones(shouldForceClear);
   
   // Vytvořit novou vrstvu
   isochronesLayer = L.geoJSON(geojson, {
@@ -114,12 +125,18 @@ function renderIsochrones(geojson, ranges, userSettings = null) {
   
   // Přidat atribuci
   addIsochronesAttribution();
+
+  return true;
 }
 
 /**
  * Odstraní isochrones z mapy
  */
-function clearIsochrones() {
+function clearIsochrones(force = false) {
+  if (isochronesLocked && !force) {
+    return;
+  }
+
   if (isochronesLayer && window.map) {
     window.map.removeLayer(isochronesLayer);
     isochronesLayer = null;
@@ -131,6 +148,160 @@ function clearIsochrones() {
   try { document.body.classList.remove('has-isochrones'); } catch(_) {}
   
   removeIsochronesAttribution();
+}
+
+function ensureIsochronesUnlockButton() {
+  if (isochronesUnlockButton) {
+    return isochronesUnlockButton;
+  }
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'db-isochrones-unlock';
+  btn.setAttribute('aria-label', 'Zrušit zamknuté isochrony');
+  btn.style.position = 'fixed';
+  btn.style.right = '16px';
+  btn.style.top = '50%';
+  btn.style.transform = 'translateY(-50%)';
+  btn.style.zIndex = '10010';
+  btn.style.width = '56px';
+  btn.style.height = '56px';
+  btn.style.borderRadius = '50%';
+  btn.style.border = '1px solid rgba(4, 159, 232, 0.45)';
+  btn.style.background = 'rgba(255, 255, 255, 0.3)';
+  btn.style.backdropFilter = 'blur(6px)';
+  btn.style.boxShadow = '0 6px 18px rgba(4, 159, 232, 0.25)';
+  btn.style.display = 'none';
+  btn.style.alignItems = 'center';
+  btn.style.justifyContent = 'center';
+  btn.style.padding = '0';
+  btn.style.cursor = 'pointer';
+
+  btn.innerHTML = `
+    <svg width="80%" height="80%" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <style>
+          .c{stroke:#049FE8;}
+          .c,.d,.e,.f{fill:none;stroke-linecap:round;stroke-linejoin:round;}
+          .d,.e,.f{stroke:#FF6A4B;}
+          .e{stroke-dasharray:0 0 3 3;}
+          .f{stroke-dasharray:0 0 3.34 3.34;}
+        </style>
+      </defs>
+      <g>
+        <g>
+          <polyline class="d" points="7.99 19.5 2.5 19.5 2.5 16.5"/>
+          <line class="e" x1="2.5" x2="2.5" y1="13.5" y2="9"/>
+          <polyline class="d" points="2.5 7.5 2.5 4.5 5.5 4.5"/>
+          <line class="f" x1="8.83" x2="13.84" y1="4.5" y2="4.5"/>
+          <polyline class="d" points="15.5 4.5 18.5 4.5 18.5 7"/>
+        </g>
+        <path class="c" d="M18.8,13.39c0,2.98-2.42,5.4-5.4,5.4s-5.4-2.42-5.4-5.4,2.42-5.4,5.4-5.4,5.4,2.42,5.4,5.4Z"/>
+        <line class="c" x1="17.35" x2="21.5" y1="17.31" y2="21.5"/>
+        <line class="d" x1="10.5" y1="10.5" x2="16.5" y2="16.5"/>
+        <line class="d" x1="16.5" y1="10.5" x2="10.5" y2="16.5"/>
+      </g>
+    </svg>
+  `;
+
+  btn.addEventListener('click', () => unlockIsochrones());
+
+  document.body.appendChild(btn);
+  isochronesUnlockButton = btn;
+  return btn;
+}
+
+function showIsochronesUnlockButton() {
+  const btn = ensureIsochronesUnlockButton();
+  btn.style.display = 'flex';
+}
+
+function hideIsochronesUnlockButton() {
+  if (isochronesUnlockButton) {
+    isochronesUnlockButton.style.display = 'none';
+  }
+}
+
+function updateIsochronesLockButtons(featureId = null) {
+  const selectorBase = '[data-db-action="lock-isochrones"]';
+  const selector = featureId === null ? selectorBase : `${selectorBase}[data-feature-id="${featureId}"]`;
+  const buttons = document.querySelectorAll(selector);
+
+  buttons.forEach(btn => {
+    const btnFeatureId = parseInt(btn.getAttribute('data-feature-id') || '', 10);
+    const isoAvailable = !!(lastIsochronesPayload && lastIsochronesPayload.featureId === btnFeatureId);
+    const isLockedFeature = !!(isochronesLocked && lockedIsochronesPayload && lockedIsochronesPayload.featureId === btnFeatureId);
+    const shouldDisable = (!isoAvailable && !isLockedFeature) || (isochronesLocked && !isLockedFeature);
+
+    btn.disabled = shouldDisable;
+    btn.classList.toggle('is-active', isLockedFeature);
+    btn.setAttribute('aria-pressed', isLockedFeature ? 'true' : 'false');
+
+    if (isLockedFeature) {
+      btn.title = 'Isochrony jsou uzamčeny';
+    } else if (!isoAvailable) {
+      btn.title = 'Isochrony se načítají…';
+    } else {
+      btn.title = 'Zamknout isochrony';
+    }
+  });
+}
+
+function lockIsochrones(payload = null) {
+  const targetPayload = payload || lastIsochronesPayload;
+  if (!targetPayload) {
+    return;
+  }
+
+  isochronesLocked = true;
+  lockedIsochronesPayload = targetPayload;
+  showIsochronesUnlockButton();
+  try { document.body.classList.add('db-isochrones-locked'); } catch (_) {}
+
+  renderIsochrones(
+    targetPayload.geojson,
+    targetPayload.ranges,
+    targetPayload.userSettings,
+    { featureId: targetPayload.featureId, force: true }
+  );
+
+  updateIsochronesLockButtons(targetPayload.featureId);
+}
+
+function unlockIsochrones() {
+  if (!isochronesLocked) {
+    return;
+  }
+
+  const previousFeatureId = lockedIsochronesPayload?.featureId ?? null;
+
+  isochronesLocked = false;
+  lockedIsochronesPayload = null;
+  hideIsochronesUnlockButton();
+  try { document.body.classList.remove('db-isochrones-locked'); } catch (_) {}
+
+  clearIsochrones(true);
+
+  if (previousFeatureId !== null) {
+    updateIsochronesLockButtons(previousFeatureId);
+  } else {
+    updateIsochronesLockButtons();
+  }
+}
+
+function handleIsochronesLockButtonClick(featureId) {
+  if (isochronesLocked) {
+    if (lockedIsochronesPayload && lockedIsochronesPayload.featureId === featureId) {
+      unlockIsochrones();
+    }
+    return;
+  }
+
+  if (!lastIsochronesPayload || lastIsochronesPayload.featureId !== featureId) {
+    return;
+  }
+
+  lockIsochrones(lastIsochronesPayload);
 }
 
 /**
@@ -1967,6 +2138,30 @@ document.addEventListener('DOMContentLoaded', async function() {
             <line x1="12" y1="17" x2="12" y2="22"/>
           </svg>
         </button>
+        <button class="btn-icon" type="button" data-db-action="lock-isochrones" data-feature-id="${p.id}" title="Zamknout isochrony">
+          <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <style>
+                .c{stroke:#049FE8;}
+                .c,.d,.e,.f{fill:none;stroke-linecap:round;stroke-linejoin:round;}
+                .d,.e,.f{stroke:#FF6A4B;}
+                .e{stroke-dasharray:0 0 3 3;}
+                .f{stroke-dasharray:0 0 3.34 3.34;}
+              </style>
+            </defs>
+            <g>
+              <g>
+                <polyline class="d" points="7.99 19.5 2.5 19.5 2.5 16.5"/>
+                <line class="e" x1="2.5" x2="2.5" y1="13.5" y2="9"/>
+                <polyline class="d" points="2.5 7.5 2.5 4.5 5.5 4.5"/>
+                <line class="f" x1="8.83" x2="13.84" y1="4.5" y2="4.5"/>
+                <polyline class="d" points="15.5 4.5 18.5 4.5 18.5 7"/>
+              </g>
+              <path class="c" d="M18.8,13.39c0,2.98-2.42,5.4-5.4,5.4s-5.4-2.42-5.4-5.4,2.42-5.4,5.4-5.4,5.4,2.42,5.4,5.4Z"/>
+              <line class="c" x1="17.35" x2="21.5" y1="17.31" y2="21.5"/>
+            </g>
+          </svg>
+        </button>
         <button class="btn-icon" type="button" data-db-action="open-detail" title="Detail">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="10"/>
@@ -1992,10 +2187,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Event listener pro navigační tlačítko
     const navBtn = mobileSheet.querySelector('[data-db-action="open-navigation"]');
     if (navBtn) navBtn.addEventListener('click', () => openNavigationMenu(lat, lng));
-    
+
+    const lockBtn = mobileSheet.querySelector('[data-db-action="lock-isochrones"]');
+    if (lockBtn) {
+      lockBtn.addEventListener('click', () => handleIsochronesLockButtonClick(p.id));
+      updateIsochronesLockButtons(p.id);
+    }
+
     const detailBtn = mobileSheet.querySelector('[data-db-action="open-detail"]');
     if (detailBtn) detailBtn.addEventListener('click', () => openDetailModal(feature));
-    
+
     // Otevřít sheet
     requestAnimationFrame(() => mobileSheet.classList.add('open'));
     
@@ -2577,17 +2778,37 @@ document.addEventListener('DOMContentLoaded', async function() {
         const frontendEnabled = frontendSettings.enabled;
         
         if (requestId === currentIsochronesRequestId && data.isochrones && backendEnabled && frontendEnabled && data.isochrones.geojson && data.isochrones.geojson.features && data.isochrones.geojson.features.length > 0) {
-          
+
           // Aplikovat frontend nastavení rychlosti chůze
           const adjustedGeojson = adjustIsochronesForFrontendSpeed(data.isochrones.geojson, data.isochrones.ranges_s, frontendSettings);
-          
-          renderIsochrones(adjustedGeojson, data.isochrones.ranges_s, {
+          const mergedSettings = {
             ...data.isochrones.user_settings,
             ...frontendSettings
-          });
+          };
+
+          const payload = {
+            geojson: adjustedGeojson,
+            ranges: data.isochrones.ranges_s,
+            userSettings: mergedSettings,
+            featureId: p.id
+          };
+
+          const didRender = renderIsochrones(adjustedGeojson, data.isochrones.ranges_s, mergedSettings, { featureId: p.id });
+          if (didRender) {
+            lastIsochronesPayload = payload;
+            if (isochronesLocked && lockedIsochronesPayload && lockedIsochronesPayload.featureId === p.id) {
+              lockedIsochronesPayload = payload;
+            }
+          }
+
+          updateIsochronesLockButtons(p.id);
         } else {
           // Pokud nejsou isochrones v cache nebo jsou vypnuty, vyčistit mapu
+          if (!isochronesLocked) {
+            lastIsochronesPayload = null;
+          }
           clearIsochrones();
+          updateIsochronesLockButtons(p.id);
           if (data.isochrones && (!backendEnabled || !frontendEnabled)) {
           }
         }
