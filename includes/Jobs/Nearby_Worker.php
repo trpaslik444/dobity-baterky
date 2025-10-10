@@ -73,6 +73,7 @@ class Nearby_Worker {
 
             $queue_manager = new Nearby_Queue_Manager();
             $batch_processor = new Nearby_Batch_Processor();
+            $pending = 0;
 
             $loops = 0;
             $max_loops = 1; // Zpracovat max 1 origin za běh (kvůli dodržení 60s intervalu)

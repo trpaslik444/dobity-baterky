@@ -253,20 +253,64 @@ class Nearby_Queue_Admin {
             <!-- API Kvóty -->
             <div class="db-api-quotas" style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                 <h2>API Kvóty (ORS)</h2>
-                
-                <?php 
+
+                <?php
                 $quota_manager = new \DB\Jobs\API_Quota_Manager();
                 $detailed_quotas = $quota_manager->get_cached_ors_quotas();
                 $mx = $detailed_quotas['matrix_v2'];
                 $iso = $detailed_quotas['isochrones_v2'];
+
+                $format_remaining = function($value) {
+                    if ($value === null || $value === '') {
+                        return '—';
+                    }
+                    return number_format_i18n((int)$value);
+                };
+
+                $mx_remaining_display = $format_remaining($mx['remaining'] ?? null);
+                $iso_remaining_display = $format_remaining($iso['remaining'] ?? null);
+                $mx_total_display = number_format_i18n((int)($mx['total'] ?? 0));
+                $iso_total_display = number_format_i18n((int)($iso['total'] ?? 0));
+
+                $mx_remaining_color = '#6c757d';
+                if (isset($mx['remaining']) && $mx['remaining'] !== null) {
+                    $mx_remaining_color = ((int)$mx['remaining'] > 0) ? '#28a745' : '#dc3545';
+                }
+
+                $iso_remaining_color = '#6c757d';
+                if (isset($iso['remaining']) && $iso['remaining'] !== null) {
+                    $iso_remaining_color = ((int)$iso['remaining'] > 0) ? '#28a745' : '#dc3545';
+                }
+
+                $quota_state_messages = array(
+                    'daily_limit' => 'Denní limit byl vyčerpán, čeká se na reset.',
+                    'unauthorized' => 'ORS API klíč byl odmítnut (401/403). Zkontrolujte platnost klíče.',
+                    'retry_wait' => 'Čeká se na vypršení Retry-After hlavičky z ORS.',
+                    'exhausted' => 'Kvóta je aktuálně vyčerpaná.',
+                    'missing_key' => 'Chybí ORS API klíč.'
+                );
+
+                $mx_status = $mx['status']['state'] ?? null;
+                $quota_reason = $quota_stats['reason'] ?? null;
+                $mx_notice = null;
+                if ($mx_status && $mx_status !== 'ok') {
+                    $mx_notice = $quota_state_messages[$mx_status] ?? ('Stav: ' . $mx_status);
+                } elseif ($quota_reason && $quota_reason !== 'retry_wait' && isset($quota_state_messages[$quota_reason])) {
+                    $mx_notice = $quota_state_messages[$quota_reason];
+                }
+
+                $retry_wait_text = null;
+                if ($quota_reason === 'retry_wait' && !empty($quota_stats['reset_at'])) {
+                    $retry_wait_text = 'Čeká se na další pokus v ' . date_i18n('H:i', strtotime($quota_stats['reset_at']));
+                }
                 ?>
-                
+
                 <h3 style="margin: 15px 0 10px 0;">Matrix API</h3>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px;">
                     <div style="background: white; padding: 12px; border-radius: 6px;">
                         <h4 style="margin: 0 0 6px 0; font-size: 0.9em;">Zbývá</h4>
-                        <div style="font-size: 1.3em; font-weight: bold; color: <?php echo $mx['remaining'] > 0 ? '#28a745' : '#dc3545'; ?>">
-                            <?php echo $mx['remaining']; ?> / <?php echo $mx['total']; ?>
+                        <div style="font-size: 1.3em; font-weight: bold; color: <?php echo esc_attr($mx_remaining_color); ?>">
+                            <?php echo esc_html($mx_remaining_display); ?> / <?php echo esc_html($mx_total_display); ?>
                         </div>
                     </div>
                     <div style="background: white; padding: 12px; border-radius: 6px;">
@@ -301,8 +345,8 @@ class Nearby_Queue_Admin {
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
                     <div style="background: white; padding: 12px; border-radius: 6px;">
                         <h4 style="margin: 0 0 6px 0; font-size: 0.9em;">Zbývá</h4>
-                        <div style="font-size: 1.3em; font-weight: bold; color: <?php echo $iso['remaining'] > 0 ? '#28a745' : '#dc3545'; ?>">
-                            <?php echo $iso['remaining']; ?> / <?php echo $iso['total']; ?>
+                        <div style="font-size: 1.3em; font-weight: bold; color: <?php echo esc_attr($iso_remaining_color); ?>">
+                            <?php echo esc_html($iso_remaining_display); ?> / <?php echo esc_html($iso_total_display); ?>
                         </div>
                     </div>
                     <div style="background: white; padding: 12px; border-radius: 6px;">
@@ -332,6 +376,21 @@ class Nearby_Queue_Admin {
                         </div>
                     </div>
                 </div>
+
+                <?php if ($mx_notice || $retry_wait_text || ($quota_reason === 'missing_key')): ?>
+                    <div class="notice notice-warning" style="margin-top: 20px; padding: 15px;">
+                        <strong>Stav ORS kvót:</strong><br>
+                        <?php if ($mx_notice): ?>
+                            <span><?php echo esc_html($mx_notice); ?></span><br>
+                        <?php endif; ?>
+                        <?php if ($retry_wait_text): ?>
+                            <span><?php echo esc_html($retry_wait_text); ?></span><br>
+                        <?php endif; ?>
+                        <?php if ($quota_reason === 'missing_key'): ?>
+                            <span><?php echo esc_html($quota_state_messages['missing_key']); ?></span>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <!-- Automatické zpracování -->
@@ -346,6 +405,21 @@ class Nearby_Queue_Admin {
                         <?php if ($auto_status['next_run']): ?>
                         <div style="font-size: 0.9em; color: #666; margin-top: 5px;">
                             Další běh: <?php echo esc_html($auto_status['next_run']); ?>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!$quota_stats['can_process'] && !empty($quota_reason)): ?>
+                        <div style="font-size: 0.9em; color: #dc3545; margin-top: 8px;">
+                            <?php
+                            $message = $quota_state_messages[$quota_reason] ?? ('Pozastaveno: ' . $quota_reason);
+                            if ($quota_reason === 'retry_wait' && $retry_wait_text) {
+                                $message .= ' – ' . $retry_wait_text;
+                            }
+                            echo esc_html($message);
+                            ?>
+                        </div>
+                        <?php elseif (!empty($retry_wait_text)): ?>
+                        <div style="font-size: 0.9em; color: #856404; margin-top: 8px;">
+                            <?php echo esc_html($retry_wait_text); ?>
                         </div>
                         <?php endif; ?>
                     </div>
