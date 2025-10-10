@@ -53,34 +53,54 @@ class API_Quota_Manager {
                 'remaining' => 0,
                 'reset_at' => null,
                 'can_process' => false,
-                'error' => 'ORS API key není nastaven'
+                'error' => 'ORS API key není nastaven',
+                'reason' => 'missing_key'
             );
         }
-        
+
         // Získat kvóty z cache (z posledních ORS response hlaviček)
         $cached_quotas = $this->get_cached_ors_quotas();
         $matrix_quota = $cached_quotas['matrix_v2'];
+        $remaining = $matrix_quota['remaining'];
+        $status = $matrix_quota['status'] ?? null;
         $retry_until = isset($matrix_quota['retry_until']) ? (int)$matrix_quota['retry_until'] : null;
-        
+
         // Zkontrolovat retry_until (po 429)
         if ($retry_until && $retry_until > time()) {
             return array(
                 'available' => false,
-                'remaining' => $matrix_quota['remaining'],
+                'remaining' => $remaining,
                 'reset_at' => date('c', $retry_until),
                 'can_process' => false,
-                'error' => 'Rate limited do ' . date('H:i:s', $retry_until)
+                'error' => 'Rate limited do ' . date('H:i:s', $retry_until),
+                'reason' => 'retry_wait',
+                'status' => $status
             );
         }
 
+        $remaining_known = ($remaining !== null);
+        $available = $remaining_known ? ($remaining > 0) : true;
+        $can_process = $available && (!$retry_until || $retry_until <= time());
+        $reason = null;
+
+        if ($remaining_known && $remaining <= 0) {
+            $reason = 'exhausted';
+        }
+
+        if ($status && isset($status['state']) && $status['state'] !== 'ok') {
+            $reason = $status['state'];
+        }
+
         return array(
-            'available' => $matrix_quota['remaining'] > 0,
-            'remaining' => $matrix_quota['remaining'],
+            'available' => $available,
+            'remaining' => $remaining,
             'reset_at' => $matrix_quota['reset_at'] ?? null,
-            'can_process' => $matrix_quota['remaining'] > 0 && (!$retry_until || $retry_until <= time()),
+            'can_process' => $can_process,
             'max_daily' => $matrix_quota['total'],
             'per_minute' => $matrix_quota['per_minute'],
-            'source' => $matrix_quota['source']
+            'source' => $matrix_quota['source'],
+            'status' => $status,
+            'reason' => $reason
         );
     }
     
@@ -133,30 +153,35 @@ class API_Quota_Manager {
         $mx_remaining = get_transient('db_ors_matrix_remaining_day');
         $mx_reset_epoch = get_transient('db_ors_matrix_reset_epoch');
         $mx_retry_until = get_transient('db_ors_matrix_retry_until');
+        $mx_status = get_transient('db_ors_matrix_status');
 
         // Isochrones
         $iso_remaining = get_transient('db_ors_iso_remaining_day');
         $iso_reset_epoch = get_transient('db_ors_iso_reset_epoch');
         $iso_retry_until = get_transient('db_ors_iso_retry_until');
-        
-        // Fallback: pokud není známo remaining (false/null), použít konservativní 0 místo optimistického 500
-        // (403 unauthorized často nevrací hlavičky, což by jinak způsobilo nekonečné pokusy)
+        $iso_status = get_transient('db_ors_iso_status');
+
+        $matrix_remaining = ($mx_remaining === false || $mx_remaining === null) ? null : (int)$mx_remaining;
+        $iso_remaining_value = ($iso_remaining === false || $iso_remaining === null) ? null : (int)$iso_remaining;
+
         $matrix = array(
             'total' => 500,
             'per_minute' => 40,
-            'remaining' => ($mx_remaining === false || $mx_remaining === null) ? 0 : (int)$mx_remaining,
+            'remaining' => $matrix_remaining,
             'reset_at' => $mx_reset_epoch ? date('c', $mx_reset_epoch) : null,
             'retry_until' => $mx_retry_until,
-            'source' => ($mx_remaining === false || $mx_remaining === null) ? 'unknown' : 'headers'
+            'source' => $matrix_remaining === null ? 'unknown' : 'headers',
+            'status' => $mx_status === false ? null : $mx_status
         );
 
         $isochrones = array(
             'total' => 500,
             'per_minute' => 40,
-            'remaining' => ($iso_remaining === false || $iso_remaining === null) ? 0 : (int)$iso_remaining,
+            'remaining' => $iso_remaining_value,
             'reset_at' => $iso_reset_epoch ? date('c', $iso_reset_epoch) : null,
             'retry_until' => $iso_retry_until,
-            'source' => ($iso_remaining === false || $iso_remaining === null) ? 'unknown' : 'headers'
+            'source' => $iso_remaining_value === null ? 'unknown' : 'headers',
+            'status' => $iso_status === false ? null : $iso_status
         );
 
         return array(
@@ -164,39 +189,74 @@ class API_Quota_Manager {
             'isochrones_v2' => $isochrones
         );
     }
-    
+
     /**
      * Uložit kvóty z ORS response hlaviček
      */
     public function save_ors_headers($headers, $type = 'matrix') {
-        $type = ($type === 'isochrones') ? 'iso' : 'matrix';
+        $type_key = ($type === 'isochrones') ? 'iso' : 'matrix';
         $remaining = isset($headers['x-ratelimit-remaining']) ? (int)$headers['x-ratelimit-remaining'] : null;
         $reset_epoch = isset($headers['x-ratelimit-reset']) ? (int)$headers['x-ratelimit-reset'] : null;
         $retry_after = isset($headers['retry-after']) ? (int)$headers['retry-after'] : null;
-        
-        // Pokud remaining chybí (např. 403), explicitně nastavit 0 místo přeskočení
+
         if ($remaining !== null) {
-            set_transient('db_ors_' . $type . '_remaining_day', $remaining, 15 * MINUTE_IN_SECONDS);
+            set_transient('db_ors_' . $type_key . '_remaining_day', $remaining, 15 * MINUTE_IN_SECONDS);
         } else {
-            // 403 unauthorized často nevrací hlavičky → explicitně nastavit 0
-            set_transient('db_ors_' . $type . '_remaining_day', 0, 15 * MINUTE_IN_SECONDS);
-        }
-        
-        if ($reset_epoch !== null) {
-            set_transient('db_ors_' . $type . '_reset_epoch', $reset_epoch, 60 * MINUTE_IN_SECONDS);
-        }
-        // Pokud reset_epoch chybí, zachovat poslední známou hodnotu (netřeme transient)
-        
-        if ($retry_after !== null) {
-            $retry_until = time() + $retry_after;
-            set_transient('db_ors_' . $type . '_retry_until', $retry_until, $retry_after);
+            delete_transient('db_ors_' . $type_key . '_remaining_day');
         }
 
+        if ($reset_epoch !== null) {
+            set_transient('db_ors_' . $type_key . '_reset_epoch', $reset_epoch, 60 * MINUTE_IN_SECONDS);
+        }
+
+        if ($retry_after !== null) {
+            $retry_until = time() + $retry_after;
+            set_transient('db_ors_' . $type_key . '_retry_until', $retry_until, $retry_after);
+        }
+
+        $this->record_status($type_key, 'ok', array(
+            'remaining' => $remaining,
+            'reset_epoch' => $reset_epoch,
+            'source' => $remaining === null ? 'unknown' : 'headers'
+        ));
+
         Nearby_Logger::log('QUOTA', 'Saved ORS headers', [
-            'api' => $type,
-            'remaining' => $remaining !== null ? $remaining : 0,
+            'api' => $type_key,
+            'remaining' => $remaining,
             'reset_epoch' => $reset_epoch,
             'retry_after' => $retry_after
+        ]);
+    }
+
+    private function record_status($type_key, $state, array $extra = array()) {
+        $payload = array_merge(array(
+            'state' => $state,
+            'recorded_at' => time()
+        ), $extra);
+
+        set_transient('db_ors_' . $type_key . '_status', $payload, 2 * DAY_IN_SECONDS);
+    }
+
+    public function mark_daily_quota_exhausted($type = 'matrix', $http_code = null) {
+        $type_key = ($type === 'isochrones') ? 'iso' : 'matrix';
+        $reset_epoch = strtotime('tomorrow 00:05:00');
+        if (!$reset_epoch) {
+            $reset_epoch = time() + DAY_IN_SECONDS;
+        }
+        $ttl = max(60, $reset_epoch - time());
+
+        set_transient('db_ors_' . $type_key . '_remaining_day', 0, $ttl);
+        set_transient('db_ors_' . $type_key . '_reset_epoch', $reset_epoch, $ttl);
+        set_transient('db_ors_' . $type_key . '_retry_until', $reset_epoch, $ttl);
+
+        $state = ((int)$http_code === 401) ? 'unauthorized' : 'daily_limit';
+        $this->record_status($type_key, $state, array('http_code' => $http_code, 'reset_epoch' => $reset_epoch));
+
+        Nearby_Logger::log('QUOTA', 'Marked ORS quota unavailable', [
+            'api' => $type_key,
+            'state' => $state,
+            'http_code' => $http_code,
+            'retry_until' => $reset_epoch
         ]);
     }
     
@@ -357,7 +417,12 @@ class API_Quota_Manager {
             return 0;
         }
 
-        $remaining = (int)($quota['remaining'] ?? 0);
+        $remaining = $quota['remaining'] ?? null;
+        if ($remaining === null) {
+            return 1; // neznámý stav - povolit minimálně jeden request pro obnovu hlaviček
+        }
+
+        $remaining = (int)$remaining;
         if ($remaining <= 0) {
             return 0;
         }
@@ -433,15 +498,19 @@ class API_Quota_Manager {
     public function get_usage_stats() {
         $quota = $this->check_available_quota();
         
+        $remaining = array_key_exists('remaining', $quota) ? $quota['remaining'] : null;
+
         return array(
             'provider' => $this->config['provider'] ?? 'ors',
             'daily_usage' => $quota['daily_usage'] ?? 0,
             'max_daily' => $quota['max_daily'] ?? 500,
-            'remaining' => $quota['remaining'] ?? 0,
+            'remaining' => $remaining,
             'reset_at' => $quota['reset_at'] ?? null,
             'can_process' => $quota['can_process'] ?? false,
             'per_minute' => $quota['per_minute'] ?? 40,
-            'source' => $quota['source'] ?? 'fallback'
+            'source' => $quota['source'] ?? 'fallback',
+            'status' => $quota['status'] ?? null,
+            'reason' => $quota['reason'] ?? null
         );
     }
 }

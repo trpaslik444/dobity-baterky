@@ -606,6 +606,7 @@ class Nearby_Recompute_Job {
                     'origin_id' => $origin_id,
                     'http_code' => $http_code
                 ]);
+                $quota_manager->mark_daily_quota_exhausted('isochrones', $http_code);
                 $this->set_isochrones_error($origin_id, $profile, 'unauthorized', 'API key invalid');
                 return $did_call;
             }
@@ -932,6 +933,7 @@ class Nearby_Recompute_Job {
                 'chunk_index' => $chunk_index,
                 'http_code' => $code
             ]);
+            $quota_manager->mark_daily_quota_exhausted('matrix', $code);
             return array('success' => false, 'error' => 'ORS unauthorized/daily quota exhausted');
         }
         
