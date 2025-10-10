@@ -4838,6 +4838,35 @@ document.addEventListener('DOMContentLoaded', async function() {
   map.on('moveend', onViewportChanged);
   map.on('zoomend', onViewportChanged);
 
+  // Vyčistit isochrony při kliknutí mimo aktivní bod (pokud nejsou zamčené)
+  map.on('click', function(e) {
+    if (isochronesLocked) {
+      return;
+    }
+
+    const originalEvent = e && e.originalEvent ? e.originalEvent : null;
+    const target = originalEvent && originalEvent.target ? originalEvent.target : null;
+    const shouldSkip = target && typeof target.closest === 'function' && (
+      target.closest('.leaflet-marker-icon') ||
+      target.closest('.marker-cluster') ||
+      target.closest('.leaflet-control') ||
+      target.closest('#db-isochrones-legend') ||
+      target.closest('#db-isochrones-unlock')
+    );
+
+    if (shouldSkip) {
+      return;
+    }
+
+    if (!isochronesLayer && !lastIsochronesPayload) {
+      return;
+    }
+
+    lastIsochronesPayload = null;
+    clearIsochrones();
+    updateIsochronesLockButtons();
+  });
+
 
   // Toggle „Jen DB doporučuje"
   const toggleRecommended = document.getElementById('db-map-toggle-recommended');
