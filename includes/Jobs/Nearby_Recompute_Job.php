@@ -275,9 +275,12 @@ class Nearby_Recompute_Job {
                 foreach ($candidates as $cand) {
                     $distance_m = isset($cand['dist_km']) ? (int) round(((float)$cand['dist_km']) * 1000) : (int) round($this->haversine_m($lat, $lng, (float)$cand['lat'], (float)$cand['lng']));
                     $duration_s = $speed > 0 ? (int) round($distance_m / $speed) : (int) $distance_m;
+                    $name = $this->resolve_candidate_name($cand);
                     $items[] = [
                         'id'         => (int)$cand['id'],
                         'post_type'  => (string)$cand['type'],
+                        'name'       => $name,
+                        'title'      => $name,
                         'duration_s' => $duration_s,
                         'distance_m' => $distance_m,
                         'walk_m'     => $distance_m,
@@ -458,9 +461,12 @@ class Nearby_Recompute_Job {
                 $dist= $json['distances'][0] ?? array_fill(0, count($chunk), null);
 
                 foreach ($chunk as $idx => $cand) {
+                    $name = $this->resolve_candidate_name($cand);
                     $items[] = [
                         'id'         => (int)$cand['id'],
                         'post_type'  => (string)$cand['type'],
+                        'name'       => $name,
+                        'title'      => $name,
                         'duration_s' => (int) round($dur[$idx] ?? -1),
                         'distance_m' => (int) round($dist[$idx] ?? -1),
                         'walk_m'     => (int) round($dist[$idx] ?? -1),
@@ -952,9 +958,12 @@ class Nearby_Recompute_Job {
 
         $items = array();
         foreach ($chunk as $idx => $cand) {
+            $name = $this->resolve_candidate_name($cand);
             $items[] = array(
                 'id' => (int)$cand->id,
                 'post_type' => (string)$cand->type,
+                'name' => $name,
+                'title' => $name,
                 'duration_s' => (int)round($durations[$idx] ?? -1),
                 'distance_m' => (int)round($distances[$idx] ?? -1),
                 'walk_m' => (int)round($distances[$idx] ?? -1),
@@ -1028,9 +1037,12 @@ class Nearby_Recompute_Job {
         
         $items = array();
         foreach ($chunk as $idx => $cand) {
+            $name = $this->resolve_candidate_name($cand);
             $items[] = array(
                 'id' => (int)$cand->id,
                 'post_type' => (string)$cand->type,
+                'name' => $name,
+                'title' => $name,
                 'duration_s' => (int)round($durations[$idx] ?? -1),
                 'distance_m' => (int)round($distances[$idx] ?? -1),
                 'provider' => 'osrm.matrix',
@@ -1159,5 +1171,35 @@ class Nearby_Recompute_Job {
         ", $candidate_type, $origin_id, $origin->lat, $origin->lng, $origin->lat, $origin->lat, $origin->lng, $origin->lat));
         
         return $candidates;
+    }
+
+    private function resolve_candidate_name($candidate) {
+        $id = null;
+        $raw = '';
+
+        if (is_array($candidate)) {
+            $id = isset($candidate['id']) ? (int)$candidate['id'] : null;
+            if (!empty($candidate['name'])) {
+                $raw = (string)$candidate['name'];
+            } elseif (!empty($candidate['post_title'])) {
+                $raw = (string)$candidate['post_title'];
+            }
+        } elseif (is_object($candidate)) {
+            $id = isset($candidate->id) ? (int)$candidate->id : null;
+            if (!empty($candidate->name)) {
+                $raw = (string)$candidate->name;
+            } elseif (!empty($candidate->post_title)) {
+                $raw = (string)$candidate->post_title;
+            }
+        }
+
+        if ($raw === '' && $id) {
+            $title = get_the_title($id);
+            if (!empty($title)) {
+                $raw = $title;
+            }
+        }
+
+        return $raw !== '' ? wp_strip_all_tags($raw) : '';
     }
 }

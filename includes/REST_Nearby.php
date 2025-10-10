@@ -375,9 +375,23 @@ class REST_Nearby {
         foreach ($cands as $cand) {
             $dist_m = (int) round($this->haversine_m($olat, $olng, (float)$cand['lat'], (float)$cand['lng']));
             $dur_s  = $speed > 0 ? (int) round($dist_m / $speed) : $dist_m;
+
+            $raw_name = '';
+            if (!empty($cand['name'])) {
+                $raw_name = (string)$cand['name'];
+            } else {
+                $title = get_the_title((int)$cand['id']);
+                if (!empty($title)) {
+                    $raw_name = $title;
+                }
+            }
+            $clean_name = $raw_name !== '' ? wp_strip_all_tags($raw_name) : '';
+
             $items[] = [
                 'id'          => (int)$cand['id'],
                 'post_type'   => (string)$cand['type'],
+                'name'        => $clean_name,
+                'title'       => $clean_name,
                 'distance_m'  => $dist_m,
                 'duration_s'  => $dur_s,
                 'walk_m'      => $dist_m,
