@@ -335,6 +335,90 @@ function ensureAttributionBar() {
   return bar;
 }
 
+function ensureLicenseModal() {
+  let modal = document.getElementById('db-license-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'db-license-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-hidden', 'true');
+    modal.innerHTML = `
+      <div class="db-license-modal__backdrop" data-close="true"></div>
+      <div class="db-license-modal__content" role="document">
+        <button type="button" class="db-license-modal__close" aria-label="Zavřít">&times;</button>
+        <h2 class="db-license-modal__title">Licence</h2>
+        <div class="db-license-modal__body"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const close = () => hideLicenseModal();
+    const closeButton = modal.querySelector('.db-license-modal__close');
+    const backdrop = modal.querySelector('.db-license-modal__backdrop');
+
+    if (closeButton) {
+      closeButton.addEventListener('click', close);
+    }
+    if (backdrop) {
+      backdrop.addEventListener('click', close);
+    }
+
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) {
+        hideLicenseModal();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        hideLicenseModal();
+      }
+    });
+  }
+  return modal;
+}
+
+function hideLicenseModal() {
+  const modal = document.getElementById('db-license-modal');
+  if (!modal) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
+  document.body.classList.remove('db-license-modal-open');
+}
+
+function showLicenseModal() {
+  const modal = ensureLicenseModal();
+  if (!modal) return;
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.classList.add('db-license-modal-open');
+  try {
+    const closeButton = modal.querySelector('.db-license-modal__close');
+    if (closeButton) {
+      closeButton.focus({ preventScroll: true });
+    }
+  } catch(_) {}
+}
+
+function updateLicenseModalContent(entries) {
+  const modal = ensureLicenseModal();
+  if (!modal) return;
+  const body = modal.querySelector('.db-license-modal__body');
+  if (!body) return;
+
+  const listItems = entries.map((entry) => {
+    const link = entry.url ? `<a href="${entry.url}" target="_blank" rel="noopener">${entry.title}</a>` : entry.title;
+    const description = entry.description ? `<div>${entry.description}</div>` : '';
+    return `<li>${link}${description}</li>`;
+  }).join('');
+
+  body.innerHTML = `
+    <p>Mapa Dobijte baterky využívá tyto otevřené služby a zdroje. Děkujeme komunitám, které je vytvářejí a udržují.</p>
+    <ul>${listItems}</ul>
+  `;
+}
+
 function positionAttributionBar(bar) {
   if (!bar) return;
   const isMobile = window.innerWidth <= 900;
@@ -380,15 +464,37 @@ function updateAttributionBar(options) {
   const { includeORS } = options || {};
   const bar = ensureAttributionBar();
   if (!bar) return;
-  const parts = [];
-  parts.push('<a href="https://leafletjs.com" target="_blank" rel="noopener" style="color:#36c; text-decoration:none;">Leaflet</a>');
-  parts.push('<span style="opacity:.5;margin:0 4px;">|</span>');
-  parts.push('<span>©</span> <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#36c; text-decoration:none;">OpenStreetMap</a> contributors');
+  const entries = [
+    {
+      title: 'Leaflet',
+      url: 'https://leafletjs.com',
+      description: 'Open-source knihovna pro interaktivní mapy.',
+    },
+    {
+      title: 'OpenStreetMap',
+      url: 'https://www.openstreetmap.org/copyright',
+      description: '© OpenStreetMap contributors',
+    },
+  ];
+
   if (includeORS) {
-    parts.push('<span style="opacity:.5;margin:0 4px;">|</span>');
-    parts.push('<a href="https://openrouteservice.org/terms-of-service/" target="_blank" rel="noopener" style="color:#36c; text-decoration:none;">openrouteservice</a>');
+    entries.push({
+      title: 'openrouteservice',
+      url: 'https://openrouteservice.org/terms-of-service/',
+      description: 'Routovací a isochronní data poskytovaná Heidelberg Institute for Geoinformation Technology.',
+    });
   }
-  bar.innerHTML = parts.join(' ');
+
+  bar.innerHTML = '<button type="button" class="db-license-trigger">Licence</button>';
+  const trigger = bar.querySelector('.db-license-trigger');
+  if (trigger) {
+    trigger.addEventListener('click', (event) => {
+      event.preventDefault();
+      showLicenseModal();
+    });
+  }
+
+  updateLicenseModalContent(entries);
   positionAttributionBar(bar);
   try {
   } catch(_) {}
