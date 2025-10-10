@@ -1007,6 +1007,18 @@ body.has-attribution #db-mobile-sheet.open {
   transform: translateY(0);
 }
 
+#db-mobile-sheet .btn-icon:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none !important;
+}
+
+#db-mobile-sheet .btn-icon.is-active {
+  outline: 2px solid rgba(4, 159, 232, 0.35);
+  outline-offset: 2px;
+}
+
 /* Blízké body - nový design */
 #db-mobile-sheet .sheet-nearby {
   flex: 1;
