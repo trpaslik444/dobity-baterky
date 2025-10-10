@@ -2631,3 +2631,49 @@ body.db-loading::after {
     font-size: 13px;
   }
 } 
+.db-marker-active .db-marker-active-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 3px solid var(--db-marker-ring-color, rgba(255, 106, 75, 0.9));
+  box-shadow: 0 0 0 4px var(--db-marker-ring-halo, rgba(252, 230, 125, 0.75)),
+              0 0 22px var(--db-marker-ring-glow, rgba(255, 106, 75, 0.55));
+  animation: db-marker-pulse 1.8s ease-out infinite;
+  pointer-events: none;
+}
+
+.db-marker-active .db-marker-active-ring::after {
+  content: '';
+  position: absolute;
+  inset: 6px;
+  border-radius: 50%;
+  border: 2px solid var(--db-marker-ring-inner, rgba(255, 106, 75, 0.6));
+  opacity: 0;
+  animation: db-marker-pulse-inner 1.8s ease-out infinite;
+}
+
+@keyframes db-marker-pulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+@keyframes db-marker-pulse-inner {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
