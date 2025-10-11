@@ -1155,7 +1155,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     mapDiv.innerHTML = '<div style="padding:2rem;text-align:center;color:#666;">Chyba: Mapa se nemohla načíst. Zkuste obnovit stránku.</div>';
     return;
   }
-  
      try {
        map = L.map('db-map', {
          zoomControl: true,
@@ -1770,7 +1769,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   // ===== PANEL FILTRŮ A DALŠÍ FUNKTIONALITA =====
-
   // Panel filtrů (otevíraný tlačítkem Filtry)
   filterPanel = document.createElement('div');
   filterPanel.id = 'db-map-filter-panel';
@@ -2316,8 +2314,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       loadAndRenderNearby(feature);
     }, 200);
   }
-  
-
   // Funkce pro načítání nearby dat pro mobile sheet (3 nejbližší body)
   async function loadNearbyForMobileSheet(containerEl, centerId, centerLat, centerLng) {
     if (!containerEl || !centerId) return;
@@ -2968,7 +2964,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const res = await fetch(url);
     return await res.json();
   }
-
   // Funkce pro kontrolu otevírací doby
   function checkIfOpen(openingHours) {
     if (!openingHours) return false;
@@ -3604,7 +3599,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Placeholder: zde lze napojit na skutečné oblíbené
     });
   }
-
   // Vyhledávání na mapě
   let searchQuery = '';
   const searchForm = topbar.querySelector('form.db-map-searchbox');
@@ -4223,7 +4217,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     markers = [];
   }
-
   // Upravíme renderCards, aby synchronizovala markery s panelem
   function renderCards(filterText = '', activeId = null, isSearch = false) {
 
@@ -4664,15 +4657,13 @@ document.addEventListener('DOMContentLoaded', async function() {
                 return additionalInfo ? `<div class="db-map-card-amenities" style="margin-top:0.5em;padding-top:0.5em;border-top:1px solid #f0f0f0;">${additionalInfo}</div>` : '';
               })() : ''}
 
-              <div class="db-map-card-nearby" style="margin-top:0.75em;">
-                <div style="font-weight:600;margin-bottom:4px;">Blízká místa</div>
-                <div class="db-card-nearby-list" data-feature-id="${p.id}" style="display:grid;grid-template-columns:1fr;gap:4px;min-height:20px;"></div>
-              </div>
-              <div class="db-map-card-isochrones" style="margin-top:0.75em;">
-                <button class="db-map-card-action-btn" data-db-action="toggle-isochrones" title="Isochrony" style="display:inline-flex;align-items:center;gap:6px;">
-                  <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#049FE8" fill="none"/><circle cx="12" cy="12" r="6" stroke="#FF6A4B" fill="none"/><circle cx="12" cy="12" r="3" stroke="#FCE67D" fill="none"/></svg>
-                  Isochrony
-                </button>
+              <div class="sheet-nearby">
+                <div class="sheet-nearby-list" data-feature-id="${p.id}">
+                  <div style="text-align: center; padding: 8px; color: #049FE8; font-size: 0.8em;">
+                    <div style="font-size: 16px; margin-bottom: 4px;">⏳</div>
+                    <div>Načítání...</div>
+                  </div>
+                </div>
               </div>
               ${p.post_type === 'rv_spot' ? (() => {
                 let additionalInfo = '';
@@ -4870,7 +4861,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     activeIdxGlobal = null;
     applyActiveHighlight();
   }
-
   // Pomocná funkce pro získání ID karty podle aktuálního pořadí v panelu
   function filteredCardIdAtIndex(idx) {
     const cards = document.querySelectorAll('.db-map-card');
@@ -5510,7 +5500,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const langCode = lang.split('-')[0].toLowerCase();
     return langMap[langCode] || 'CZ';
   }
-
   // Inicializace lokality prohlížeče při načtení stránky (po deklaraci funkcí)
   getBrowserLocale().catch(() => {});
   
@@ -6025,7 +6014,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // ===== KONEC HLAVNÍ FUNKCE =====
 });
-
 // Konec db-map.js 
 ;(function(){
   try {
