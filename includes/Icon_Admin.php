@@ -644,8 +644,14 @@ class Icon_Admin {
             echo '<td>';
             $pin = '<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="' . esc_attr($color) . '"/></svg>';
             
-            if ($icon_slug && file_exists(DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg')) {
-                $svg = file_get_contents(DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg');
+            if ($icon_slug) {
+                // Preferovat uploads cestu, fallback do assets
+                $up = wp_upload_dir();
+                $uploads_icon = trailingslashit($up['basedir']) . 'dobity-baterky/icons/' . $icon_slug . '.svg';
+                $assets_icon = DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg';
+                $chosen = file_exists($uploads_icon) ? $uploads_icon : (file_exists($assets_icon) ? $assets_icon : '');
+                if ($chosen) {
+                    $svg = file_get_contents($chosen);
                 // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
                 $svg = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg);
                 $svg = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg);
@@ -654,6 +660,9 @@ class Icon_Admin {
                 $svg = preg_replace('/fill="[^"]*"/', 'fill="#fff"', $svg);
                 $svg = preg_replace('/stroke="[^"]*"/', 'stroke="#fff"', $svg);
                 echo '<div style="position:relative;width:32px;height:32px;display:inline-block;">' . $pin . '<div style="position:absolute;left:8px;top:6px;width:16px;height:16px;display:flex;align-items:center;justify-content:center;">' . $svg . '</div></div>';
+                } else {
+                echo '<div style="width:32px;height:32px;display:inline-block;">' . $pin . '</div>';
+                }
             } else {
                 echo '<div style="width:32px;height:32px;display:inline-block;">' . $pin . '</div>';
             }
@@ -679,8 +688,13 @@ class Icon_Admin {
             echo '<tr><td>' . esc_html($term->name) . ' <small>(RV)</small></td>';
             echo '<td>';
             $pin = '<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="' . esc_attr($color) . '"/></svg>';
-            if ($icon_slug && file_exists(DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg')) {
-                $svg = file_get_contents(DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg');
+            if ($icon_slug) {
+                $up = wp_upload_dir();
+                $uploads_icon = trailingslashit($up['basedir']) . 'dobity-baterky/icons/' . $icon_slug . '.svg';
+                $assets_icon = DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg';
+                $chosen = file_exists($uploads_icon) ? $uploads_icon : (file_exists($assets_icon) ? $assets_icon : '');
+                if ($chosen) {
+                    $svg = file_get_contents($chosen);
                 // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
                 $svg = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg);
                 $svg = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg);
@@ -689,6 +703,9 @@ class Icon_Admin {
                 $svg = preg_replace('/fill="[^"]*"/', 'fill="#fff"', $svg);
                 $svg = preg_replace('/stroke="[^"]*"/', 'stroke="#fff"', $svg);
                 echo '<div style="position:relative;width:32px;height:32px;display:inline-block;">' . $pin . '<div style="position:absolute;left:8px;top:6px;width:16px;height:16px;display:flex;align-items:center;justify-content:center;">' . $svg . '</div></div>';
+                } else {
+                echo '<div style="width:32px;height:32px;display:inline-block;">' . $pin . '</div>';
+                }
             } else {
                 echo '<div style="width:32px;height:32px;display:inline-block;">' . $pin . '</div>';
             }
@@ -729,8 +746,10 @@ JS;
         // Zjisti slug a existenci SVG dekorace
         if (preg_match('/^(poi_type|charger_type|rv_type):([0-9]+)$/', $type, $m)) {
             $slug = $m[1] . '-' . $m[2];
-            $svg_path = DB_PLUGIN_DIR . 'assets/icons/' . $slug . '.svg';
-            $has_svg = file_exists($svg_path);
+            $up = wp_upload_dir();
+            $uploads_icon = trailingslashit($up['basedir']) . 'dobity-baterky/icons/' . $slug . '.svg';
+            $assets_icon = DB_PLUGIN_DIR . 'assets/icons/' . $slug . '.svg';
+            $has_svg = file_exists($uploads_icon) || file_exists($assets_icon);
         } else {
             $slug = '';
             $has_svg = false;
