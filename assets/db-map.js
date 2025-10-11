@@ -855,6 +855,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   async function fetchAndRenderRadius(center, includedTypesCsv = null) {
+    const previousCenter = lastSearchCenter ? { ...lastSearchCenter } : null;
 
     
     if (inFlightController) { 
@@ -875,13 +876,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     const spinnerTimer = setTimeout(() => { document.body.classList.add('db-loading'); spinnerShown = true; }, 200);
     const t0 = performance.now?.() || Date.now();
     try {
-      const res = await fetch(url, { 
-        signal: inFlightController.signal, 
+      const res = await fetch(url, {
+        signal: inFlightController.signal,
         credentials: 'same-origin',
-        headers: { 
+        headers: {
           'Accept': 'application/json',
           'X-WP-Nonce': dbMapData.restNonce
-        } 
+        }
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const geo = await res.json();
@@ -892,6 +893,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         const id = f?.properties?.id;
         if (id != null) featureCache.set(id, f);
       }
+      lastSearchCenter = { lat: center.lat, lng: center.lng };
+      lastSearchRadiusKm = radiusKm;
       // Výběr pro aktuální zobrazení: pouze body uvnitř posledního radiusu a aktuálního viewportu
         const visibleNow = selectFeaturesForView();
         features = (visibleNow && visibleNow.length > 0) ? visibleNow : (lastRenderedFeatures.length > 0 ? lastRenderedFeatures : incoming);
@@ -952,7 +955,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             });
             const fbounds = L.latLngBounds(latlngs);
             // První fetch po startu: dovol mírný auto-fit
-            if (!lastSearchCenter) {
+            if (!previousCenter) {
               map.fitBounds(fbounds.pad(0.1), { animate: true, maxZoom: 16 });
             } else {
               // Další fetch: nepřibližuj/nevzdaluj; jen posuň na nejbližší bod, aby byl viditelný
@@ -973,8 +976,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       } catch(_) {}
       // map.setView(center, Math.max(map.getZoom() || 9, 9)); // vypnuto: neposouvat mapu po načtení v režimu okruhu
-      lastSearchCenter = { lat: center.lat, lng: center.lng };
-      lastSearchRadiusKm = radiusKm;
     } catch (err) {
       if (err.name !== 'AbortError') {
       }
