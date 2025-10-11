@@ -39,22 +39,42 @@ class Icon_Registry {
             ];
         }
         if ( $type === 'rv_spot' ) {
+            // Centrální barva RV pinu a SVG ikony
+            $global_rv_color = get_option('db_rv_color', '#FCE67D');
+            $global_rv_color = is_string($global_rv_color) ? sanitize_hex_color($global_rv_color) : '#FCE67D';
+            if (empty($global_rv_color)) { $global_rv_color = '#FCE67D'; }
+
             $rv_types = wp_get_post_terms( $post->ID, 'rv_type' );
+            $icon_slug = '';
             if ( !empty($rv_types) && !is_wp_error($rv_types) ) {
                 $term = $rv_types[0];
                 $icon_slug = get_term_meta( $term->term_id, 'icon_slug', true );
-                $color_hex = get_term_meta( $term->term_id, 'color_hex', true );
-                $slug = $icon_slug ? $icon_slug . '.svg' : '';
-                return [
-                    'slug' => $slug,
-                    'color' => $color_hex ?: null,
-                ];
-            } else {
-                return [
-                    'slug' => '',
-                    'color' => null,
-                ];
             }
+
+            if ( !empty($icon_slug) ) {
+                $svg_path = $this->base_path . $icon_slug . '.svg';
+                if ( file_exists($svg_path) ) {
+                    $svg_content = file_get_contents($svg_path);
+                    $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
+                    $svg_content = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg_content);
+                    $svg_content = preg_replace('/<svg /', '<svg width="100%" height="100%" style="display:block;" ', $svg_content, 1);
+                    $icon_fill = get_option('db_rv_icon_color', '#049FE8');
+                    if (!is_string($icon_fill) || !preg_match('/^#[0-9a-fA-F]{6}$/', $icon_fill)) { $icon_fill = '#049FE8'; }
+                    $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_fill . '"', $svg_content);
+                    $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_fill . '"', $svg_content);
+                    return [
+                        'slug' => $icon_slug,
+                        'svg_content' => $svg_content,
+                        'color' => $global_rv_color,
+                    ];
+                }
+            }
+
+            return [
+                'slug' => $icon_slug ?: '',
+                'svg_content' => '',
+                'color' => $global_rv_color,
+            ];
         }
         if ( $type === 'poi' ) {
             $poi_terms = wp_get_post_terms( $post->ID, 'poi_type' );
@@ -73,28 +93,50 @@ class Icon_Registry {
                         $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
                         $svg_content = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg_content);
                         $svg_content = preg_replace('/<svg /', '<svg width="100%" height="100%" style="display:block;" ', $svg_content, 1);
-                        // Nastav fill a stroke na bílé
-                        $svg_content = preg_replace('/fill="[^"]*"/', 'fill="#fff"', $svg_content);
-                        $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="#fff"', $svg_content);
-                        
+                        // Nastav fill a stroke podle globální barvy SVG ikony
+                        $icon_fill = get_option('db_poi_icon_color', '#049FE8');
+                        if (!is_string($icon_fill) || !preg_match('/^#[0-9a-fA-F]{6}$/', $icon_fill)) {
+                            $icon_fill = '#049FE8';
+                        }
+                        $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_fill . '"', $svg_content);
+                        $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_fill . '"', $svg_content);
+                        // Centrální barva POI pinů (option), fallback na #FCE67D dle brandbooku
+                        $global_poi_color = get_option('db_poi_color', '#FCE67D');
+                        $global_poi_color = is_string($global_poi_color) ? sanitize_hex_color($global_poi_color) : '#FCE67D';
+                        if (empty($global_poi_color)) {
+                            $global_poi_color = '#FCE67D';
+                        }
                         return [
                             'slug' => $icon_slug,
                             'svg_content' => $svg_content,
-                            'color' => '#FF6A4B', // Jednotná oranžová barva pro POI
+                            // POI barva se čerpá z centrálního nastavení
+                            'color' => $global_poi_color,
                         ];
                     }
                 }
                 
+                // Pokud není SVG dekorace, vrátit defaultní barvu z centrálního nastavení
+                $global_poi_color = get_option('db_poi_color', '#FCE67D');
+                $global_poi_color = is_string($global_poi_color) ? sanitize_hex_color($global_poi_color) : '#FCE67D';
+                if (empty($global_poi_color)) {
+                    $global_poi_color = '#FCE67D';
+                }
                 return [
                     'slug' => '',
                     'svg_content' => '',
-                    'color' => '#FF6A4B', // Jednotná oranžová barva pro POI
+                    'color' => $global_poi_color,
                 ];
             } else {
+                // Fallback pro případy bez termu – stále použít centrální barvu
+                $global_poi_color = get_option('db_poi_color', '#FCE67D');
+                $global_poi_color = is_string($global_poi_color) ? sanitize_hex_color($global_poi_color) : '#FCE67D';
+                if (empty($global_poi_color)) {
+                    $global_poi_color = '#FCE67D';
+                }
                 return [
                     'slug' => '',
                     'svg_content' => '',
-                    'color' => '#FF6A4B', // Jednotná oranžová barva pro POI
+                    'color' => $global_poi_color,
                 ];
             }
         }

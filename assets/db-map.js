@@ -1305,21 +1305,18 @@ document.addEventListener('DOMContentLoaded', async function() {
             hasRecommended = true;
           }
         });
-        const size = 36; const badgeSize = 16;
-        let bg = '#049FE8'; let color = '#fff';
-        if (style === 'charger') {
+    const size = 36; const badgeSize = 16;
+    let bg = '#049FE8'; let color = '#fff';
+    const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+    const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
+    const poiColor = (window.dbMapData && window.dbMapData.poiColor) || '#FCE67D';
+    if (style === 'charger') {
           // Hladší prolínání (více mezikroků mezi modrou a růžovou)
-          bg = 'linear-gradient(135deg, '
-             + '#049FE8 0%, '
-             + '#56BFF0 30%, '
-             + '#9DCAF3 45%, '
-             + '#D9B7E6 60%, '
-             + '#FFB6CD 75%, '
-             + '#FFACC4 100%)';
+      bg = 'linear-gradient(135deg, ' + acColor + ' 0%, ' + dcColor + ' 100%)';
           color = '#ffffff';
         }
-        else if (style === 'rv') { bg = '#FCE67D'; color = '#333333'; }
-        else if (style === 'poi') { bg = '#FF6A4B'; color = '#ffffff'; }
+    else if (style === 'rv') { bg = (window.dbMapData && window.dbMapData.rvColor) ? window.dbMapData.rvColor : '#FCE67D'; color = '#333333'; }
+    else if (style === 'poi') { bg = poiColor; color = '#333333'; }
         const dbBadge = hasRecommended ? `<div style="position:absolute;right:-4px;top:-4px;width:${badgeSize}px;height:${badgeSize}px;">${getDbLogoHtml(badgeSize)}</div>` : '';
         const clusterHtml = `
           <div style="position:relative;width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;background:${bg};color:${color};border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.25);font-weight:700;">
@@ -2189,8 +2186,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (props.post_type === 'charging_location') {
       // Pro nabíječky použít stejnou logiku jako piny
       const mode = getChargerMode(props);
-      const acColor = '#049FE8';
-      const dcColor = '#FFACC4';
+      const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+      const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
       if (mode === 'hybrid') {
         return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
       }
@@ -2198,7 +2195,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     } else if (props.post_type === 'rv_spot') {
       return '#FCE67D'; // Žlutá pro RV místa
     } else if (props.post_type === 'poi') {
-      return '#FF6A4B'; // Oranžová pro POI
+      // Pozadí u POI dědí centrální barvu pinu
+      return props.icon_color || '#FCE67D';
     }
     return '#049FE8'; // Modrá jako fallback
   };
@@ -2384,8 +2382,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           const getNearbySquareColor = (props) => {
             if (props.post_type === 'charging_location') {
               const mode = getChargerMode(props);
-              const acColor = '#049FE8';
-              const dcColor = '#FFACC4';
+              const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+              const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
               if (mode === 'hybrid') {
                 return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
               }
@@ -2393,7 +2391,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             } else if (props.post_type === 'rv_spot') {
               return '#FCE67D';
             } else if (props.post_type === 'poi') {
-              return '#FF6A4B';
+              return item.icon_color || '#FCE67D';
             }
             return '#049FE8';
           };
@@ -2546,8 +2544,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const getCacheItemSquareColor = (props) => {
         if (props.post_type === 'charging_location') {
           const mode = getChargerMode(props);
-          const acColor = '#049FE8';
-          const dcColor = '#FFACC4';
+          const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+          const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
           if (mode === 'hybrid') {
             return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
           }
@@ -2555,7 +2553,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else if (props.post_type === 'rv_spot') {
           return '#FCE67D';
         } else if (props.post_type === 'poi') {
-          return '#FF6A4B';
+          return props.icon_color || '#FCE67D';
         }
         return '#049FE8';
       };
@@ -2567,7 +2565,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           style="width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:4px 0;display:flex;gap:12px;align-items:center;cursor:pointer;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.1);"
           onmouseover="this.style.backgroundColor='#f8fafc';this.style.borderColor='#049FE8';this.style.transform='translateY(-1px)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
           onmouseout="this.style.backgroundColor='#fff';this.style.borderColor='#e5e7eb';this.style.transform='translateY(0)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)';">
-          <div style="font-size:20px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${squareColor};border-radius:50%;">${typeBadge}</div>
+          <div style="font-size:20px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${squareColor};border-radius:4px;">${typeBadge}</div>
           <div style="flex:1 1 auto;min-width:0;">
             <div style="font-weight:600;color:#111;font-size:14px;line-height:1.3;margin-bottom:2px;word-wrap:break-word;">${item.title || item.name || '(bez názvu)'}</div>
             <div style="color:#10b981;font-weight:600;font-size:12px;">🚶 ${distKm} km • ${mins} min</div>
@@ -2657,7 +2655,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else if (props.post_type === 'rv_spot') {
           return '#FCE67D';
         } else if (props.post_type === 'poi') {
-          return '#FF6A4B';
+          return props.icon_color || '#FCE67D';
         }
         return '#049FE8';
       };
@@ -2667,7 +2665,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           style="width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:4px 0;display:flex;gap:12px;align-items:center;cursor:pointer;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.1);"
           onmouseover="this.style.backgroundColor='#f8fafc';this.style.borderColor='#049FE8';this.style.transform='translateY(-1px)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
           onmouseout="this.style.backgroundColor='#fff';this.style.borderColor='#e5e7eb';this.style.transform='translateY(0)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)';">
-          <div style="font-size:20px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${getNearbyItemSquareColor(item)};border-radius:50%;">${typeBadge}</div>
+          <div style="font-size:20px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${getNearbyItemSquareColor(item)};border-radius:4px;">${typeBadge}</div>
           <div style="flex:1 1 auto;min-width:0;">
             <div style="font-weight:600;color:#111;font-size:14px;line-height:1.3;margin-bottom:2px;word-wrap:break-word;">${item.name || item.title || '(bez názvu)'}</div>
             <div style="color:#10b981;font-weight:600;font-size:12px;">${walkText}</div>
@@ -3339,8 +3337,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const getDetailSquareColor = (props) => {
       if (props.post_type === 'charging_location') {
         const mode = getChargerMode(props);
-        const acColor = '#049FE8';
-        const dcColor = '#FFACC4';
+        const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+        const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
         if (mode === 'hybrid') {
           return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
         }
@@ -3348,7 +3346,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       } else if (props.post_type === 'rv_spot') {
         return '#FCE67D';
       } else if (props.post_type === 'poi') {
-        return '#FF6A4B';
+        // Použij barvu z REST (centrální nastavení Icon_Registry)
+        return props.icon_color || '#FCE67D';
       }
       return '#049FE8';
     };
@@ -4377,15 +4376,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         let strokeColor = 'none';
         let strokeWidth = 0;
         if (active) {
-          const defaultStroke = highlightColors && highlightColors.ringColor ? highlightColors.ringColor : '#FF6A4B';
-          const normalizedFill = normalizeHexColor(fill);
-          let borderColor = defaultStroke;
-          const normalizedBorder = normalizeHexColor(borderColor);
-          if (normalizedFill && normalizedBorder && normalizedFill === normalizedBorder) {
-            borderColor = (highlightColors && highlightColors.haloBase) ? highlightColors.haloBase : '#024B9B';
-          }
-          strokeColor = borderColor;
-          strokeWidth = 3.5;
+          // Sjednocená barva rámečku pro všechny piny
+          const borderColorUnified = '#FF6A4B';
+          strokeColor = borderColorUnified;
+          // Zúžit tloušťku o 50 % oproti předchozí (3.5 → 1.75)
+          strokeWidth = 1.75;
         }
         const styleParts = [
           'position:relative',
@@ -4478,8 +4473,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else if (p.post_type === 'charging_location') {
           // Pro nabíjecí místa použít hybridní pin ikonu
           const mode = getChargerMode(p);
-          const acColor = '#049FE8';
-          const dcColor = '#FFACC4';
+          const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+          const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
           if (mode === 'hybrid') {
             fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><defs><linearGradient id="card-grad-${p.id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="${acColor}"/><stop offset="100%" stop-color="${dcColor}"/></linearGradient></defs><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="url(#card-grad-${p.id})"/></svg>`;
           } else {
@@ -4992,14 +4987,16 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Výpočet výplně markeru (barva nebo gradient) pro nabíječky
   function getChargerFill(p, active) {
     const mode = getChargerMode(p);
-    const acColor = '#049FE8';
-    const dcColor = '#FFACC4';
+    const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+    const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
+    const blendStart = (window.dbMapData && window.dbMapData.chargerColors && Number.isFinite(window.dbMapData.chargerColors.blendStart)) ? window.dbMapData.chargerColors.blendStart : 30;
+    const blendEnd = (window.dbMapData && window.dbMapData.chargerColors && Number.isFinite(window.dbMapData.chargerColors.blendEnd)) ? window.dbMapData.chargerColors.blendEnd : 70;
     if (mode === 'hybrid') {
       const gid = 'grad-' + (p.id || Math.random().toString(36).slice(2)) + '-' + (active ? 'a' : 'd');
       const defs = '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="1" y2="0">'
                  + '<stop offset="0%" stop-color="' + acColor + '"/>'
-                 + '<stop offset="30%" stop-color="' + acColor + '"/>'
-                 + '<stop offset="70%" stop-color="' + dcColor + '"/>'
+                 + '<stop offset="' + Math.max(0, Math.min(100, blendStart)) + '%" stop-color="' + acColor + '"/>'
+                 + '<stop offset="' + Math.max(0, Math.min(100, blendEnd)) + '%" stop-color="' + dcColor + '"/>'
                  + '<stop offset="100%" stop-color="' + dcColor + '"/>'
                  + '</linearGradient></defs>';
       return { fill: 'url(#' + gid + ')', defs };

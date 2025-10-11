@@ -25,7 +25,7 @@ if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'DB_DEBUG' ) && DB_DEBUG ) {
 define( 'DB_PLUGIN_FILE', __FILE__ );
 define( 'DB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'DB_PLUGIN_VERSION', '1.0.5-local-working' );
+define( 'DB_PLUGIN_VERSION', '1.0.6-local-working' );
 
 // -----------------------------------------------------------------------------
 // Access helpers – jednotná kontrola přístupu k mapové appce
@@ -415,6 +415,14 @@ add_action('wp_enqueue_scripts', function() {
         'ajaxUrl' => admin_url('admin-ajax.php'),
         'adminNonce' => wp_create_nonce('db_admin_actions'),
         'adminUrl' => admin_url(),
+        'chargerColors' => array(
+            'ac' => get_option('db_charger_ac_color', '#049FE8'),
+            'dc' => get_option('db_charger_dc_color', '#FFACC4'),
+            'blendStart' => (int) get_option('db_charger_blend_start', 30),
+            'blendEnd' => (int) get_option('db_charger_blend_end', 70),
+        ),
+        'poiColor' => get_option('db_poi_color', '#FCE67D'),
+        'rvColor' => get_option('db_rv_color', '#FCE67D'),
     ) );
 }, 20);
 

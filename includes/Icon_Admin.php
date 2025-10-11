@@ -16,6 +16,147 @@ class Icon_Admin {
         return self::$instance;
     }
 
+    private function render_rv_color_settings() {
+        if (isset($_POST['save_rv_color'])) {
+            if (wp_verify_nonce($_POST['rv_color_nonce'], 'save_rv_color')) {
+                $color = isset($_POST['db_rv_color']) ? sanitize_hex_color($_POST['db_rv_color']) : '';
+                if (!$color) { $color = '#FCE67D'; }
+                update_option('db_rv_color', $color);
+                $icon_color = isset($_POST['db_rv_icon_color']) ? sanitize_hex_color($_POST['db_rv_icon_color']) : '';
+                if (!$icon_color) { $icon_color = '#049FE8'; }
+                update_option('db_rv_icon_color', $icon_color);
+                echo '<div class="notice notice-success"><p>Barvy RV uloženy.</p></div>';
+            }
+        }
+        $current = get_option('db_rv_color', '#FCE67D');
+        if (!is_string($current) || !preg_match('/^#[0-9a-fA-F]{6}$/', $current)) { $current = '#FCE67D'; }
+        $current_icon = get_option('db_rv_icon_color', '#049FE8');
+        if (!is_string($current_icon) || !preg_match('/^#[0-9a-fA-F]{6}$/', $current_icon)) { $current_icon = '#049FE8'; }
+        ?>
+        <div class="card">
+            <h2>Barva RV pinů</h2>
+            <p>Centrální barva výplně a barva SVG ikony pro RV místa.</p>
+            <form method="post" action="">
+                <?php wp_nonce_field('save_rv_color', 'rv_color_nonce'); ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="db_rv_color">Barva pinu (HEX)</label></th>
+                        <td>
+                            <input type="text" id="db_rv_color" name="db_rv_color" value="<?php echo esc_attr($current); ?>" class="regular-text" style="width:120px;" />
+                            <input type="color" id="db_rv_color_picker" value="<?php echo esc_attr($current); ?>" style="width:40px;height:40px;vertical-align:middle;margin-left:8px;" />
+                            <p class="description">Výchozí je #FCE67D.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="db_rv_icon_color">Barva SVG ikony (HEX)</label></th>
+                        <td>
+                            <input type="text" id="db_rv_icon_color" name="db_rv_icon_color" value="<?php echo esc_attr($current_icon); ?>" class="regular-text" style="width:120px;" />
+                            <input type="color" id="db_rv_icon_color_picker" value="<?php echo esc_attr($current_icon); ?>" style="width:40px;height:40px;vertical-align:middle;margin-left:8px;" />
+                            <p class="description">Výchozí je #049FE8.</p>
+                        </td>
+                    </tr>
+                </table>
+                <p>
+                    <input type="submit" name="save_rv_color" class="button-primary" value="Uložit" />
+                </p>
+            </form>
+        </div>
+        <script>
+        (function(){
+            function bindSync(txtId, pickId){
+                var txt = document.getElementById(txtId);
+                var pick = document.getElementById(pickId);
+                pick.addEventListener('input', function(){ txt.value = pick.value; });
+                txt.addEventListener('input', function(){ if(/^#[0-9a-fA-F]{6}$/.test(txt.value)){ pick.value = txt.value; } });
+                txt.addEventListener('change', function(){ if(/^#[0-9a-fA-F]{6}$/.test(txt.value)){ pick.value = txt.value; } });
+            }
+            bindSync('db_rv_color','db_rv_color_picker');
+            bindSync('db_rv_icon_color','db_rv_icon_color_picker');
+        })();
+        </script>
+        <?php
+    }
+
+    private function render_charger_colors_settings() {
+        if (isset($_POST['save_charger_colors'])) {
+            if (wp_verify_nonce($_POST['charger_colors_nonce'], 'save_charger_colors')) {
+                $ac = isset($_POST['db_charger_ac_color']) ? sanitize_hex_color($_POST['db_charger_ac_color']) : '';
+                $dc = isset($_POST['db_charger_dc_color']) ? sanitize_hex_color($_POST['db_charger_dc_color']) : '';
+                $blend_start = isset($_POST['db_charger_blend_start']) ? intval($_POST['db_charger_blend_start']) : 30;
+                $blend_end = isset($_POST['db_charger_blend_end']) ? intval($_POST['db_charger_blend_end']) : 70;
+                if (!$ac) $ac = '#049FE8';
+                if (!$dc) $dc = '#FFACC4';
+                $blend_start = max(0, min(100, $blend_start));
+                $blend_end = max(0, min(100, $blend_end));
+                if ($blend_end <= $blend_start) { $blend_end = min(100, $blend_start + 20); }
+                update_option('db_charger_ac_color', $ac);
+                update_option('db_charger_dc_color', $dc);
+                update_option('db_charger_blend_start', $blend_start);
+                update_option('db_charger_blend_end', $blend_end);
+                echo '<div class="notice notice-success"><p>Barvy nabíječek uloženy.</p></div>';
+            }
+        }
+        $ac = get_option('db_charger_ac_color', '#049FE8');
+        $dc = get_option('db_charger_dc_color', '#FFACC4');
+        $blend_start = (int) get_option('db_charger_blend_start', 30);
+        $blend_end = (int) get_option('db_charger_blend_end', 70);
+        if (!is_string($ac) || !preg_match('/^#[0-9a-fA-F]{6}$/', $ac)) $ac = '#049FE8';
+        if (!is_string($dc) || !preg_match('/^#[0-9a-fA-F]{6}$/', $dc)) $dc = '#FFACC4';
+        ?>
+        <div class="card">
+            <h2>Barvy nabíječek</h2>
+            <p>Nastavení základních barev pro AC a DC a šířky přechodu pro hybridní (kombinovaný) bod.</p>
+            <form method="post" action="">
+                <?php wp_nonce_field('save_charger_colors', 'charger_colors_nonce'); ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="db_charger_ac_color">AC barva</label></th>
+                        <td>
+                            <input type="text" id="db_charger_ac_color" name="db_charger_ac_color" value="<?php echo esc_attr($ac); ?>" class="regular-text" style="width:120px;" />
+                            <input type="color" id="db_charger_ac_color_picker" value="<?php echo esc_attr($ac); ?>" style="width:40px;height:40px;vertical-align:middle;margin-left:8px;" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="db_charger_dc_color">DC barva</label></th>
+                        <td>
+                            <input type="text" id="db_charger_dc_color" name="db_charger_dc_color" value="<?php echo esc_attr($dc); ?>" class="regular-text" style="width:120px;" />
+                            <input type="color" id="db_charger_dc_color_picker" value="<?php echo esc_attr($dc); ?>" style="width:40px;height:40px;vertical-align:middle;margin-left:8px;" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="db_charger_blend_start">Hybrid přechod od (%)</label></th>
+                        <td>
+                            <input type="number" id="db_charger_blend_start" name="db_charger_blend_start" value="<?php echo esc_attr($blend_start); ?>" min="0" max="100" step="1" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="db_charger_blend_end">Hybrid přechod do (%)</label></th>
+                        <td>
+                            <input type="number" id="db_charger_blend_end" name="db_charger_blend_end" value="<?php echo esc_attr($blend_end); ?>" min="0" max="100" step="1" />
+                        </td>
+                    </tr>
+                </table>
+                <p>
+                    <input type="submit" name="save_charger_colors" class="button-primary" value="Uložit" />
+                </p>
+            </form>
+        </div>
+        <script>
+        (function(){
+            function bindSync(txtId, pickId){
+                var txt = document.getElementById(txtId);
+                var pick = document.getElementById(pickId);
+                pick.addEventListener('input', function(){ txt.value = pick.value; });
+                txt.addEventListener('input', function(){ if(/^#[0-9a-fA-F]{6}$/.test(txt.value)){ pick.value = txt.value; } });
+                txt.addEventListener('change', function(){ if(/^#[0-9a-fA-F]{6}$/.test(txt.value)){ pick.value = txt.value; } });
+            }
+            bindSync('db_charger_ac_color','db_charger_ac_color_picker');
+            bindSync('db_charger_dc_color','db_charger_dc_color_picker');
+        })();
+        </script>
+        <?php
+    }
+
     private function __construct() {
         add_action( 'admin_menu', array( $this, 'add_menu_page' ) );
         add_action( 'admin_init', array( $this, 'handle_form' ) );
@@ -122,10 +263,19 @@ class Icon_Admin {
         echo '<h2 class="nav-tab-wrapper">';
         echo '<a href="?page=db-icon-admin&tab=icons" class="nav-tab ' . ($active_tab == 'icons' ? 'nav-tab-active' : '') . '">Správa ikon</a>';
         echo '<a href="?page=db-icon-admin&tab=api" class="nav-tab ' . ($active_tab == 'api' ? 'nav-tab-active' : '') . '">API nastavení</a>';
+        echo '<a href="?page=db-icon-admin&tab=poi_color" class="nav-tab ' . ($active_tab == 'poi_color' ? 'nav-tab-active' : '') . '">Barva POI pinů</a>';
+        echo '<a href="?page=db-icon-admin&tab=charger_colors" class="nav-tab ' . ($active_tab == 'charger_colors' ? 'nav-tab-active' : '') . '">Barvy nabíječek</a>';
+        echo '<a href="?page=db-icon-admin&tab=rv_color" class="nav-tab ' . ($active_tab == 'rv_color' ? 'nav-tab-active' : '') . '">Barva RV pinů</a>';
         echo '</h2>';
         
         if ($active_tab == 'api') {
             $this->render_api_settings();
+        } elseif ($active_tab == 'poi_color') {
+            $this->render_poi_color_settings();
+        } elseif ($active_tab == 'charger_colors') {
+            $this->render_charger_colors_settings();
+        } elseif ($active_tab == 'rv_color') {
+            $this->render_rv_color_settings();
         } else {
             $this->render_icons_table();
         }
@@ -398,6 +548,72 @@ class Icon_Admin {
                 closeOrsApiKeyDialog();
             }
         }
+        </script>
+        <?php
+    }
+    
+    private function render_poi_color_settings() {
+        if (isset($_POST['save_poi_color'])) {
+            if (wp_verify_nonce($_POST['poi_color_nonce'], 'save_poi_color')) {
+                $color = isset($_POST['db_poi_color']) ? sanitize_hex_color($_POST['db_poi_color']) : '';
+                if (!$color) { $color = '#FCE67D'; }
+                update_option('db_poi_color', $color);
+                $icon_color = isset($_POST['db_poi_icon_color']) ? sanitize_hex_color($_POST['db_poi_icon_color']) : '';
+                if (!$icon_color) { $icon_color = '#049FE8'; }
+                update_option('db_poi_icon_color', $icon_color);
+                echo '<div class="notice notice-success"><p>Barvy POI uloženy.</p></div>';
+            }
+        }
+        $current = get_option('db_poi_color', '#FCE67D');
+        if (!is_string($current) || !preg_match('/^#[0-9a-fA-F]{6}$/', $current)) {
+            $current = '#FCE67D';
+        }
+        $current_icon = get_option('db_poi_icon_color', '#049FE8');
+        if (!is_string($current_icon) || !preg_match('/^#[0-9a-fA-F]{6}$/', $current_icon)) {
+            $current_icon = '#049FE8';
+        }
+        ?>
+        <div class="card">
+            <h2>Barva POI pinů</h2>
+            <p>Centrální barva výplně pinů pro všechny POI. Tuto barvu zdědí i komponenty na frontendu, které dosud používaly pevnou barvu.</p>
+            <form method="post" action="">
+                <?php wp_nonce_field('save_poi_color', 'poi_color_nonce'); ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="db_poi_color">Barva (HEX)</label></th>
+                        <td>
+                            <input type="text" id="db_poi_color" name="db_poi_color" value="<?php echo esc_attr($current); ?>" class="regular-text" style="width:120px;" />
+                            <input type="color" id="db_poi_color_picker" value="<?php echo esc_attr($current); ?>" style="width:40px;height:40px;vertical-align:middle;margin-left:8px;" />
+                            <p class="description">Výchozí je #FCE67D dle brandbooku.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="db_poi_icon_color">Barva SVG ikony (HEX)</label></th>
+                        <td>
+                            <input type="text" id="db_poi_icon_color" name="db_poi_icon_color" value="<?php echo esc_attr($current_icon); ?>" class="regular-text" style="width:120px;" />
+                            <input type="color" id="db_poi_icon_color_picker" value="<?php echo esc_attr($current_icon); ?>" style="width:40px;height:40px;vertical-align:middle;margin-left:8px;" />
+                            <p class="description">Barva výplně/obrysu SVG ikony uvnitř pinu. Výchozí #049FE8.</p>
+                        </td>
+                    </tr>
+                </table>
+                <p>
+                    <input type="submit" name="save_poi_color" class="button-primary" value="Uložit" />
+                </p>
+            </form>
+        </div>
+        <script>
+        (function(){
+            var txt = document.getElementById('db_poi_color');
+            var picker = document.getElementById('db_poi_color_picker');
+            picker.addEventListener('input', function(){ txt.value = picker.value; });
+            txt.addEventListener('input', function(){ if(/^#[0-9a-fA-F]{6}$/.test(txt.value)){ picker.value = txt.value; } });
+            txt.addEventListener('change', function(){ if(/^#[0-9a-fA-F]{6}$/.test(txt.value)){ picker.value = txt.value; } });
+            var txt2 = document.getElementById('db_poi_icon_color');
+            var picker2 = document.getElementById('db_poi_icon_color_picker');
+            picker2.addEventListener('input', function(){ txt2.value = picker2.value; });
+            txt2.addEventListener('input', function(){ if(/^#[0-9a-fA-F]{6}$/.test(txt2.value)){ picker2.value = txt2.value; } });
+            txt2.addEventListener('change', function(){ if(/^#[0-9a-fA-F]{6}$/.test(txt2.value)){ picker2.value = txt2.value; } });
+        })();
         </script>
         <?php
     }

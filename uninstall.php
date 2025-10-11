@@ -106,6 +106,14 @@ delete_option( 'db_map_default_lng' );
 delete_option( 'db_map_default_zoom' );
 delete_option( 'db_icon_registry' );
 delete_option( 'db_color_scheme' );
+delete_option( 'db_poi_color' );
+delete_option( 'db_poi_icon_color' );
+delete_option( 'db_charger_ac_color' );
+delete_option( 'db_charger_dc_color' );
+delete_option( 'db_charger_blend_start' );
+delete_option( 'db_charger_blend_end' );
+delete_option( 'db_rv_color' );
+delete_option( 'db_rv_icon_color' );
 
 // Smazání transients
 delete_transient( 'db_map_data_cache' );
