@@ -423,6 +423,8 @@ add_action('wp_enqueue_scripts', function() {
         ),
         'poiColor' => get_option('db_poi_color', '#FCE67D'),
         'rvColor' => get_option('db_rv_color', '#FCE67D'),
+        // Barva ikony nabíječky uvnitř pinu (bez vnitřního fill ve SVG)
+        'chargerIconColor' => get_option('db_charger_icon_color', '#ffffff'),
     ) );
 }, 20);
 
