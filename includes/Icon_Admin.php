@@ -82,15 +82,18 @@ class Icon_Admin {
             if (wp_verify_nonce($_POST['charger_colors_nonce'], 'save_charger_colors')) {
                 $ac = isset($_POST['db_charger_ac_color']) ? sanitize_hex_color($_POST['db_charger_ac_color']) : '';
                 $dc = isset($_POST['db_charger_dc_color']) ? sanitize_hex_color($_POST['db_charger_dc_color']) : '';
+                $icon = isset($_POST['db_charger_icon_color']) ? sanitize_hex_color($_POST['db_charger_icon_color']) : '';
                 $blend_start = isset($_POST['db_charger_blend_start']) ? intval($_POST['db_charger_blend_start']) : 30;
                 $blend_end = isset($_POST['db_charger_blend_end']) ? intval($_POST['db_charger_blend_end']) : 70;
                 if (!$ac) $ac = '#049FE8';
                 if (!$dc) $dc = '#FFACC4';
+                if (!$icon) $icon = '#ffffff';
                 $blend_start = max(0, min(100, $blend_start));
                 $blend_end = max(0, min(100, $blend_end));
                 if ($blend_end <= $blend_start) { $blend_end = min(100, $blend_start + 20); }
                 update_option('db_charger_ac_color', $ac);
                 update_option('db_charger_dc_color', $dc);
+                update_option('db_charger_icon_color', $icon);
                 update_option('db_charger_blend_start', $blend_start);
                 update_option('db_charger_blend_end', $blend_end);
                 echo '<div class="notice notice-success"><p>Barvy nabíječek uloženy.</p></div>';
@@ -98,10 +101,12 @@ class Icon_Admin {
         }
         $ac = get_option('db_charger_ac_color', '#049FE8');
         $dc = get_option('db_charger_dc_color', '#FFACC4');
+        $icon = get_option('db_charger_icon_color', '#ffffff');
         $blend_start = (int) get_option('db_charger_blend_start', 30);
         $blend_end = (int) get_option('db_charger_blend_end', 70);
         if (!is_string($ac) || !preg_match('/^#[0-9a-fA-F]{6}$/', $ac)) $ac = '#049FE8';
         if (!is_string($dc) || !preg_match('/^#[0-9a-fA-F]{6}$/', $dc)) $dc = '#FFACC4';
+        if (!is_string($icon) || !preg_match('/^#[0-9a-fA-F]{6}$/', $icon)) $icon = '#ffffff';
         ?>
         <div class="card">
             <h2>Barvy nabíječek</h2>
@@ -121,6 +126,14 @@ class Icon_Admin {
                         <td>
                             <input type="text" id="db_charger_dc_color" name="db_charger_dc_color" value="<?php echo esc_attr($dc); ?>" class="regular-text" style="width:120px;" />
                             <input type="color" id="db_charger_dc_color_picker" value="<?php echo esc_attr($dc); ?>" style="width:40px;height:40px;vertical-align:middle;margin-left:8px;" />
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="db_charger_icon_color">Barva SVG ikony (HEX)</label></th>
+                        <td>
+                            <input type="text" id="db_charger_icon_color" name="db_charger_icon_color" value="<?php echo esc_attr($icon); ?>" class="regular-text" style="width:120px;" />
+                            <input type="color" id="db_charger_icon_color_picker" value="<?php echo esc_attr($icon); ?>" style="width:40px;height:40px;vertical-align:middle;margin-left:8px;" />
+                            <p class="description">Barva SVG ikony uvnitř pinu nabíječek.</p>
                         </td>
                     </tr>
                     <tr>
@@ -152,6 +165,7 @@ class Icon_Admin {
             }
             bindSync('db_charger_ac_color','db_charger_ac_color_picker');
             bindSync('db_charger_dc_color','db_charger_dc_color_picker');
+            bindSync('db_charger_icon_color','db_charger_icon_color_picker');
         })();
         </script>
         <?php
@@ -180,12 +194,16 @@ class Icon_Admin {
         if ( ! current_user_can('manage_options') ) return;
         $type = sanitize_text_field($_POST['icon_type'] ?? '');
         $color = sanitize_hex_color($_POST['icon_color'] ?? '');
+        // Připrav cílový adresář v uploads
+        $up = wp_upload_dir();
+        $icons_dir = trailingslashit($up['basedir']) . 'dobity-baterky/icons/';
+        if ( ! is_dir( $icons_dir ) ) { wp_mkdir_p( $icons_dir ); }
         // Smazání dekorace (pouze pro POI a RV typy, ne pro charger_type)
         if (isset($_POST['delete_icon_svg']) && $_POST['delete_icon_svg'] === '1') {
             if (preg_match('/^(poi_type|rv_type):([0-9]+)$/', $type, $m)) {
                 $slug = $m[1] . '-' . $m[2];
-                $file = DB_PLUGIN_DIR . 'assets/icons/' . $slug . '.svg';
-                if (file_exists($file)) unlink($file);
+                $file_upload = $icons_dir . $slug . '.svg';
+                if (file_exists($file_upload)) unlink($file_upload);
                 $term_id = intval($m[2]);
                 if ($term_id) {
                     update_term_meta($term_id, 'icon_slug', '');
@@ -235,11 +253,7 @@ class Icon_Admin {
                 // Přidej width/height 100% a style
                 $svg = preg_replace('/<svg /', '<svg width="100%" height="100%" style="display:block;" ', $svg, 1);
                 $slug = str_replace(':', '-', $type);
-                $dir = DB_PLUGIN_DIR . 'assets/icons/';
-                if ( !is_dir($dir) ) {
-                    mkdir($dir, 0755, true);
-                }
-                $filename = $dir . $slug . '.svg';
+                $filename = $icons_dir . $slug . '.svg';
                 file_put_contents($filename, $svg);
             }
         }
@@ -630,8 +644,14 @@ class Icon_Admin {
             echo '<td>';
             $pin = '<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="' . esc_attr($color) . '"/></svg>';
             
-            if ($icon_slug && file_exists(DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg')) {
-                $svg = file_get_contents(DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg');
+            if ($icon_slug) {
+                // Preferovat uploads cestu, fallback do assets
+                $up = wp_upload_dir();
+                $uploads_icon = trailingslashit($up['basedir']) . 'dobity-baterky/icons/' . $icon_slug . '.svg';
+                $assets_icon = DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg';
+                $chosen = file_exists($uploads_icon) ? $uploads_icon : (file_exists($assets_icon) ? $assets_icon : '');
+                if ($chosen) {
+                    $svg = file_get_contents($chosen);
                 // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
                 $svg = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg);
                 $svg = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg);
@@ -640,6 +660,9 @@ class Icon_Admin {
                 $svg = preg_replace('/fill="[^"]*"/', 'fill="#fff"', $svg);
                 $svg = preg_replace('/stroke="[^"]*"/', 'stroke="#fff"', $svg);
                 echo '<div style="position:relative;width:32px;height:32px;display:inline-block;">' . $pin . '<div style="position:absolute;left:8px;top:6px;width:16px;height:16px;display:flex;align-items:center;justify-content:center;">' . $svg . '</div></div>';
+                } else {
+                echo '<div style="width:32px;height:32px;display:inline-block;">' . $pin . '</div>';
+                }
             } else {
                 echo '<div style="width:32px;height:32px;display:inline-block;">' . $pin . '</div>';
             }
@@ -665,8 +688,13 @@ class Icon_Admin {
             echo '<tr><td>' . esc_html($term->name) . ' <small>(RV)</small></td>';
             echo '<td>';
             $pin = '<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="' . esc_attr($color) . '"/></svg>';
-            if ($icon_slug && file_exists(DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg')) {
-                $svg = file_get_contents(DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg');
+            if ($icon_slug) {
+                $up = wp_upload_dir();
+                $uploads_icon = trailingslashit($up['basedir']) . 'dobity-baterky/icons/' . $icon_slug . '.svg';
+                $assets_icon = DB_PLUGIN_DIR . 'assets/icons/' . $icon_slug . '.svg';
+                $chosen = file_exists($uploads_icon) ? $uploads_icon : (file_exists($assets_icon) ? $assets_icon : '');
+                if ($chosen) {
+                    $svg = file_get_contents($chosen);
                 // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
                 $svg = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg);
                 $svg = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg);
@@ -675,6 +703,9 @@ class Icon_Admin {
                 $svg = preg_replace('/fill="[^"]*"/', 'fill="#fff"', $svg);
                 $svg = preg_replace('/stroke="[^"]*"/', 'stroke="#fff"', $svg);
                 echo '<div style="position:relative;width:32px;height:32px;display:inline-block;">' . $pin . '<div style="position:absolute;left:8px;top:6px;width:16px;height:16px;display:flex;align-items:center;justify-content:center;">' . $svg . '</div></div>';
+                } else {
+                echo '<div style="width:32px;height:32px;display:inline-block;">' . $pin . '</div>';
+                }
             } else {
                 echo '<div style="width:32px;height:32px;display:inline-block;">' . $pin . '</div>';
             }
@@ -715,8 +746,10 @@ JS;
         // Zjisti slug a existenci SVG dekorace
         if (preg_match('/^(poi_type|charger_type|rv_type):([0-9]+)$/', $type, $m)) {
             $slug = $m[1] . '-' . $m[2];
-            $svg_path = DB_PLUGIN_DIR . 'assets/icons/' . $slug . '.svg';
-            $has_svg = file_exists($svg_path);
+            $up = wp_upload_dir();
+            $uploads_icon = trailingslashit($up['basedir']) . 'dobity-baterky/icons/' . $slug . '.svg';
+            $assets_icon = DB_PLUGIN_DIR . 'assets/icons/' . $slug . '.svg';
+            $has_svg = file_exists($uploads_icon) || file_exists($assets_icon);
         } else {
             $slug = '';
             $has_svg = false;

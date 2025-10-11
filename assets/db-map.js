@@ -1155,7 +1155,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     mapDiv.innerHTML = '<div style="padding:2rem;text-align:center;color:#666;">Chyba: Mapa se nemohla načíst. Zkuste obnovit stránku.</div>';
     return;
   }
-  
      try {
        map = L.map('db-map', {
          zoomControl: true,
@@ -1768,14 +1767,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     map.on('locationerror', onLocErr);
     map.locate({ setView: false, enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
   }
-
   // ===== PANEL FILTRŮ A DALŠÍ FUNKTIONALITA =====
-
   // Panel filtrů (otevíraný tlačítkem Filtry)
   filterPanel = document.createElement('div');
   filterPanel.id = 'db-map-filter-panel';
   filterPanel.style.cssText = 'position:absolute;right:12px;top:64px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:12px;z-index:9999;min-width:240px;max-width:320px;max-height:calc(100vh - 120px);display:none;overflow-y:auto;pointer-events:auto;';
-  
   // Transparentní overlay pro blokování interakce s mapou
   mapOverlay = document.createElement('div');
   mapOverlay.id = 'db-map-overlay';
@@ -2316,8 +2312,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       loadAndRenderNearby(feature);
     }, 200);
   }
-  
-
   // Funkce pro načítání nearby dat pro mobile sheet (3 nejbližší body)
   async function loadNearbyForMobileSheet(containerEl, centerId, centerLat, centerLng) {
     if (!containerEl || !centerId) return;
@@ -2946,6 +2940,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
     tick();
   }
+
+  function toggleIsochronesForFeature(centerFeature) {
+    try {
+      if (!centerFeature || !centerFeature.properties) return;
+      // Pokud už jsou isochrony pro tento prvek zobrazené, smaž je, jinak je načti
+      const alreadyVisible = !!document.querySelector(`.leaflet-interactive[data-iso-of="${centerFeature.properties.id}"]`);
+      if (alreadyVisible) {
+        clearIsochrones();
+        return;
+      }
+      loadAndRenderNearby(centerFeature);
+    } catch(_) {}
+  }
   
   /**
    * Univerzální fetch funkce pro nearby data
@@ -2955,7 +2962,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const res = await fetch(url);
     return await res.json();
   }
-
   // Funkce pro kontrolu otevírací doby
   function checkIfOpen(openingHours) {
     if (!openingHours) return false;
@@ -3591,14 +3597,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Placeholder: zde lze napojit na skutečné oblíbené
     });
   }
-
   // Vyhledávání na mapě
   let searchQuery = '';
   const searchForm = topbar.querySelector('form.db-map-searchbox');
   const searchInput = topbar.querySelector('#db-map-search-input');
   const searchBtn = topbar.querySelector('#db-map-search-btn');
   // lastSearchResults už inicializováno na začátku
-  
   // Kontrola, zda existují elementy před přidáním event listenerů
   if (searchForm && searchInput && searchBtn) {
     function doSearch(e) {
@@ -4210,7 +4214,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     markers = [];
   }
-
   // Upravíme renderCards, aby synchronizovala markery s panelem
   function renderCards(filterText = '', activeId = null, isSearch = false) {
 
@@ -4468,7 +4471,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       } else {
         // Fallback na SVG ikonu z pinu nebo default ikonu
         let fallbackIcon = '';
-        if (p.icon_slug) {
+        if (p.svg_content) {
+          fallbackIcon = p.svg_content;
+        } else if (p.icon_slug) {
           fallbackIcon = `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;object-fit:contain;" alt="">`;
         } else if (p.post_type === 'charging_location') {
           // Pro nabíjecí místa použít hybridní pin ikonu
@@ -4482,10 +4487,24 @@ document.addEventListener('DOMContentLoaded', async function() {
             fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${color}"/></svg>`;
           }
         } else {
-          // Default ikona pro ostatní typy
-          fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="#049FE8"/></svg>`;
+          // Default ikona pro ostatní typy – použij centrální barvy
+          if (p.post_type === 'rv_spot') {
+            const rvColor = (window.dbMapData && window.dbMapData.rvColor) || '#FCE67D';
+            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${rvColor}"/></svg>`;
+          } else if (p.post_type === 'poi') {
+            const poiColor = (window.dbMapData && window.dbMapData.poiColor) || '#FCE67D';
+            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${poiColor}"/></svg>`;
+          } else {
+            const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${acColor}"/></svg>`;
+          }
         }
-        imgHtml = `<div class="db-map-card-img" style="background:#f8f9fa;display:flex;align-items:center;justify-content:center;border:1px solid #e5e7eb;">${fallbackIcon}</div>`;
+        const bgColor = (p.post_type === 'rv_spot')
+          ? ((window.dbMapData && window.dbMapData.rvColor) || '#FCE67D')
+          : (p.post_type === 'poi')
+            ? ((window.dbMapData && window.dbMapData.poiColor) || '#FCE67D')
+            : ((window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8');
+        imgHtml = `<div class="db-map-card-img" style="background:${bgColor};display:flex;align-items:center;justify-content:center;border:1px solid #e5e7eb;">${fallbackIcon}</div>`;
       }
       const card = document.createElement('div');
       card.className = 'db-map-card';
@@ -4505,6 +4524,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const infoIcon = `<button class="db-map-card-action-btn" title="Více informací">`
         + `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>`
         + `</button>`;
+      // Po vykreslení karty zavoláme loader až po vložení HTML níže
       // Typ POI nebo info o nabíječce
       let typeHtml = '';
       if (p.post_type === 'poi') {
@@ -4621,6 +4641,15 @@ document.addEventListener('DOMContentLoaded', async function() {
                 
                 return additionalInfo ? `<div class="db-map-card-amenities" style="margin-top:0.5em;padding-top:0.5em;border-top:1px solid #f0f0f0;">${additionalInfo}</div>` : '';
               })() : ''}
+
+              <div class="sheet-nearby">
+                <div class="sheet-nearby-list" data-feature-id="${p.id}">
+                  <div style="text-align: center; padding: 8px; color: #049FE8; font-size: 0.8em;">
+                    <div style="font-size: 16px; margin-bottom: 4px;">⏳</div>
+                    <div>Načítání...</div>
+                  </div>
+                </div>
+              </div>
               ${p.post_type === 'rv_spot' ? (() => {
                 let additionalInfo = '';
                 
@@ -4817,7 +4846,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     activeIdxGlobal = null;
     applyActiveHighlight();
   }
-
   // Pomocná funkce pro získání ID karty podle aktuálního pořadí v panelu
   function filteredCardIdAtIndex(idx) {
     const cards = document.querySelectorAll('.db-map-card');
@@ -4829,8 +4857,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // První render
   renderCards();
-  
-
   // ===== AUTO-FETCH V RADIUS REŽIMU NA MOVE/ZOOM =====
   const onViewportChanged = debounce(async () => {
     try {
@@ -5457,10 +5483,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const langCode = lang.split('-')[0].toLowerCase();
     return langMap[langCode] || 'CZ';
   }
-
   // Inicializace lokality prohlížeče při načtení stránky (po deklaraci funkcí)
   getBrowserLocale().catch(() => {});
-  
   // Funkce pro výchozí souřadnice podle země
   function getDefaultCoordsForCountry(country) {
     const coordsMap = {
@@ -5474,7 +5498,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
     return coordsMap[country] || [50.0755, 14.4378]; // Praha jako fallback
   }
-  
   // Funkce pro konfiguraci vyhledávání podle země
   function getCountrySearchConfig(country) {
     const configs = {
@@ -5972,7 +5995,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // ===== KONEC HLAVNÍ FUNKCE =====
 });
-
 // Konec db-map.js 
 ;(function(){
   try {

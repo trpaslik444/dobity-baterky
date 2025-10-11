@@ -31,11 +31,11 @@ class Icon_Registry {
     public function get_icon( \WP_Post $post ) {
         $type = $post->post_type;
         if ( $type === 'charging_location' ) {
-            // Pro nabíjecí místa se vždy používá jednotná ikona charger_type-198.svg
-            // Barva se určuje podle AC/DC logiky na frontendu
+            // Pro nabíječky neembedujeme inline SVG do každé položky (šetří payload)
+            // Frontend používá jednotnou dekoraci (charger_type-198.svg) a centrální barvy
             return [
                 'slug' => 'charger_type-198.svg',
-                'color' => null, // Barva se určuje podle AC/DC, ne podle term meta
+                'color' => null,
             ];
         }
         if ( $type === 'rv_spot' ) {
@@ -52,7 +52,13 @@ class Icon_Registry {
             }
 
             if ( !empty($icon_slug) ) {
-                $svg_path = $this->base_path . $icon_slug . '.svg';
+                // Preferuj uploads, pak assets
+                $up = wp_upload_dir();
+                $uploads_path = trailingslashit($up['basedir']) . 'dobity-baterky/icons/';
+                $svg_path = $uploads_path . $icon_slug . '.svg';
+                if ( ! file_exists($svg_path) ) {
+                    $svg_path = $this->base_path . $icon_slug . '.svg';
+                }
                 if ( file_exists($svg_path) ) {
                     $svg_content = file_get_contents($svg_path);
                     $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
@@ -86,8 +92,14 @@ class Icon_Registry {
 
                 
                 if ( !empty($icon_slug) ) {
+                // Preferuj uploads, pak assets
+                $up = wp_upload_dir();
+                $uploads_path = trailingslashit($up['basedir']) . 'dobity-baterky/icons/';
+                $svg_path = $uploads_path . $icon_slug . '.svg';
+                if ( ! file_exists($svg_path) ) {
                     $svg_path = $this->base_path . $icon_slug . '.svg';
-                    if ( file_exists($svg_path) ) {
+                }
+                if ( file_exists($svg_path) ) {
                         $svg_content = file_get_contents($svg_path);
                         // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
                         $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
