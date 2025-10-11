@@ -4468,7 +4468,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       } else {
         // Fallback na SVG ikonu z pinu nebo default ikonu
         let fallbackIcon = '';
-        if (p.icon_slug) {
+        if (p.svg_content) {
+          fallbackIcon = p.svg_content;
+        } else if (p.icon_slug) {
           fallbackIcon = `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;object-fit:contain;" alt="">`;
         } else if (p.post_type === 'charging_location') {
           // Pro nabíjecí místa použít hybridní pin ikonu

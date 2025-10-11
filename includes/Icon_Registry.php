@@ -68,7 +68,13 @@ class Icon_Registry {
             }
 
             if ( !empty($icon_slug) ) {
-                $svg_path = $this->base_path . $icon_slug . '.svg';
+                // Preferuj uploads, pak assets
+                $up = wp_upload_dir();
+                $uploads_path = trailingslashit($up['basedir']) . 'dobity-baterky/icons/';
+                $svg_path = $uploads_path . $icon_slug . '.svg';
+                if ( ! file_exists($svg_path) ) {
+                    $svg_path = $this->base_path . $icon_slug . '.svg';
+                }
                 if ( file_exists($svg_path) ) {
                     $svg_content = file_get_contents($svg_path);
                     $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
@@ -102,8 +108,14 @@ class Icon_Registry {
 
                 
                 if ( !empty($icon_slug) ) {
+                // Preferuj uploads, pak assets
+                $up = wp_upload_dir();
+                $uploads_path = trailingslashit($up['basedir']) . 'dobity-baterky/icons/';
+                $svg_path = $uploads_path . $icon_slug . '.svg';
+                if ( ! file_exists($svg_path) ) {
                     $svg_path = $this->base_path . $icon_slug . '.svg';
-                    if ( file_exists($svg_path) ) {
+                }
+                if ( file_exists($svg_path) ) {
                         $svg_content = file_get_contents($svg_path);
                         // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
                         $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
