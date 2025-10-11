@@ -616,6 +616,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   let searchAddressMarker = null;
   let lastSearchResults = [];
   let activeIdxGlobal = null;
+  let activeFeatureId = null;
   // --- DEBUG utility odstraněna ---
   
   
@@ -1185,8 +1186,13 @@ document.addEventListener('DOMContentLoaded', async function() {
          const bar = document.getElementById('db-attribution-bar');
          positionAttributionBar(bar);
        }, 200);
-    
-  
+
+
+      map.on('click', () => {
+        clearActiveFeature();
+      });
+
+
   } catch (error) {
     mapDiv.innerHTML = '<div style="padding:2rem;text-align:center;color:#666;">Chyba při načítání mapy: ' + error.message + '</div>';
     return;
@@ -4220,22 +4226,42 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Upravíme renderCards, aby synchronizovala markery s panelem
   function renderCards(filterText = '', activeId = null, isSearch = false) {
-    
+
     // Kontrola, zda jsou potřebné proměnné inicializované
     if (typeof markers === 'undefined' || !Array.isArray(markers)) {
-      
+
       return;
     }
-    
+
     // Kontrola cardsWrap
     if (typeof cardsWrap === 'undefined') {
       return;
     }
-    
-    if (activeId !== null) activeIdxGlobal = findFeatureIndexById(activeId); // Uložíme poslední aktivní index
+
+    const normalizedIncomingActiveId = (typeof activeId === 'string') ? parseInt(activeId, 10) : activeId;
+    const hasIncomingActive = Number.isFinite(normalizedIncomingActiveId);
+    if (hasIncomingActive) {
+      let resolvedId = normalizedIncomingActiveId;
+      if (findFeatureIndexById(normalizedIncomingActiveId) === -1) {
+        const candidate = features[normalizedIncomingActiveId];
+        const candidateIdRaw = candidate && candidate.properties ? candidate.properties.id : null;
+        const candidateId = (typeof candidateIdRaw === 'string') ? parseInt(candidateIdRaw, 10) : candidateIdRaw;
+        if (Number.isFinite(candidateId)) {
+          resolvedId = candidateId;
+        }
+      }
+      activeFeatureId = resolvedId;
+    }
+
+    const effectiveActiveId = Number.isFinite(activeFeatureId) ? activeFeatureId : null;
+    if (effectiveActiveId !== null) {
+      const idx = findFeatureIndexById(effectiveActiveId);
+      activeIdxGlobal = idx >= 0 ? idx : null;
+    }
+
     cardsWrap.innerHTML = '';
     let filtered = features.filter(f => f.properties.title.toLowerCase().includes(filterText.toLowerCase()));
-    
+
     if (showOnlyRecommended) {
       filtered = filtered.filter(f => !!f.properties.db_recommended);
     }
@@ -4276,6 +4302,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       return;
     }
 
+    if (effectiveActiveId !== null) {
+      const activeStillVisible = filtered.some(f => f.properties.id === effectiveActiveId);
+      if (!activeStillVisible) {
+        activeFeatureId = null;
+        activeIdxGlobal = null;
+      }
+    }
+
+    const renderActiveId = Number.isFinite(activeFeatureId) ? activeFeatureId : null;
+
     // Řazení podle sortMode
     let sort = searchSortLocked ? 'distance_from_address' : sortMode;
     // Sjednocený výpočet vzdálenosti
@@ -4286,9 +4322,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         f._distance = getDistance(coords[0], coords[1], f.geometry.coordinates[1], f.geometry.coordinates[0]);
       });
       filtered.sort((a, b) => (a._distance||1e9)-(b._distance||1e9));
-    } else if (sort === 'distance-active' && (activeId !== null || activeIdxGlobal !== null)) {
+    } else if (sort === 'distance-active' && (renderActiveId !== null || activeIdxGlobal !== null)) {
       // Vzdálenost od aktivního bodu (po kliknutí na pin/kartu)
-      const idx = activeId !== null ? findFeatureIndexById(activeId) : activeIdxGlobal;
+      const idx = activeIdxGlobal !== null ? activeIdxGlobal : findFeatureIndexById(renderActiveId);
       const active = features[idx];
       if (active) {
         filtered.forEach(f => {
@@ -4301,8 +4337,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
     // Pokud je aktivní ID, přesuneme aktivní bod na začátek
-    if (activeId !== null && filtered.length > 1 && sort === 'distance-active') {
-      const idxInFiltered = filtered.findIndex(f => f.properties.id === activeId);
+    if (renderActiveId !== null && filtered.length > 1 && sort === 'distance-active') {
+      const idxInFiltered = filtered.findIndex(f => f.properties.id === renderActiveId);
       if (idxInFiltered > 0) {
         const [active] = filtered.splice(idxInFiltered, 1);
         filtered.unshift(active);
@@ -4350,39 +4386,33 @@ document.addEventListener('DOMContentLoaded', async function() {
           return p.icon_color || null;
         })();
         const highlightColors = active ? getBrandHighlightColors({ baseColor: baseColorForHighlight, mode: markerMode }) : null;
-
-        let outline = '';
+        let strokeColor = 'none';
+        let strokeWidth = 0;
         if (active) {
-          const haloStroke = (highlightColors && highlightColors.haloBase) ? highlightColors.haloBase : '#FCE67D';
-          const ringStroke = (highlightColors && highlightColors.ringColor) ? highlightColors.ringColor : '#049FE8';
-          outline = `
-            <path d="${pinPath}" fill="none" stroke="${haloStroke}" stroke-width="6" opacity="0.88"/>
-            <path d="${pinPath}" fill="none" stroke="${ringStroke}" stroke-width="3.5"/>
-          `;
+          const defaultStroke = highlightColors && highlightColors.ringColor ? highlightColors.ringColor : '#FF6A4B';
+          const normalizedFill = normalizeHexColor(fill);
+          let borderColor = defaultStroke;
+          const normalizedBorder = normalizeHexColor(borderColor);
+          if (normalizedFill && normalizedBorder && normalizedFill === normalizedBorder) {
+            borderColor = (highlightColors && highlightColors.haloBase) ? highlightColors.haloBase : '#024B9B';
+          }
+          strokeColor = borderColor;
+          strokeWidth = 3.5;
         }
-        const activeRing = active ? '<span class="db-marker-active-ring" aria-hidden="true"></span>' : '';
         const styleParts = [
           'position:relative',
           `width:${size}px`,
           `height:${size}px`,
           'display:inline-block'
         ];
-        if (active && highlightColors) {
-          if (highlightColors.ringColor) styleParts.push(`--db-marker-ring-color:${highlightColors.ringColor}`);
-          if (highlightColors.haloColor) styleParts.push(`--db-marker-ring-halo:${highlightColors.haloColor}`);
-          if (highlightColors.glowColor) styleParts.push(`--db-marker-ring-glow:${highlightColors.glowColor}`);
-          if (highlightColors.innerColor) styleParts.push(`--db-marker-ring-inner:${highlightColors.innerColor}`);
-        }
         const styleAttr = styleParts.join(';');
         const dbLogo = isRecommended(p) ? `<div style="position:absolute;right:-4px;bottom:-4px;width:${overlaySize}px;height:${overlaySize}px;">${getDbLogoHtml(overlaySize)}</div>` : '';
         const markerClass = active ? 'db-marker db-marker-active' : 'db-marker';
         return `
           <div class="${markerClass}" data-idx="${i}" style="${styleAttr}">
-            ${activeRing}
             <svg class="db-marker-pin" width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
               ${defs}
-              ${outline}
-              <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}"/>
+              <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
               ${p.post_type === 'poi' && p.svg_content ? p.svg_content : (p.icon_slug && p.post_type !== 'poi' ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : '')}
@@ -4390,7 +4420,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             ${dbLogo}
           </div>`;
       }
-      const isActiveMarker = activeId !== null && p.id === activeId;
+      const isActiveMarker = renderActiveId !== null && p.id === renderActiveId;
       const defaultIcon = L.divIcon({
         className: 'db-marker',
         iconSize: [32, 32],
@@ -4425,6 +4455,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         marker.setZIndexOffset(1001);
       }
       marker.on('click', (e) => {
+        if (e.originalEvent && typeof e.originalEvent.stopPropagation === 'function') {
+          e.originalEvent.stopPropagation();
+        }
         if (e.originalEvent && (e.originalEvent.metaKey || e.originalEvent.ctrlKey)) {
           // Ctrl/Cmd+click otevře detail jako modal
           openDetailModal(f);
@@ -4475,7 +4508,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       card.className = 'db-map-card';
       card.tabIndex = 0;
       card.dataset.featureId = String(f.properties.id);
-      if (activeId !== null && f.properties.id === activeId) card.classList.add('active');
+      if (renderActiveId !== null && f.properties.id === renderActiveId) card.classList.add('active');
       // Vzdálenost v km, výrazně vlevo pod obrázkem
       let distHtml = '';
       if (f._distance !== undefined) {
@@ -4754,14 +4787,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     
 
   // duplicitní tvorba markerů odstraněna – markerů se vytváří jen z filtered výběru výše
+    applyActiveHighlight();
     setTimeout(() => map.invalidateSize(), 50);
   }
 
-  // Zvýraznění markeru a karty podle ID
-  function highlightMarkerById(id) {
+  function applyActiveHighlight() {
+    const activeId = Number.isFinite(activeFeatureId) ? activeFeatureId : null;
     markers.forEach((m) => {
       const mid = (m && m._featureId) ? m._featureId : null;
-      if (mid === id) {
+      if (activeId !== null && mid === activeId) {
         m.setIcon(m._activeIcon);
         m.setZIndexOffset(1001);
       } else {
@@ -4769,28 +4803,36 @@ document.addEventListener('DOMContentLoaded', async function() {
         m.setZIndexOffset(0);
       }
     });
-    // Zvýrazníme i kartu
     document.querySelectorAll('.db-map-card').forEach((el, i) => {
       const cardId = el.dataset && el.dataset.featureId ? parseInt(el.dataset.featureId, 10) : filteredCardIdAtIndex(i);
-      el.classList.toggle('active', cardId === id);
+      el.classList.toggle('active', activeId !== null && cardId === activeId);
     });
   }
 
+  function highlightMarkerById(id) {
+    const normalizedId = (typeof id === 'string') ? parseInt(id, 10) : id;
+    if (Number.isFinite(normalizedId)) {
+      activeFeatureId = normalizedId;
+      const idx = findFeatureIndexById(normalizedId);
+      activeIdxGlobal = idx >= 0 ? idx : null;
+    } else {
+      activeFeatureId = null;
+      activeIdxGlobal = null;
+    }
+    applyActiveHighlight();
+  }
+
   function highlightCardById(id) {
-    document.querySelectorAll('.db-map-card').forEach((el, i) => {
-      const cardId = el.dataset && el.dataset.featureId ? parseInt(el.dataset.featureId, 10) : filteredCardIdAtIndex(i);
-      el.classList.toggle('active', cardId === id);
-    });
-    markers.forEach((m) => {
-      const mid = (m && m._featureId) ? m._featureId : null;
-      if (mid === id) {
-        m.setIcon(m._activeIcon);
-        m.setZIndexOffset(1001);
-      } else {
-        m.setIcon(m._defaultIcon);
-        m.setZIndexOffset(0);
-      }
-    });
+    highlightMarkerById(id);
+  }
+
+  function clearActiveFeature() {
+    if (activeFeatureId === null) {
+      return;
+    }
+    activeFeatureId = null;
+    activeIdxGlobal = null;
+    applyActiveHighlight();
   }
 
   // Pomocná funkce pro získání ID karty podle aktuálního pořadí v panelu
