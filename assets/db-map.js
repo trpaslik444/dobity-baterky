@@ -1767,7 +1767,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     map.on('locationerror', onLocErr);
     map.locate({ setView: false, enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
   }
-
   // ===== PANEL FILTRŮ A DALŠÍ FUNKTIONALITA =====
   // Panel filtrů (otevíraný tlačítkem Filtry)
   filterPanel = document.createElement('div');
@@ -3605,7 +3604,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   const searchInput = topbar.querySelector('#db-map-search-input');
   const searchBtn = topbar.querySelector('#db-map-search-btn');
   // lastSearchResults už inicializováno na začátku
-  
   // Kontrola, zda existují elementy před přidáním event listenerů
   if (searchForm && searchInput && searchBtn) {
     function doSearch(e) {
@@ -4527,19 +4525,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       const infoIcon = `<button class="db-map-card-action-btn" title="Více informací">`
         + `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>`
         + `</button>`;
-      // Po vykreslení karty: naplnit nearby list a navázat isochrones tlačítko
+      // Po vykreslení karty: naplnit nearby list (použij mobilní loader pro stejné chování)
       try {
-        const nearbyListEl = card.querySelector(`.db-card-nearby-list[data-feature-id="${p.id}"]`);
+        const nearbyListEl = card.querySelector(`.sheet-nearby-list[data-feature-id="${p.id}"]`);
         if (nearbyListEl) {
-          loadNearbyForCard(nearbyListEl, p.id);
+          loadNearbyForMobileSheet(nearbyListEl, p.id, latCard, lngCard);
         }
-        const isoBtn = card.querySelector('[data-db-action="toggle-isochrones"]');
-        if (isoBtn) {
-          isoBtn.addEventListener('click', () => {
-            try { toggleIsochronesForFeature(f); } catch(_) {}
-          });
-        }
-      } catch(_) {}
+      } catch (__) {}
       // Typ POI nebo info o nabíječce
       let typeHtml = '';
       if (p.post_type === 'poi') {
@@ -5502,7 +5494,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   // Inicializace lokality prohlížeče při načtení stránky (po deklaraci funkcí)
   getBrowserLocale().catch(() => {});
-  
   // Funkce pro výchozí souřadnice podle země
   function getDefaultCoordsForCountry(country) {
     const coordsMap = {
