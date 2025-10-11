@@ -83,6 +83,32 @@ class REST_Map {
             },
         ) );
 
+        // Internal database search endpoint
+        register_rest_route( 'db/v1', '/map-search', array(
+            'methods'  => 'GET',
+            'callback' => array( $this, 'handle_map_search' ),
+            'permission_callback' => function ( $request ) {
+                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                    return false;
+                }
+
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
+            'args' => array(
+                'query' => array(
+                    'required' => true,
+                    'type'     => 'string',
+                ),
+                'limit' => array(
+                    'type'    => 'integer',
+                    'default' => 8,
+                ),
+                'post_types' => array(
+                    'type' => 'string',
+                ),
+            ),
+        ) );
+
         // TomTom/DATEX endpointy byly vypnuty
         
         // Debug endpoint for charging location details
@@ -703,6 +729,293 @@ class REST_Map {
         $resp = rest_ensure_response($response_data);
         $resp->header('Cache-Control','public, max-age=60');
         return $resp;
+    }
+
+    public function handle_map_search( $request ) {
+        $raw_query = $request->get_param( 'query' );
+        $query = is_string( $raw_query ) ? sanitize_text_field( wp_unslash( $raw_query ) ) : '';
+        $query = trim( $query );
+
+        if ( ( function_exists( 'mb_strlen' ) ? mb_strlen( $query ) : strlen( $query ) ) < 2 ) {
+            return rest_ensure_response( array( 'results' => array() ) );
+        }
+
+        $limit_param = $request->get_param( 'limit' );
+        $limit = is_numeric( $limit_param ) ? (int) $limit_param : 8;
+        $limit = max( 1, min( 25, $limit ) );
+
+        $post_types = $this->determine_search_post_types( $request->get_param( 'post_types' ) );
+
+        $results = array();
+        $seen_ids = array();
+
+        $title_query = new \WP_Query( array(
+            'post_type'      => $post_types,
+            'post_status'    => 'publish',
+            'posts_per_page' => $limit,
+            's'              => $query,
+            'orderby'        => 'relevance',
+            'order'          => 'DESC',
+            'no_found_rows'  => true,
+        ) );
+
+        if ( $title_query->have_posts() ) {
+            foreach ( $title_query->posts as $post ) {
+                $formatted = $this->format_search_result( $post, $query );
+                if ( $formatted ) {
+                    $results[] = $formatted;
+                    $seen_ids[ $post->ID ] = true;
+                    if ( count( $results ) >= $limit ) {
+                        break;
+                    }
+                }
+            }
+        }
+        wp_reset_postdata();
+
+        if ( count( $results ) < $limit ) {
+            $remaining = $limit - count( $results );
+            $meta_keys = array( '_db_address', '_poi_address', '_rv_address' );
+            $meta_query = array( 'relation' => 'OR' );
+            foreach ( $meta_keys as $key ) {
+                $meta_query[] = array(
+                    'key'     => $key,
+                    'value'   => $query,
+                    'compare' => 'LIKE',
+                );
+            }
+
+            $meta_query_args = array(
+                'post_type'      => $post_types,
+                'post_status'    => 'publish',
+                'posts_per_page' => $remaining * 3,
+                'post__not_in'   => array_keys( $seen_ids ),
+                'meta_query'     => $meta_query,
+                'orderby'        => 'modified',
+                'order'          => 'DESC',
+                'no_found_rows'  => true,
+            );
+
+            $meta_query_posts = new \WP_Query( $meta_query_args );
+            if ( $meta_query_posts->have_posts() ) {
+                foreach ( $meta_query_posts->posts as $post ) {
+                    if ( isset( $seen_ids[ $post->ID ] ) ) {
+                        continue;
+                    }
+                    $formatted = $this->format_search_result( $post, $query );
+                    if ( $formatted ) {
+                        $results[] = $formatted;
+                        $seen_ids[ $post->ID ] = true;
+                        if ( count( $results ) >= $limit * 2 ) {
+                            break;
+                        }
+                    }
+                }
+            }
+            wp_reset_postdata();
+        }
+
+        if ( empty( $results ) ) {
+            return rest_ensure_response( array( 'results' => array() ) );
+        }
+
+        usort( $results, function( $a, $b ) {
+            $score_compare = ( $b['score'] ?? 0 ) <=> ( $a['score'] ?? 0 );
+            if ( 0 !== $score_compare ) {
+                return $score_compare;
+            }
+
+            return strcmp( $a['title'] ?? '', $b['title'] ?? '' );
+        } );
+
+        $results = array_slice( $results, 0, $limit );
+        $results = array_map( function( $item ) {
+            unset( $item['score'] );
+            return $item;
+        }, $results );
+
+        return rest_ensure_response( array( 'results' => $results ) );
+    }
+
+    private function determine_search_post_types( $types_param ) {
+        $allowed = array( 'charging_location', 'rv_spot', 'poi' );
+        $map = array(
+            'charger'            => 'charging_location',
+            'charging_location'  => 'charging_location',
+            'charging-location'  => 'charging_location',
+            'rv'                 => 'rv_spot',
+            'rv_spot'            => 'rv_spot',
+            'poi'                => 'poi',
+        );
+
+        if ( is_string( $types_param ) && $types_param !== '' ) {
+            $raw_types = array_filter( array_map( 'trim', explode( ',', $types_param ) ) );
+            $normalized = array();
+            foreach ( $raw_types as $type ) {
+                $normalized[] = $map[ strtolower( $type ) ] ?? $type;
+            }
+            $normalized = array_values( array_unique( $normalized ) );
+            $filtered = array_intersect( $normalized, $allowed );
+            if ( ! empty( $filtered ) ) {
+                return array_values( $filtered );
+            }
+        }
+
+        return $allowed;
+    }
+
+    private function format_search_result( $post, $query ) {
+        if ( ! ( $post instanceof \WP_Post ) ) {
+            return null;
+        }
+
+        $keys = $this->get_latlng_keys_for_type( $post->post_type );
+        $lat_raw = get_post_meta( $post->ID, $keys['lat'], true );
+        $lng_raw = get_post_meta( $post->ID, $keys['lng'], true );
+        $lat = $this->normalize_coordinate( $lat_raw );
+        $lng = $this->normalize_coordinate( $lng_raw );
+
+        if ( null === $lat || null === $lng ) {
+            return null;
+        }
+
+        $title = get_the_title( $post );
+        $address = $this->get_address_for_post( $post );
+        $score = $this->compute_search_score( $post, $query, $title, $address );
+
+        return array(
+            'id'             => $post->ID,
+            'post_type'      => $post->post_type,
+            'type_label'     => $this->get_type_label( $post->post_type ),
+            'title'          => $title,
+            'address'        => $address,
+            'lat'            => $lat,
+            'lng'            => $lng,
+            'is_recommended' => $this->is_post_recommended( $post ),
+            'score'          => $score,
+        );
+    }
+
+    private function compute_search_score( $post, $search, $title, $address ) {
+        $score = 0;
+        $search_lc = $this->lowercase( $search );
+        $title_lc = $this->lowercase( $title );
+        $address_lc = $this->lowercase( $address );
+
+        if ( $title_lc === $search_lc && $title_lc !== '' ) {
+            $score += 120;
+        } elseif ( $title_lc !== '' && strpos( $title_lc, $search_lc ) === 0 ) {
+            $score += 90;
+        } elseif ( $title_lc !== '' && strpos( $title_lc, $search_lc ) !== false ) {
+            $score += 60;
+        }
+
+        if ( $address_lc !== '' && strpos( $address_lc, $search_lc ) === 0 ) {
+            $score += 45;
+        } elseif ( $address_lc !== '' && strpos( $address_lc, $search_lc ) !== false ) {
+            $score += 30;
+        }
+
+        $provider = get_post_meta( $post->ID, '_db_provider', true );
+        if ( $provider ) {
+            $provider_lc = $this->lowercase( $provider );
+            if ( strpos( $provider_lc, $search_lc ) !== false ) {
+                $score += 10;
+            }
+        }
+
+        if ( 'charging_location' === $post->post_type ) {
+            $score += 12;
+        } elseif ( 'rv_spot' === $post->post_type ) {
+            $score += 6;
+        }
+
+        if ( $this->is_post_recommended( $post ) ) {
+            $score += 20;
+        }
+
+        $modified = strtotime( $post->post_modified_gmt );
+        if ( $modified ) {
+            $age_days = ( time() - $modified ) / DAY_IN_SECONDS;
+            $score += max( 0, 15 - min( 15, (int) floor( $age_days / 30 ) ) );
+        }
+
+        $title_len = function_exists( 'mb_strlen' ) ? mb_strlen( $title ) : strlen( $title );
+        $search_len = function_exists( 'mb_strlen' ) ? mb_strlen( $search ) : strlen( $search );
+        $score += max( 0, 20 - min( 20, abs( $title_len - $search_len ) ) );
+
+        return $score;
+    }
+
+    private function lowercase( $value ) {
+        $value = is_string( $value ) ? $value : '';
+        if ( function_exists( 'mb_strtolower' ) ) {
+            return mb_strtolower( $value, 'UTF-8' );
+        }
+        return strtolower( $value );
+    }
+
+    private function normalize_coordinate( $value ) {
+        if ( is_string( $value ) ) {
+            $value = str_replace( ',', '.', trim( $value ) );
+        }
+
+        if ( '' === $value || null === $value ) {
+            return null;
+        }
+
+        return is_numeric( $value ) ? (float) $value : null;
+    }
+
+    private function get_address_for_post( $post ) {
+        if ( ! ( $post instanceof \WP_Post ) ) {
+            return '';
+        }
+
+        switch ( $post->post_type ) {
+            case 'charging_location':
+                $address = get_post_meta( $post->ID, '_db_address', true );
+                break;
+            case 'rv_spot':
+                $address = get_post_meta( $post->ID, '_rv_address', true );
+                break;
+            case 'poi':
+                $address = get_post_meta( $post->ID, '_poi_address', true );
+                break;
+            default:
+                $address = '';
+        }
+
+        return is_string( $address ) ? trim( $address ) : '';
+    }
+
+    private function get_type_label( $post_type ) {
+        switch ( $post_type ) {
+            case 'charging_location':
+                return __( 'Nabíjecí stanice', 'dobity-baterky' );
+            case 'rv_spot':
+                return __( 'Stání pro karavany', 'dobity-baterky' );
+            case 'poi':
+                return __( 'Místo zájmu', 'dobity-baterky' );
+            default:
+                return ucfirst( str_replace( '_', ' ', (string) $post_type ) );
+        }
+    }
+
+    private function is_post_recommended( $post ) {
+        if ( ! ( $post instanceof \WP_Post ) ) {
+            return false;
+        }
+
+        $meta_keys = array( '_db_recommended', '_poi_recommended', '_rv_recommended' );
+        foreach ( $meta_keys as $key ) {
+            $value = get_post_meta( $post->ID, $key, true );
+            if ( in_array( $value, array( '1', 1, true, 'true', 'yes' ), true ) ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
