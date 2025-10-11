@@ -1379,6 +1379,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Desktop vs mobilní obsah topbaru
   const isMobile = window.innerWidth <= 900;
+  let filterPanel;
+  let mapOverlay;
 
   
   if (isMobile) {
@@ -1429,6 +1431,31 @@ document.addEventListener('DOMContentLoaded', async function() {
   mapDiv.style.position = 'relative';
   mapDiv.style.zIndex = '1';
   mapDiv.appendChild(topbar);
+
+  // Centralizovaný handler topbar tlačítek - díky delegaci zůstává funkční i po výměně obsahu
+  topbar.addEventListener('click', (event) => {
+    const button = event.target.closest('.db-map-topbar-btn');
+    if (!button || !topbar.contains(button)) {
+      return;
+    }
+
+    switch (button.id) {
+      case 'db-menu-toggle':
+        handleMenuToggle(event);
+        break;
+      case 'db-list-toggle':
+        handleListToggle(event);
+        break;
+      case 'db-locate-btn':
+        handleLocate(event);
+        break;
+      case 'db-filter-btn':
+        handleFilterToggle(event);
+        break;
+      default:
+        break;
+    }
+  });
 
   // Přidat LocateControl pouze na desktopu (na mobilu se používá tlačítko v topbaru)
   try {
@@ -1500,17 +1527,16 @@ document.addEventListener('DOMContentLoaded', async function() {
   }, 500); // 500ms delay před přidáním resize listeneru
 
   // Menu toggle - slide-out menu panel (funguje na všech zařízeních)
-  const menuToggleBtn = topbar.querySelector('#db-menu-toggle');
-  
-  if (menuToggleBtn) {
-    menuToggleBtn.addEventListener('click', function(e){
-        // Vytvoř menu panel, pokud neexistuje
-        let menuPanel = document.querySelector('.db-menu-panel');
-      
-        if (!menuPanel) {
-          menuPanel = document.createElement('div');
-          menuPanel.className = 'db-menu-panel';
-          menuPanel.innerHTML = `
+  function handleMenuToggle(event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    let menuPanel = document.querySelector('.db-menu-panel');
+
+    if (!menuPanel) {
+      menuPanel = document.createElement('div');
+      menuPanel.className = 'db-menu-panel';
+      menuPanel.innerHTML = `
           <div class="db-menu-header">
             <div class="db-menu-title">DB mapa</div>
             <button class="db-menu-close" type="button" title="Zavřít menu">
@@ -1543,246 +1569,212 @@ document.addEventListener('DOMContentLoaded', async function() {
             </div>
             </div>
           `;
-          document.body.appendChild(menuPanel);
-          
-        }
-        
-        // Event listenery se přidají vždy (i když panel už existuje)
-        const closeBtn = menuPanel.querySelector('.db-menu-close');
-        if (closeBtn) {
-          // Odstranit staré listenery
-          closeBtn.replaceWith(closeBtn.cloneNode(true));
-          const newCloseBtn = menuPanel.querySelector('.db-menu-close');
-          
-          newCloseBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            // Odstranit třídu
-            root.classList.remove('db-menu-open');
-            
-            // Force close - inline styly
-            const menuPanel = document.querySelector('.db-menu-panel');
-            if (menuPanel) {
-              menuPanel.style.transform = 'translateX(-100%)';
-              menuPanel.style.visibility = 'hidden';
-              menuPanel.style.pointerEvents = 'none';
-              menuPanel.classList.remove('db-menu-panel--open');
-            }
-          });
-        }
-          
+      document.body.appendChild(menuPanel);
+    }
 
-          // Kliknutí mimo menu panel zavře menu
-          menuPanel.addEventListener('click', (e) => {
-            if (e.target === menuPanel) {
-            // Odstranit třídu
-              root.classList.remove('db-menu-open');
-            
-            // Force close - inline styly
-            const menuPanel = document.querySelector('.db-menu-panel');
-            if (menuPanel) {
-              menuPanel.style.transform = 'translateX(-100%)';
-              menuPanel.style.visibility = 'hidden';
-              menuPanel.style.pointerEvents = 'none';
-              menuPanel.classList.remove('db-menu-panel--open');
+    const closePanel = () => {
+      root.classList.remove('db-menu-open');
+      const mp = document.querySelector('.db-menu-panel');
+      if (mp) {
+        mp.style.transform = 'translateX(-100%)';
+        mp.style.visibility = 'hidden';
+        mp.style.pointerEvents = 'none';
+        mp.classList.remove('db-menu-panel--open');
+      }
+    };
+
+    const closeBtn = menuPanel.querySelector('.db-menu-close');
+    if (closeBtn && !closeBtn.dataset.dbListenerAttached) {
+      closeBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closePanel();
+      });
+      closeBtn.dataset.dbListenerAttached = '1';
+    }
+
+    if (!menuPanel.dataset.dbBackdropListenerAttached) {
+      menuPanel.addEventListener('click', (e) => {
+        if (e.target === menuPanel) {
+          closePanel();
+        }
+      });
+      menuPanel.dataset.dbBackdropListenerAttached = '1';
+    }
+
+    const modeRadios = menuPanel.querySelectorAll('input[name="map-mode"]');
+    modeRadios.forEach(radio => {
+      if (radio.dataset.dbListenerAttached) {
+        return;
+      }
+      radio.addEventListener('change', (e) => {
+        if (e.target.value === 'all') {
+          fetchAndRenderAll();
+        } else if (e.target.value === 'radius') {
+          const center = map.getCenter();
+          fetchAndRenderRadius(center);
+        }
+      });
+      radio.dataset.dbListenerAttached = '1';
+    });
+
+    const centerDebugCheckbox = menuPanel.querySelector('#db-show-center-debug');
+    if (centerDebugCheckbox && !centerDebugCheckbox.dataset.dbListenerAttached) {
+      centerDebugCheckbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          const center = map.getCenter();
+          showMapCenterDebug(center);
+        } else {
+          if (centerDebugMarker) {
+            map.removeLayer(centerDebugMarker);
+            centerDebugMarker = null;
+          }
+          if (centerDebugCircle) {
+            map.removeLayer(centerDebugCircle);
+            centerDebugCircle = null;
+          }
+        }
+      });
+      centerDebugCheckbox.dataset.dbListenerAttached = '1';
+    }
+
+    root.classList.toggle('db-menu-open');
+
+    const ensureMenuPanelState = () => {
+      const mp = document.querySelector('.db-menu-panel');
+      if (!mp) return;
+      const isOpen = root.classList.contains('db-menu-open');
+      if (isOpen) {
+        mp.classList.add('db-menu-panel--open');
+        mp.style.transform = 'translate3d(0,0,0)';
+        mp.style.visibility = 'visible';
+        mp.style.pointerEvents = 'auto';
+        mp.style.zIndex = '10010';
+      } else {
+        mp.classList.remove('db-menu-panel--open');
+        mp.style.transform = '';
+        mp.style.visibility = '';
+        mp.style.pointerEvents = '';
+        mp.style.zIndex = '';
+      }
+    };
+
+    ensureMenuPanelState();
+    setTimeout(ensureMenuPanelState, 0);
+
+    if (root.classList.contains('db-menu-open')) {
+      setTimeout(() => {
+        root.classList.remove('db-menu-open');
+        ensureMenuPanelState();
+        setTimeout(() => {
+          root.classList.add('db-menu-open');
+          ensureMenuPanelState();
+
+          const panel = document.querySelector('.db-menu-panel');
+          if (panel) {
+            const computedStyle = window.getComputedStyle(panel);
+            if (computedStyle.transform && computedStyle.transform !== 'none' && computedStyle.transform.includes('-')) {
+              panel.style.transform = 'translate3d(0,0,0)';
+              panel.style.transition = 'transform 0.3s ease';
+              panel.classList.add('db-menu-panel--open');
+              panel.style.visibility = 'visible';
+              panel.style.pointerEvents = 'auto';
+              panel.style.zIndex = '10010';
             }
           }
-        });
-        
-        // Event listenery pro toggle prvky
-        const modeRadios = menuPanel.querySelectorAll('input[name="map-mode"]');
-        modeRadios.forEach(radio => {
-          radio.addEventListener('change', (e) => {
-            if (e.target.value === 'all') {
-              fetchAndRenderAll();
-            } else if (e.target.value === 'radius') {
-              const center = map.getCenter();
-              fetchAndRenderRadius(center);
-            }
-          });
-        });
-        
-        // Event listener pro zobrazení středu mapy
-        const centerDebugCheckbox = menuPanel.querySelector('#db-show-center-debug');
-        if (centerDebugCheckbox) {
-          centerDebugCheckbox.addEventListener('change', (e) => {
-            if (e.target.checked) {
-              const center = map.getCenter();
-              showMapCenterDebug(center);
-            } else {
-              // Odstranit debug markery
-              if (centerDebugMarker) {
-                map.removeLayer(centerDebugMarker);
-                centerDebugMarker = null;
-              }
-              if (centerDebugCircle) {
-                map.removeLayer(centerDebugCircle);
-                centerDebugCircle = null;
-              }
-            }
-          });
-        }
-        
-        // Toggle menu
-        root.classList.toggle('db-menu-open');
-      
-      // Hard open/close: apply inline styles to ensure visibility and position
-      const ensureMenuPanelState = () => {
-        const mp = document.querySelector('.db-menu-panel');
-        if (!mp) return;
-        const isOpen = root.classList.contains('db-menu-open');
-        if (isOpen) {
-          mp.classList.add('db-menu-panel--open');
-          mp.style.transform = 'translate3d(0,0,0)';
-          mp.style.visibility = 'visible';
-          mp.style.pointerEvents = 'auto';
-          mp.style.zIndex = '10010';
-        } else {
-          mp.classList.remove('db-menu-panel--open');
-          mp.style.transform = '';
-          mp.style.visibility = '';
-          mp.style.pointerEvents = '';
-          mp.style.zIndex = '';
-        }
-      };
-      // apply immediately and after a tick
-      ensureMenuPanelState();
-      setTimeout(ensureMenuPanelState, 0);
-      
-      // Force CSS refresh - přidej třídu znovu pro zajištění správné aplikace
-      if (root.classList.contains('db-menu-open')) {
-        setTimeout(() => {
-          root.classList.remove('db-menu-open');
-          ensureMenuPanelState();
-          setTimeout(() => {
-            root.classList.add('db-menu-open');
-            ensureMenuPanelState();
-            
-            // Fallback - pokud CSS stále nefunguje, použij inline style
-            const menuPanel = document.querySelector('.db-menu-panel');
-            if (menuPanel) {
-              const computedStyle = window.getComputedStyle(menuPanel);
-              if (computedStyle.transform && computedStyle.transform !== 'none' && computedStyle.transform.includes('-')) {
-                menuPanel.style.transform = 'translate3d(0,0,0)';
-                menuPanel.style.transition = 'transform 0.3s ease';
-                menuPanel.classList.add('db-menu-panel--open');
-                menuPanel.style.visibility = 'visible';
-                menuPanel.style.pointerEvents = 'auto';
-                menuPanel.style.zIndex = '10010';
-              }
-            }
-          }, 10);
-        }, 50);
-      }
-    });
+        }, 10);
+      }, 50);
+    }
   }
   
   // Mobilní přepínač seznamu
-  const listToggleBtn = topbar.querySelector('#db-list-toggle');
-  if (listToggleBtn) {
-    listToggleBtn.addEventListener('click', function(){
-      if (window.innerWidth <= 900) {
-        const willShowList = !root.classList.contains('db-list-mode');
-        root.classList.toggle('db-list-mode');
-        if (willShowList) {
-          ensureUserLocationAndSort();
-          ensureListHeader();
-        } else {
-          try { document.getElementById('db-mobile-sheet')?.classList.remove('open'); } catch(_) {}
-        }
-        setTimeout(() => map.invalidateSize(), 200);
-      }
-    });
+  function handleListToggle(event) {
+    if (window.innerWidth > 900) {
+      return;
+    }
+    event.preventDefault();
+    const willShowList = !root.classList.contains('db-list-mode');
+    root.classList.toggle('db-list-mode');
+    if (willShowList) {
+      ensureUserLocationAndSort();
+      ensureListHeader();
+    } else {
+      try { document.getElementById('db-mobile-sheet')?.classList.remove('open'); } catch(_) {}
+    }
+    setTimeout(() => map.invalidateSize(), 200);
   }
   
   // Tlačítko "Moje poloha" - pouze na mobilu
-  if (isMobile) {
-    const locateBtn = topbar.querySelector('#db-locate-btn');
-    if (locateBtn) {
-      locateBtn.addEventListener('click', function(){
-        // Použít Leaflet locate funkcionalitu pro konzistentní chování
-        if (map) {
-          // Kontrola „secure context" – geolokace funguje pouze na HTTPS nebo localhost
-          const isSecure = (window.isSecureContext === true) || (location.protocol === 'https:') || (location.hostname === 'localhost') || (location.hostname === '127.0.0.1');
-          if (!isSecure) {
-            
-            return;
-          }
-          
-          // Nastavit event listenery pro locate
-          const onLocFound = (e) => {
-            map.off('locationfound', onLocFound);
-            map.off('locationerror', onLocErr);
-            
-            const lat = e.latitude || (e.latlng && e.latlng.lat);
-            const lng = e.longitude || (e.latlng && e.latlng.lng);
-            
-            if (lat && lng) {
-              const coords = [lat, lng];
-              
-              
-              // Centrovat mapu na polohu uživatele
-              map.setView(coords, 15, { animate: true, duration: 0.5 });
-              
-              // Nastavit jako vyhledanou adresu pro řazení
-              searchAddressCoords = coords;
-              sortMode = 'distance_from_address';
-              searchSortLocked = true;
-              renderCards('', null, false);
-              
-              // Přidat marker pro polohu uživatele
-              addOrMoveSearchAddressMarker(coords);
-            }
-          };
-          
-          const onLocErr = (e) => {
-            map.off('locationfound', onLocFound);
-            map.off('locationerror', onLocErr);
-            
-            // Tichá chyba - geolokace není povinná
-            
-            
-            // Zobrazit diskrétní notifikaci místo alertu
-            if (window.L && window.L.control) {
-              const notification = L.control({position: 'topright'});
-              notification.onAdd = function() {
-                const div = L.DomUtil.create('div', 'db-geolocation-notification');
-                div.innerHTML = '<div style="background: #ff9800; color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📍 Poloha není dostupná</div>';
-                return div;
-              };
-              notification.addTo(map);
-              
-              // Skrýt notifikaci po 3 sekundách
-              setTimeout(() => {
-                if (notification.remove) {
-                  notification.remove();
-                }
-              }, 3000);
-            }
-          };
-          
-          // Spustit locate
-          map.on('locationfound', onLocFound);
-          map.on('locationerror', onLocErr);
-          map.locate({ setView: false, enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
-        }
-      });
-    } else {
-      
+  function handleLocate(event) {
+    if (window.innerWidth > 900) {
+      return;
     }
 
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!map) {
+      return;
+    }
+
+    const isSecure = (window.isSecureContext === true) || (location.protocol === 'https:') || (location.hostname === 'localhost') || (location.hostname === '127.0.0.1');
+    if (!isSecure) {
+      return;
+    }
+
+    const onLocFound = (e) => {
+      map.off('locationfound', onLocFound);
+      map.off('locationerror', onLocErr);
+
+      const lat = e.latitude || (e.latlng && e.latlng.lat);
+      const lng = e.longitude || (e.latlng && e.latlng.lng);
+
+      if (lat && lng) {
+        const coords = [lat, lng];
+        map.setView(coords, 15, { animate: true, duration: 0.5 });
+        searchAddressCoords = coords;
+        sortMode = 'distance_from_address';
+        searchSortLocked = true;
+        renderCards('', null, false);
+        addOrMoveSearchAddressMarker(coords);
+      }
+    };
+
+    const onLocErr = () => {
+      map.off('locationfound', onLocFound);
+      map.off('locationerror', onLocErr);
+
+      if (window.L && window.L.control) {
+        const notification = L.control({position: 'topright'});
+        notification.onAdd = function() {
+          const div = L.DomUtil.create('div', 'db-geolocation-notification');
+          div.innerHTML = '<div style="background: #ff9800; color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📍 Poloha není dostupná</div>';
+          return div;
+        };
+        notification.addTo(map);
+
+        setTimeout(() => {
+          if (notification.remove) {
+            notification.remove();
+          }
+        }, 3000);
+      }
+    };
+
+    map.on('locationfound', onLocFound);
+    map.on('locationerror', onLocErr);
+    map.locate({ setView: false, enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
   }
 
   // ===== PANEL FILTRŮ A DALŠÍ FUNKTIONALITA =====
 
   // Panel filtrů (otevíraný tlačítkem Filtry)
-  const filterPanel = document.createElement('div');
+  filterPanel = document.createElement('div');
   filterPanel.id = 'db-map-filter-panel';
   filterPanel.style.cssText = 'position:absolute;right:12px;top:64px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:12px;z-index:9999;min-width:240px;max-width:320px;max-height:calc(100vh - 120px);display:none;overflow-y:auto;pointer-events:auto;';
   
   // Transparentní overlay pro blokování interakce s mapou
-  const mapOverlay = document.createElement('div');
+  mapOverlay = document.createElement('div');
   mapOverlay.id = 'db-map-overlay';
   mapOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:transparent;z-index:999;display:none;pointer-events:auto;';
   filterPanel.innerHTML = `
@@ -1841,35 +1833,31 @@ document.addEventListener('DOMContentLoaded', async function() {
   filterPanel.addEventListener('mousemove', function(e) { e.stopPropagation(); });
   filterPanel.addEventListener('mouseup', function(e) { e.stopPropagation(); });
   
-  // Ovládání zobrazení panelu
-  const filterBtn = topbar.querySelector('.db-map-topbar-btn[title="Filtry"]');
-  if (filterBtn) {
-    filterBtn.addEventListener('click', function(){
-      const isVisible = filterPanel.style.display === 'block';
-      filterPanel.style.display = isVisible ? 'none' : 'block';
-      
-      // Zobrazit/skrýt overlay pro blokování interakce s mapou
-      if (mapOverlay) {
-        const newDisplay = isVisible ? 'none' : 'block';
-        mapOverlay.style.display = newDisplay;
+  function handleFilterToggle(event) {
+    if (!filterPanel) {
+      return;
+    }
 
+    event.preventDefault();
+    event.stopPropagation();
+
+    const isVisible = filterPanel.style.display === 'block';
+    filterPanel.style.display = isVisible ? 'none' : 'block';
+
+    if (mapOverlay) {
+      const newDisplay = isVisible ? 'none' : 'block';
+      mapOverlay.style.display = newDisplay;
+    }
+
+    if (mapDiv) {
+      if (isVisible) {
+        mapDiv.style.zIndex = '1';
+        mapDiv.classList.remove('filters-open');
+      } else {
+        mapDiv.style.zIndex = '0';
+        mapDiv.classList.add('filters-open');
       }
-      
-      // Nastavit z-index pro vrstvy místo blokování pointer-events
-      if (mapDiv) {
-        if (isVisible) {
-          // Filtry zavřené - mapa v normální vrstvě
-          mapDiv.style.zIndex = '1';
-          mapDiv.classList.remove('filters-open');
-        } else {
-          // Filtry otevřené - mapa v pozadí
-          mapDiv.style.zIndex = '0';
-          mapDiv.classList.add('filters-open');
-        }
-      }
-    });
-  } else {
-    
+    }
   }
   const filterClose = filterPanel.querySelector('#db-map-filter-close');
   if (filterClose) filterClose.addEventListener('click', () => {
