@@ -31,11 +31,27 @@ class Icon_Registry {
     public function get_icon( \WP_Post $post ) {
         $type = $post->post_type;
         if ( $type === 'charging_location' ) {
-            // Pro nabíjecí místa se vždy používá jednotná ikona charger_type-198.svg
-            // Barva se určuje podle AC/DC logiky na frontendu
+            // Ikonu necháváme stejnou, ale umožníme přebarvení SVG (pokud bude použita někde jako inline)
+            $icon_fill = get_option('db_charger_icon_color', '#ffffff');
+            $slug = 'charger_type-198';
+            $svg_path = $this->base_path . $slug . '.svg';
+            if ( file_exists($svg_path) ) {
+                $svg_content = file_get_contents($svg_path);
+                $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
+                $svg_content = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg_content);
+                $svg_content = preg_replace('/<svg /', '<svg width="100%" height="100%" style="display:block;" ', $svg_content, 1);
+                if (!is_string($icon_fill) || !preg_match('/^#[0-9a-fA-F]{6}$/', $icon_fill)) { $icon_fill = '#ffffff'; }
+                $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_fill . '"', $svg_content);
+                $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_fill . '"', $svg_content);
+                return [
+                    'slug' => $slug,
+                    'svg_content' => $svg_content,
+                    'color' => null,
+                ];
+            }
             return [
                 'slug' => 'charger_type-198.svg',
-                'color' => null, // Barva se určuje podle AC/DC, ne podle term meta
+                'color' => null,
             ];
         }
         if ( $type === 'rv_spot' ) {

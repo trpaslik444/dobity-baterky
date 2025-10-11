@@ -4482,8 +4482,17 @@ document.addEventListener('DOMContentLoaded', async function() {
             fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${color}"/></svg>`;
           }
         } else {
-          // Default ikona pro ostatní typy
-          fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="#049FE8"/></svg>`;
+          // Default ikona pro ostatní typy – použij centrální barvy
+          if (p.post_type === 'rv_spot') {
+            const rvColor = (window.dbMapData && window.dbMapData.rvColor) || '#FCE67D';
+            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${rvColor}"/></svg>`;
+          } else if (p.post_type === 'poi') {
+            const poiColor = (window.dbMapData && window.dbMapData.poiColor) || '#FCE67D';
+            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${poiColor}"/></svg>`;
+          } else {
+            const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${acColor}"/></svg>`;
+          }
         }
         imgHtml = `<div class="db-map-card-img" style="background:#f8f9fa;display:flex;align-items:center;justify-content:center;border:1px solid #e5e7eb;">${fallbackIcon}</div>`;
       }
