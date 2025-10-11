@@ -2364,7 +2364,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
             } else if (props.post_type === 'charging_location') {
               // Fallback pro nabíječky
-              return '⚡';
+              return getChargerColoredSvg() || '⚡';
             } else if (props.post_type === 'rv_spot') {
               // Fallback pro RV
               return '🏕️';
@@ -2627,7 +2627,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const iconUrl = getIconUrl(item.icon_slug);
         typeBadge = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
       } else if (item.post_type === 'charging_location') {
-        typeBadge = '⚡';
+        typeBadge = getChargerColoredSvg() || '⚡';
       } else if (item.post_type === 'poi') {
         typeBadge = '📍';
       } else if (item.post_type === 'rv_spot') {
@@ -2730,7 +2730,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             const iconUrl = getIconUrl(item.icon_slug);
             typeIcon = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
           } else if (item.post_type === 'charging_location') { 
-            typeIcon = '⚡'; 
+            typeIcon = getChargerColoredSvg() || '⚡'; 
           } else if (item.post_type === 'rv_spot') { 
             typeIcon = '🏕️'; 
           }
@@ -3369,7 +3369,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
       } else if (props.post_type === 'charging_location') {
         // Fallback pro nabíječky
-        return '🔌';
+        return getChargerColoredSvg() || '🔌';
       } else if (props.post_type === 'rv_spot') {
         // Fallback pro RV
         return '🚐';
@@ -3650,10 +3650,33 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
   
-
-  
-
-
+  // Charger inline SVG recolor – načtení a cache (abychom nemuseli mít <img> s bílou výplní)
+  let __dbChargerSvgColored = null;
+  let __dbChargerSvgLoading = false;
+  function ensureChargerSvgColoredLoaded() {
+    if (__dbChargerSvgColored !== null || __dbChargerSvgLoading) return;
+    try {
+      const color = (window.dbMapData && window.dbMapData.chargerIconColor) || '#ffffff';
+      const url = (iconsBase || '') + 'charger_icon_nofillcolor.svg';
+      if (!url) return;
+      __dbChargerSvgLoading = true;
+      fetch(url).then(r => r.text()).then(svg => {
+        try {
+          let s = svg
+            .replace(/<svg([^>]*)width="[^"]*"/, '<svg$1')
+            .replace(/<svg([^>]*)height="[^"]*"/, '<svg$1')
+            .replace(/<svg /, '<svg width="100%" height="100%" style="display:block;" ', 1)
+            .replace(/fill="[^"]*"/g, `fill="${color}"`)
+            .replace(/stroke="[^"]*"/g, `stroke="${color}"`);
+          __dbChargerSvgColored = s;
+        } catch(_) {}
+      }).catch(() => {}).finally(() => { __dbChargerSvgLoading = false; });
+    } catch(_) {}
+  }
+  function getChargerColoredSvg() {
+    ensureChargerSvgColoredLoaded();
+    return __dbChargerSvgColored;
+  }
   
   // Stav filtrů
   const filterState = {
@@ -4401,7 +4424,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
-              ${p.svg_content ? p.svg_content : (p.icon_slug ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : '')}
+              ${p.svg_content ? p.svg_content : (p.icon_slug ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : (p.post_type === 'charging_location' ? (getChargerColoredSvg() || '') : ''))}
             </div>
             ${dbLogo}
           </div>`;
@@ -4854,7 +4877,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (lastSearchResults && lastSearchResults[idx]) return lastSearchResults[idx].properties.id;
     return null;
   }
-
   // První render
   renderCards();
   // ===== AUTO-FETCH V RADIUS REŽIMU NA MOVE/ZOOM =====

@@ -676,7 +676,7 @@ class Icon_Admin {
         $charger_types = get_terms( array('taxonomy'=>'charger_type','hide_empty'=>false) );
         foreach ( $charger_types as $term ) {
             echo '<tr><td>' . esc_html($term->name) . ' <small>(Nabíječka - ikona se nastavuje automaticky)</small></td>';
-            echo '<td><em>Automaticky: charger_type-198.svg</em></td>';
+            echo '<td><em>Automaticky: charger_icon_nofillcolor.svg</em></td>';
             echo '<td><em>Barva se určuje podle AC/DC</em></td>';
             echo '<td><em>Bez možnosti úpravy</em></td></tr>';
         }
