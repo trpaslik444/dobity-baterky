@@ -31,9 +31,9 @@ class Icon_Registry {
     public function get_icon( \WP_Post $post ) {
         $type = $post->post_type;
         if ( $type === 'charging_location' ) {
-            // Pro nabíječky: používejme no-fill verzi, aby nebyla v SVG natvrdo barva
+            // Pro nabíječky použijeme inline SVG bez fill a barvu dodá frontend z admin nastavení
             return [
-                'slug' => 'charger_icon_nofillcolor.svg',
+                'slug' => '', // nevracej slug, frontend si načte no-fill SVG a obarví
                 'color' => null,
             ];
         }

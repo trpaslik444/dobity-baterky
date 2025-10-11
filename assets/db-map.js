@@ -3657,7 +3657,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (__dbChargerSvgColored !== null || __dbChargerSvgLoading) return;
     try {
       const color = (window.dbMapData && window.dbMapData.chargerIconColor) || '#ffffff';
-      const url = (iconsBase || '') + 'charger_icon_nofillcolor.svg';
+      // Nový název souboru bez vnitřního fill: "charger ivon no fill.svg"
+      const chargerSvgFile = 'charger ivon no fill.svg';
+      const url = (iconsBase || '') + encodeURIComponent(chargerSvgFile);
       if (!url) return;
       __dbChargerSvgLoading = true;
       fetch(url).then(r => r.text()).then(svg => {
@@ -3666,8 +3668,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             .replace(/<svg([^>]*)width="[^"]*"/, '<svg$1')
             .replace(/<svg([^>]*)height="[^"]*"/, '<svg$1')
             .replace(/<svg /, '<svg width="100%" height="100%" style="display:block;" ', 1)
-            .replace(/fill="[^"]*"/g, `fill="${color}"`)
-            .replace(/stroke="[^"]*"/g, `stroke="${color}"`);
+            // Překolorovat pouze vnořené elementy, nikoliv hlavní <svg>
+            .replace(/(<(path|g|rect|circle|polygon|ellipse|line|polyline)[^>]*?)\sfill="[^"]*"/gi, `$1`)
+            .replace(/(<(path|g|rect|circle|polygon|ellipse|line|polyline)[^>]*?)\sstroke="[^"]*"/gi, `$1`)
+            .replace(/<(path|g|rect|circle|polygon|ellipse|line|polyline)([^>]*)>/gi, `<$1$2 fill="${color}" stroke="${color}">`);
           __dbChargerSvgColored = s;
         } catch(_) {}
       }).catch(() => {}).finally(() => { __dbChargerSvgLoading = false; });
