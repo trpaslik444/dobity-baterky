@@ -1772,7 +1772,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   filterPanel = document.createElement('div');
   filterPanel.id = 'db-map-filter-panel';
   filterPanel.style.cssText = 'position:absolute;right:12px;top:64px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:12px;z-index:9999;min-width:240px;max-width:320px;max-height:calc(100vh - 120px);display:none;overflow-y:auto;pointer-events:auto;';
-  
   // Transparentní overlay pro blokování interakce s mapou
   mapOverlay = document.createElement('div');
   mapOverlay.id = 'db-map-overlay';
@@ -4525,13 +4524,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const infoIcon = `<button class="db-map-card-action-btn" title="Více informací">`
         + `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>`
         + `</button>`;
-      // Po vykreslení karty: naplnit nearby list (použij mobilní loader pro stejné chování)
-      try {
-        const nearbyListEl = card.querySelector(`.sheet-nearby-list[data-feature-id="${p.id}"]`);
-        if (nearbyListEl) {
-          loadNearbyForMobileSheet(nearbyListEl, p.id, latCard, lngCard);
-        }
-      } catch (__) {}
+      // Po vykreslení karty zavoláme loader až po vložení HTML níže
       // Typ POI nebo info o nabíječce
       let typeHtml = '';
       if (p.post_type === 'poi') {
@@ -4864,8 +4857,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // První render
   renderCards();
-  
-
   // ===== AUTO-FETCH V RADIUS REŽIMU NA MOVE/ZOOM =====
   const onViewportChanged = debounce(async () => {
     try {
@@ -5507,7 +5498,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
     return coordsMap[country] || [50.0755, 14.4378]; // Praha jako fallback
   }
-  
   // Funkce pro konfiguraci vyhledávání podle země
   function getCountrySearchConfig(country) {
     const configs = {
