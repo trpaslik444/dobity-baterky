@@ -2569,7 +2569,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           onmouseout="this.style.backgroundColor='#fff';this.style.borderColor='#e5e7eb';this.style.transform='translateY(0)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)';">
           <div style="font-size:20px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${squareColor};border-radius:50%;">${typeBadge}</div>
           <div style="flex:1 1 auto;min-width:0;">
-            <div style="font-weight:600;color:#111;font-size:14px;line-height:1.3;margin-bottom:2px;word-wrap:break-word;">${item.title || '(bez názvu)'}</div>
+            <div style="font-weight:600;color:#111;font-size:14px;line-height:1.3;margin-bottom:2px;word-wrap:break-word;">${item.title || item.name || '(bez názvu)'}</div>
             <div style="color:#10b981;font-weight:600;font-size:12px;">🚶 ${distKm} km • ${mins} min</div>
           </div>
         </button>`;
@@ -2669,7 +2669,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           onmouseout="this.style.backgroundColor='#fff';this.style.borderColor='#e5e7eb';this.style.transform='translateY(0)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)';">
           <div style="font-size:20px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${getNearbyItemSquareColor(item)};border-radius:50%;">${typeBadge}</div>
           <div style="flex:1 1 auto;min-width:0;">
-            <div style="font-weight:600;color:#111;font-size:14px;line-height:1.3;margin-bottom:2px;word-wrap:break-word;">${item.name || '(bez názvu)'}</div>
+            <div style="font-weight:600;color:#111;font-size:14px;line-height:1.3;margin-bottom:2px;word-wrap:break-word;">${item.name || item.title || '(bez názvu)'}</div>
             <div style="color:#10b981;font-weight:600;font-size:12px;">${walkText}</div>
           </div>
         </button>`;
@@ -2751,7 +2751,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               onclick="const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode='distance-active';renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}">
               <div style="font-size:12px;flex-shrink:0;">${typeIcon}</div>
               <div style="flex:1;min-width:0;">
-                <div style="font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.name || '(bez názvu)'}</div>
+                <div style="font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.name || item.title || '(bez názvu)'}</div>
                 <div style="color:#10b981;font-weight:600;">${walkText}</div>
               </div>
             </div>`;
