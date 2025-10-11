@@ -4398,7 +4398,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
-              ${p.post_type === 'poi' && p.svg_content ? p.svg_content : (p.icon_slug && p.post_type !== 'poi' ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : '')}
+              ${p.svg_content ? p.svg_content : (p.icon_slug ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : '')}
             </div>
             ${dbLogo}
           </div>`;
