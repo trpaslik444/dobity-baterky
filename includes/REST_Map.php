@@ -830,11 +830,26 @@ class REST_Map {
 
         $results = array_slice( $results, 0, $limit );
         $results = array_map( function( $item ) {
-            unset( $item['score'] );
+            if ( isset( $item['score'] ) ) {
+                $item['confidence'] = $this->score_to_confidence( $item['score'] );
+                unset( $item['score'] );
+            }
+
             return $item;
         }, $results );
 
         return rest_ensure_response( array( 'results' => $results ) );
+    }
+
+    private function score_to_confidence( $score ) {
+        if ( ! is_numeric( $score ) ) {
+            return null;
+        }
+
+        $clamped = max( 0, min( 180, (float) $score ) );
+        $normalized = (int) round( $clamped / 1.8 );
+
+        return max( 0, min( 100, $normalized ) );
     }
 
     private function determine_search_post_types( $types_param ) {

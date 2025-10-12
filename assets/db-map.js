@@ -591,6 +591,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const internalSearchCache = new Map();
     const externalSearchCache = new Map();
     let mobileSearchController = null;
+    let desktopSearchController = null;
   let lastRenderedFeatures = [];
   function selectFeaturesForView() {
     try {
@@ -3611,6 +3612,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (searchForm && searchInput && searchBtn) {
     function doSearch(e) {
       if (e) e.preventDefault();
+      removeDesktopAutocomplete();
       searchQuery = searchInput.value.trim().toLowerCase();
       renderCards(searchQuery, null, true);
       // Pokud je nalezeno přesně jedno místo, přibliž a zvýrazni
@@ -3624,10 +3626,44 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
     
+    // Přidat autocomplete pro desktop
+    const handleDesktopAutocompleteInput = debounce((value) => {
+      showDesktopAutocomplete(value, searchInput);
+    }, 250);
+
+    searchInput.addEventListener('input', function() {
+      const query = this.value.trim();
+      if (query.length >= 2) {
+        handleDesktopAutocompleteInput(query);
+      } else {
+        removeDesktopAutocomplete();
+      }
+    });
+
+    searchInput.addEventListener('focus', function() {
+      const query = this.value.trim();
+      if (query.length >= 2) {
+        showDesktopAutocomplete(query, searchInput);
+      }
+    });
+
+    searchInput.addEventListener('blur', function() {
+      // Dát malé zpoždění, aby kliknutí na autocomplete položku fungovalo
+      setTimeout(() => {
+        removeDesktopAutocomplete();
+      }, 200);
+    });
+    
     searchForm.addEventListener('submit', doSearch);
     searchBtn.addEventListener('click', doSearch);
     searchInput.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') doSearch(e);
+      if (e.key === 'Enter') {
+        removeDesktopAutocomplete();
+        doSearch(e);
+      }
+      if (e.key === 'Escape') {
+        removeDesktopAutocomplete();
+      }
     });
   }
 
@@ -5710,6 +5746,267 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
+  // Desktop autocomplete funkce
+  function removeDesktopAutocomplete() {
+    const existing = document.querySelector('.db-desktop-autocomplete');
+    if (existing) {
+      if (existing.__outsideHandler) {
+        document.removeEventListener('click', existing.__outsideHandler);
+      }
+      existing.remove();
+    }
+  }
+
+  function renderDesktopAutocomplete(data, inputElement) {
+    const internal = Array.isArray(data?.internal) ? data.internal : [];
+    const external = Array.isArray(data?.external) ? data.external : [];
+
+    if (internal.length === 0 && external.length === 0) {
+      removeDesktopAutocomplete();
+      return;
+    }
+
+    let autocomplete = document.querySelector('.db-desktop-autocomplete');
+    const rect = inputElement.getBoundingClientRect();
+    if (!autocomplete) {
+      autocomplete = document.createElement('div');
+      autocomplete.className = 'db-desktop-autocomplete';
+      autocomplete.style.position = 'fixed';
+      autocomplete.style.background = '#fff';
+      autocomplete.style.border = '1px solid #e5e7eb';
+      autocomplete.style.borderRadius = '8px';
+      autocomplete.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+      autocomplete.style.zIndex = '10001';
+      autocomplete.style.maxHeight = '400px';
+      autocomplete.style.overflowY = 'auto';
+      autocomplete.style.minWidth = '320px';
+      document.body.appendChild(autocomplete);
+    }
+
+    autocomplete.style.top = `${rect.bottom + 5}px`;
+    autocomplete.style.left = `${rect.left}px`;
+    autocomplete.style.width = `${Math.max(rect.width, 320)}px`;
+
+    const escapeHtml = (str) => {
+      return String(str || '').replace(/[&<>"']/g, (c) => {
+        switch (c) {
+          case '&': return '&amp;';
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '"': return '&quot;';
+          case "'": return '&#39;';
+          default: return c;
+        }
+      });
+    };
+
+    const internalItems = internal.map((item, idx) => {
+      const title = item?.title || '';
+      const address = item?.address || '';
+      const typeLabel = item?.type_label || item?.post_type || '';
+      const subtitleParts = [];
+      if (address) subtitleParts.push(address);
+      if (typeLabel) subtitleParts.push(typeLabel);
+      const subtitle = subtitleParts.join(' • ');
+      const badge = item?.is_recommended ? '<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; margin-left:6px;">DB doporučuje</span>' : '';
+      return `
+        <div class="db-desktop-ac-item" data-source="internal" data-index="${idx}" style="padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.15s;">
+          <div style="font-weight:600; color:#111; display:flex; align-items:center;">
+            <span>${escapeHtml(title)}</span>${badge}
+          </div>
+          ${subtitle ? `<div style="font-size:0.85em; color:#666; margin-top:4px;">${escapeHtml(subtitle)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    const externalItems = external.map((item, idx) => {
+      const display = item?.display_name || '';
+      const primary = display.split(',')[0] || display;
+      const country = item?._country ? ` – ${item._country}` : '';
+      const distance = Number.isFinite(item?._distance) ? ` (${Math.round(item._distance)} km)` : '';
+      return `
+        <div class="db-desktop-ac-item" data-source="external" data-index="${idx}" style="padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.15s;">
+          <div style="font-weight:500; color:#333;">${escapeHtml(primary)}</div>
+          <div style="font-size:0.85em; color:#666; margin-top:4px;">${escapeHtml(display)}${distance}${escapeHtml(country)}</div>
+        </div>
+      `;
+    }).join('');
+
+    const sections = [];
+    if (internal.length > 0) {
+      sections.push(`
+        <div class="db-desktop-ac-section" data-section="internal">
+          <div style="padding:8px 12px; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; background:#f9fafb;">Dobitý Baterky</div>
+          ${internalItems}
+        </div>
+      `);
+    }
+    if (external.length > 0) {
+      sections.push(`
+        <div class="db-desktop-ac-section" data-section="external">
+          <div style="padding:8px 12px; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280; background:#f9fafb;">OpenStreetMap</div>
+          ${externalItems}
+        </div>
+      `);
+    }
+
+    autocomplete.innerHTML = sections.join('');
+
+    if (autocomplete.__outsideHandler) {
+      document.removeEventListener('click', autocomplete.__outsideHandler);
+    }
+    const outsideHandler = (e) => {
+      if (!autocomplete.contains(e.target) && e.target !== inputElement) {
+        removeDesktopAutocomplete();
+      }
+    };
+    autocomplete.__outsideHandler = outsideHandler;
+    setTimeout(() => document.addEventListener('click', outsideHandler), 0);
+
+    autocomplete.querySelectorAll('.db-desktop-ac-item').forEach((itemEl) => {
+      itemEl.addEventListener('mouseenter', () => { itemEl.style.background = '#f8f9fa'; });
+      itemEl.addEventListener('mouseleave', () => { itemEl.style.background = 'transparent'; });
+      itemEl.addEventListener('click', async () => {
+        const source = itemEl.getAttribute('data-source');
+        const idx = parseInt(itemEl.getAttribute('data-index'), 10);
+        removeDesktopAutocomplete();
+        if (source === 'internal') {
+          const picked = internal[idx];
+          if (picked) {
+            inputElement.value = picked.title || '';
+            await handleDesktopInternalSelection(picked);
+          }
+        } else if (source === 'external') {
+          const picked = external[idx];
+          if (picked) {
+            inputElement.value = picked.display_name || '';
+            await handleDesktopExternalSelection(picked);
+          }
+        }
+      });
+    });
+  }
+
+  async function handleDesktopInternalSelection(result) {
+    try {
+      const lat = Number.parseFloat(result?.lat);
+      const lng = Number.parseFloat(result?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return;
+      }
+
+      const targetZoom = Math.max(map.getZoom(), 15);
+      map.setView([lat, lng], targetZoom, { animate: true, duration: 0.5 });
+
+      await fetchAndRenderRadius({ lat, lng }, null);
+
+      searchAddressCoords = null;
+      searchSortLocked = false;
+      sortMode = 'distance-active';
+      if (searchAddressMarker) {
+        try { map.removeLayer(searchAddressMarker); } catch(_) {}
+        searchAddressMarker = null;
+      }
+
+      if (result?.id != null) {
+        highlightMarkerById(result.id);
+        renderCards('', result.id);
+        const feature = featureCache.get(result.id);
+        if (feature) {
+          openDetailModal(feature);
+        }
+      }
+    } catch (error) {
+      console.error('Chyba při zobrazení interního výsledku:', error);
+    }
+  }
+
+  async function handleDesktopExternalSelection(result) {
+    try {
+      const lat = Number.parseFloat(result?.lat);
+      const lng = Number.parseFloat(result?.lon || result?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return;
+      }
+
+      const targetZoom = Math.max(map.getZoom(), 14);
+      map.setView([lat, lng], targetZoom, { animate: true, duration: 0.5 });
+
+      await fetchAndRenderRadius({ lat, lng }, null);
+
+      searchAddressCoords = [lat, lng];
+      searchSortLocked = true;
+      sortMode = 'distance-active';
+
+      if (searchAddressMarker) {
+        try { map.removeLayer(searchAddressMarker); } catch(_) {}
+      }
+      searchAddressMarker = L.marker([lat, lng], {
+        icon: L.divIcon({
+          className: 'search-address-marker',
+          html: '<div style="background:#dc2626;border:3px solid #fff;border-radius:50%;width:16px;height:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        })
+      }).addTo(map);
+
+      renderCards('');
+    } catch (error) {
+      console.error('Chyba při zobrazení externího výsledku:', error);
+    }
+  }
+
+  async function showDesktopAutocomplete(query, inputElement) {
+    const trimmed = (query || '').trim();
+    if (trimmed.length < 2) {
+      removeDesktopAutocomplete();
+      return;
+    }
+
+    const normalized = trimmed.toLowerCase();
+    const cachedInternal = internalSearchCache.get(normalized);
+    const cachedExternal = externalSearchCache.get(normalized);
+    if (cachedInternal || cachedExternal) {
+      renderDesktopAutocomplete({
+        internal: cachedInternal || [],
+        external: (cachedExternal && cachedExternal.results) || []
+      }, inputElement);
+    }
+
+    if (desktopSearchController) {
+      try { desktopSearchController.abort(); } catch(_) {}
+    }
+    desktopSearchController = new AbortController();
+    const signal = desktopSearchController.signal;
+
+    try {
+      const [internal, externalPayload] = await Promise.all([
+        getInternalSearchResults(trimmed, signal),
+        trimmed.length >= 3 ? getExternalSearchResults(trimmed, signal) : Promise.resolve({ results: [], userCoords: null })
+      ]);
+
+      if (signal.aborted) {
+        return;
+      }
+
+      renderDesktopAutocomplete({
+        internal,
+        external: externalPayload?.results || []
+      }, inputElement);
+      if (desktopSearchController && desktopSearchController.signal === signal) {
+        desktopSearchController = null;
+      }
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return;
+      }
+      console.error('Chyba při načítání desktop autocomplete:', error);
+      if (desktopSearchController && desktopSearchController.signal === signal) {
+        desktopSearchController = null;
+      }
+    }
+  }
+
   function closeMobileSearchField() {
     const searchField = document.querySelector('.db-mobile-search-field');
     if (searchField && !searchField.classList.contains('hidden')) {
@@ -5809,6 +6106,57 @@ document.addEventListener('DOMContentLoaded', async function() {
       externalSearchCache.set(normalized, fallback);
       return fallback;
     }
+  }
+
+  function getInternalConfidence(result) {
+    const raw = Number(result?.confidence ?? result?.score);
+    if (!Number.isFinite(raw)) {
+      return 0;
+    }
+
+    return Math.max(0, Math.min(100, Math.round(raw)));
+  }
+
+  function getExternalConfidence(result) {
+    const raw = Number(result?._score ?? result?.importance);
+    if (!Number.isFinite(raw)) {
+      return 0;
+    }
+
+    const clamped = Math.max(0, Math.min(150, raw));
+    return Math.max(0, Math.min(100, Math.round(clamped / 1.5)));
+  }
+
+  function shouldPreferInternalResult(bestInternal, bestExternal, query) {
+    if (!bestInternal) {
+      return false;
+    }
+
+    const normalizedQuery = (query || '').trim().toLowerCase();
+    const titleLc = (bestInternal.title || '').toLowerCase();
+    const addressLc = (bestInternal.address || '').toLowerCase();
+
+    if (normalizedQuery && (titleLc === normalizedQuery || addressLc === normalizedQuery)) {
+      return true;
+    }
+
+    const internalConfidence = getInternalConfidence(bestInternal);
+
+    if (!bestExternal) {
+      return internalConfidence > 0;
+    }
+
+    const externalConfidence = getExternalConfidence(bestExternal);
+
+    if (internalConfidence >= 85 && internalConfidence >= externalConfidence + 10) {
+      return true;
+    }
+
+    if (normalizedQuery.length <= 3 && internalConfidence >= 75 && internalConfidence >= externalConfidence + 20) {
+      return true;
+    }
+
+    return false;
   }
 
   function renderMobileAutocomplete(data, inputElement) {
@@ -6010,11 +6358,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
-  async function findBestInternalMatch(query) {
-    const results = await getInternalSearchResults(query);
-    return Array.isArray(results) && results.length > 0 ? results[0] : null;
-  }
-
   // Funkce pro mobilní vyhledávání
   async function performMobileSearch(query) {
     const trimmed = (query || '').trim();
@@ -6023,19 +6366,32 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     try {
-      const internalMatch = await findBestInternalMatch(trimmed);
-      if (internalMatch) {
-        await handleInternalSelection(internalMatch);
+      const [internalResults, externalPayload] = await Promise.all([
+        getInternalSearchResults(trimmed),
+        getExternalSearchResults(trimmed)
+      ]);
+
+      const internalList = Array.isArray(internalResults) ? internalResults : [];
+      const externalResults = Array.isArray(externalPayload?.results) ? externalPayload.results : [];
+      const bestInternal = internalList.length > 0 ? internalList[0] : null;
+      const bestExternal = externalResults.length > 0 ? externalResults[0] : null;
+
+      if (shouldPreferInternalResult(bestInternal, bestExternal, trimmed)) {
+        await handleInternalSelection(bestInternal);
         return;
       }
 
-      const externalPayload = await getExternalSearchResults(trimmed);
-      const externalResults = externalPayload?.results || [];
-      if (externalResults.length > 0) {
-        await handleExternalSelection(externalResults[0]);
-      } else {
-        showMobileSearchError('Nic jsme nenašli. Zkuste upravit dotaz.');
+      if (bestExternal) {
+        await handleExternalSelection(bestExternal);
+        return;
       }
+
+      if (bestInternal) {
+        await handleInternalSelection(bestInternal);
+        return;
+      }
+
+      showMobileSearchError('Nic jsme nenašli. Zkuste upravit dotaz.');
     } catch (error) {
       if (error.name === 'AbortError') {
         return;
