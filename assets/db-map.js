@@ -941,44 +941,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (typeof clearMarkers === 'function') clearMarkers();
       renderCards('', null, false);
       lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
-      // Pokud výsledky neleží ve viditelném viewportu, jemně přizpůsob výřez
-      try {
-        if (map && Array.isArray(features) && features.length > 0) {
-          const currentBounds = map.getBounds();
-          let anyInside = false;
-          for (let i = 0; i < features.length; i++) {
-            const f = features[i];
-            const coords = f?.geometry?.coordinates;
-            if (!Array.isArray(coords) || coords.length < 2) continue;
-            const latlng = L.latLng(coords[1], coords[0]);
-            if (currentBounds.contains(latlng)) { anyInside = true; break; }
-          }
-          if (!anyInside) {
-            const latlngs = features.map(f => {
-              const c = f?.geometry?.coordinates; return L.latLng(c[1], c[0]);
-            });
-            const fbounds = L.latLngBounds(latlngs);
-            // První fetch po startu: dovol mírný auto-fit
-            if (!previousCenter) {
-              map.fitBounds(fbounds.pad(0.1), { animate: true, maxZoom: 16 });
-            } else {
-              // Další fetch: nepřibližuj/nevzdaluj; jen posuň na nejbližší bod, aby byl viditelný
-              const currentZoom = map.getZoom();
-              const ctr = map.getCenter();
-              let best = null; let bestD2 = Number.POSITIVE_INFINITY;
-              for (let i = 0; i < latlngs.length; i++) {
-                const ll = latlngs[i];
-                const dx = ll.lat - ctr.lat; const dy = ll.lng - ctr.lng;
-                const d2 = dx*dx + dy*dy;
-                if (d2 < bestD2) { bestD2 = d2; best = ll; }
-              }
-              if (best) {
-                map.setView([best.lat, best.lng], currentZoom, { animate: true });
-              }
-            }
-          }
-        }
-      } catch(_) {}
+      // Zachovej stabilní viewport po fetchi: bez auto-fit/auto-pan.
+      // Poloha mapy je výhradně řízená uživatelem; přesuny provádíme
+      // pouze na explicitní akce (klik na pin, potvrzení vyhledávání, moje poloha).
+      // Intencionálně no-op zde.
       // map.setView(center, Math.max(map.getZoom() || 9, 9)); // vypnuto: neposouvat mapu po načtení v režimu okruhu
     } catch (err) {
       if (err.name !== 'AbortError') {
