@@ -68,6 +68,7 @@ class Frontend_Map {
         // Data pro JS
         wp_localize_script( 'db-map', 'dbMapData', array(
             'restUrl'   => rest_url( 'db/v1/map' ),
+            'searchUrl' => rest_url( 'db/v1/map-search' ),
             'restNonce' => wp_create_nonce( 'wp_rest' ),
             'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
             'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
