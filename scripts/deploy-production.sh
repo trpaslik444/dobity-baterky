@@ -20,8 +20,26 @@ if [ ! -d "$BUILD_DIR" ]; then
   exit 1
 fi
 
+# Zkus načíst .env, pokud ještě nebyl načten
 if [ -z "${PROD_PASS:-}" ]; then
-  echo "ERROR: Nastav proměnnou PROD_PASS s passphrase/heslem pro klíč ondraplas-default." >&2
+  if [ -f "$PROJECT_ROOT/.env" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$PROJECT_ROOT/.env"
+    set +a
+  fi
+fi
+
+# Pokud stále chybí, zeptej se interaktivně (pokud je TTY)
+if [ -z "${PROD_PASS:-}" ]; then
+  if [ -t 0 ]; then
+    read -r -s -p "Zadej PROD_PASS (passphrase pro ~/.ssh/id_ed25519_wpcom): " PROD_PASS
+    echo ""
+  fi
+fi
+
+if [ -z "${PROD_PASS:-}" ]; then
+  echo "ERROR: Nastav proměnnou PROD_PASS s passphrase/heslem pro klíč ondraplas-default (nebo doplň do .env)." >&2
   exit 1
 fi
 

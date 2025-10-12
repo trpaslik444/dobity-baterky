@@ -20,8 +20,27 @@ if [ ! -d "$BUILD_DIR" ]; then
   exit 1
 fi
 
+# Zkus načíst .env, pokud ještě nebyl načten
 if [ -z "${STAGING_PASS:-}" ]; then
-  echo "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč ondraplas-default." >&2
+  if [ -f "$PROJECT_ROOT/.env" ]; then
+    # Načti .env bezpečně
+    set -a
+    # shellcheck disable=SC1090
+    . "$PROJECT_ROOT/.env"
+    set +a
+  fi
+fi
+
+# Pokud stále chybí, zeptej se interaktivně (pokud je TTY)
+if [ -z "${STAGING_PASS:-}" ]; then
+  if [ -t 0 ]; then
+    read -r -s -p "Zadej STAGING_PASS (passphrase pro ~/.ssh/id_ed25519_wpcom): " STAGING_PASS
+    echo ""
+  fi
+fi
+
+if [ -z "${STAGING_PASS:-}" ]; then
+  echo "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč ondraplas-default (nebo doplň do .env)." >&2
   exit 1
 fi
 

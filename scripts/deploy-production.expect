@@ -17,11 +17,15 @@ if { ! [file isdirectory $local_dir] } {
 }
 
 if { ! [info exists env(PROD_PASS)] || $env(PROD_PASS) eq "" } {
-    puts "ERROR: Nastav proměnnou PROD_PASS s passphrase/heslem pro klíč ondraplas-default."
-    exit 2
+    stty -echo
+    send_user "Zadej PROD_PASS (passphrase pro ~/.ssh/id_ed25519_wpcom): "
+    expect_user -re "(.*)\n"
+    set password $expect_out(1,string)
+    stty echo
+    send_user "\n"
+} else {
+    set password $env(PROD_PASS)
 }
-
-set password $env(PROD_PASS)
 set timestamp [clock format [clock seconds] -format "%Y%m%d%H%M%S"]
 set backup_dir "dobity-baterky.backup-$timestamp"
 
@@ -44,7 +48,7 @@ expect "sftp>"
 send "mkdir dobity-baterky\r"
 
 expect "sftp>"
-send "lcd $local_dir\r"
+send "lcd \"$local_dir\"\r"
 
 expect "sftp>"
 send "put -r * dobity-baterky/\r"
