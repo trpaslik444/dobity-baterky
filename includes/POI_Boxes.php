@@ -37,9 +37,21 @@ class POI_Boxes {
         $address  = get_post_meta( $post->ID, '_poi_address', true );
         $lat      = get_post_meta( $post->ID, '_poi_lat', true );
         $lng      = get_post_meta( $post->ID, '_poi_lng', true );
-        
+
+        // Google Places / TripAdvisor API identifikátory
+        $legacy_place_id = get_post_meta( $post->ID, '_poi_place_id', true );
+        $google_place_id = get_post_meta( $post->ID, '_poi_google_place_id', true );
+        if ( empty( $google_place_id ) && ! empty( $legacy_place_id ) ) {
+            $google_place_id = $legacy_place_id;
+        }
+        $tripadvisor_location_id = get_post_meta( $post->ID, '_poi_tripadvisor_location_id', true );
+        $preferred_source = get_post_meta( $post->ID, '_poi_primary_external_source', true );
+
+        $google_cache_expires = get_post_meta( $post->ID, '_poi_google_cache_expires', true );
+        $tripadvisor_cache_expires = get_post_meta( $post->ID, '_poi_tripadvisor_cache_expires', true );
+
         // Google Places API data
-        $place_id = get_post_meta( $post->ID, '_poi_place_id', true );
+        $place_id = $google_place_id;
         $phone = get_post_meta( $post->ID, '_poi_phone', true );
         $website = get_post_meta( $post->ID, '_poi_website', true );
         $rating = get_post_meta( $post->ID, '_poi_rating', true );
@@ -102,10 +114,51 @@ class POI_Boxes {
                 <td><input type="number" step="any" name="_poi_lng" id="_poi_lng" value="<?php echo esc_attr( $lng ); ?>" /></td>
             </tr>
                     
-                    <?php if ($place_id): ?>
                     <tr>
-                        <th><label>Google Place ID</label></th>
-                        <td><code><?php echo esc_html($place_id); ?></code></td>
+                        <th><label for="_poi_google_place_id"><?php esc_html_e( 'Google Place ID', 'dobity-baterky' ); ?></label></th>
+                        <td>
+                            <input type="text" name="_poi_google_place_id" id="_poi_google_place_id" value="<?php echo esc_attr( $google_place_id ); ?>" class="regular-text" placeholder="ChIJ..." />
+                            <p class="description"><?php esc_html_e( 'Slouží pro automatické doplnění kontaktů a fotek z Google Places.', 'dobity-baterky' ); ?></p>
+                            <?php if ( $google_cache_expires ) : ?>
+                                <p class="description" style="color:#2271b1;">
+                                    <?php
+                                    printf(
+                                        /* translators: %s: datum expirace */
+                                        esc_html__( 'Aktuálně uložená data expirují %s (Google povoluje maximálně 30 dní).', 'dobity-baterky' ),
+                                        esc_html( date_i18n( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), intval( $google_cache_expires ) ) )
+                                    );
+                                    ?>
+                                </p>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="_poi_tripadvisor_location_id"><?php esc_html_e( 'Tripadvisor Location ID', 'dobity-baterky' ); ?></label></th>
+                        <td>
+                            <input type="text" name="_poi_tripadvisor_location_id" id="_poi_tripadvisor_location_id" value="<?php echo esc_attr( $tripadvisor_location_id ); ?>" class="regular-text" placeholder="123456" />
+                            <p class="description"><?php esc_html_e( 'Používá se jako záložní zdroj dat (bezplatná úroveň Content API).', 'dobity-baterky' ); ?></p>
+                            <?php if ( $tripadvisor_cache_expires ) : ?>
+                                <p class="description" style="color:#2271b1;">
+                                    <?php
+                                    printf(
+                                        /* translators: %s: datum expirace */
+                                        esc_html__( 'Uložená data expirují %s (Tripadvisor povoluje maximálně 24 hodin).', 'dobity-baterky' ),
+                                        esc_html( date_i18n( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), intval( $tripadvisor_cache_expires ) ) )
+                                    );
+                                    ?>
+                                </p>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="_poi_primary_external_source"><?php esc_html_e( 'Preferovaný zdroj dat', 'dobity-baterky' ); ?></label></th>
+                        <td>
+                            <select name="_poi_primary_external_source" id="_poi_primary_external_source">
+                                <option value="google_places" <?php selected( $preferred_source ?: 'google_places', 'google_places' ); ?>><?php esc_html_e( 'Google Places (primární)', 'dobity-baterky' ); ?></option>
+                                <option value="tripadvisor" <?php selected( $preferred_source, 'tripadvisor' ); ?>><?php esc_html_e( 'Tripadvisor', 'dobity-baterky' ); ?></option>
+                            </select>
+                            <p class="description"><?php esc_html_e( 'Primární zdroj je volán jako první, druhý pouze při chybě nebo vyčerpání limitu.', 'dobity-baterky' ); ?></p>
+                        </td>
                     </tr>
                     <tr>
                         <th><label for="_poi_photo_url"><?php esc_html_e( 'URL fotografie', 'dobity-baterky' ); ?></label></th>
@@ -123,7 +176,6 @@ class POI_Boxes {
                         <th><label for="_poi_place_source"><?php esc_html_e( 'Zdroj místa (URL)', 'dobity-baterky' ); ?></label></th>
                         <td><input type="url" name="_poi_place_source" id="_poi_place_source" value="<?php echo esc_attr( $place_source ); ?>" class="regular-text" placeholder="https://..." /></td>
                     </tr>
-                    <?php endif; ?>
                     
                     <tr>
                         <th><label for="_poi_phone"><?php esc_html_e( 'Telefon', 'dobity-baterky' ); ?></label></th>
@@ -864,6 +916,29 @@ class POI_Boxes {
         }
         
         // Google Places API metadata
+        if ( isset( $_POST['_poi_google_place_id'] ) ) {
+            $new_google_id = sanitize_text_field( $_POST['_poi_google_place_id'] );
+            $old_google_id = get_post_meta( $post_id, '_poi_google_place_id', true );
+            update_post_meta( $post_id, '_poi_google_place_id', $new_google_id );
+            if ( $new_google_id !== $old_google_id ) {
+                delete_post_meta( $post_id, '_poi_google_cache' );
+                delete_post_meta( $post_id, '_poi_google_cache_expires' );
+            }
+        }
+        if ( isset( $_POST['_poi_tripadvisor_location_id'] ) ) {
+            $new_tripadvisor_id = sanitize_text_field( $_POST['_poi_tripadvisor_location_id'] );
+            $old_tripadvisor_id = get_post_meta( $post_id, '_poi_tripadvisor_location_id', true );
+            update_post_meta( $post_id, '_poi_tripadvisor_location_id', $new_tripadvisor_id );
+            if ( $new_tripadvisor_id !== $old_tripadvisor_id ) {
+                delete_post_meta( $post_id, '_poi_tripadvisor_cache' );
+                delete_post_meta( $post_id, '_poi_tripadvisor_cache_expires' );
+            }
+        }
+        if ( isset( $_POST['_poi_primary_external_source'] ) ) {
+            $preferred = sanitize_text_field( $_POST['_poi_primary_external_source'] );
+            update_post_meta( $post_id, '_poi_primary_external_source', in_array( $preferred, array( 'google_places', 'tripadvisor' ), true ) ? $preferred : 'google_places' );
+        }
+
         if ( isset( $_POST['_poi_phone'] ) ) {
             update_post_meta( $post_id, '_poi_phone', sanitize_text_field( $_POST['_poi_phone'] ) );
         }

@@ -69,6 +69,7 @@ class Frontend_Map {
         wp_localize_script( 'db-map', 'dbMapData', array(
             'restUrl'   => rest_url( 'db/v1/map' ),
             'searchUrl' => rest_url( 'db/v1/map-search' ),
+            'poiExternalUrl' => rest_url( 'db/v1/poi-external' ),
             'restNonce' => wp_create_nonce( 'wp_rest' ),
             'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
             'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
@@ -76,6 +77,7 @@ class Frontend_Map {
             'isMapPage' => function_exists('db_is_map_app_page') ? db_is_map_app_page() : false,
             'pwaEnabled' => class_exists('PWAforWP') ? true : false,
             'ajaxUrl'   => admin_url('admin-ajax.php'),
+            'googleApiKey' => get_option('db_google_api_key'),
         ) );
         
     }
