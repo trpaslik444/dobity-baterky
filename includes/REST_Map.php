@@ -9,6 +9,12 @@ namespace DB;
 class REST_Map {
     private static $instance = null;
 
+    const GOOGLE_CACHE_TTL = DAY_IN_SECONDS * 30; // Google Places Service Terms allow storing Place Details for max 30 dní
+    const TRIPADVISOR_CACHE_TTL = DAY_IN_SECONDS; // Tripadvisor Content API vyžaduje refresh do 24 hodin
+    const GOOGLE_DAILY_LIMIT = 900; // Bezplatný tarif má 1000 dotazů/den – necháme si rezervu
+    const TRIPADVISOR_DAILY_LIMIT = 500;
+    const USAGE_OPTION = 'db_poi_api_usage';
+
     public static function get_instance() {
         if ( self::$instance === null ) {
             self::$instance = new self();
@@ -77,8 +83,21 @@ class REST_Map {
                 if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
                     return false;
                 }
-                
+
                 // Jednoduchá kontrola - necháme Members plugin, aby měl kontrolu
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
+        ) );
+
+        // Externí detaily POI (Google Places / Tripadvisor)
+        register_rest_route( 'db/v1', '/poi-external/(?P<id>\d+)', array(
+            'methods'  => 'GET',
+            'callback' => array( $this, 'handle_poi_external' ),
+            'permission_callback' => function ( $request ) {
+                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                    return false;
+                }
+
                 return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
             },
         ) );
@@ -164,6 +183,29 @@ class REST_Map {
             case 'poi':               return ['lat' => '_poi_lat', 'lng' => '_poi_lng'];
             default:                  return ['lat' => '_db_lat', 'lng' => '_db_lng'];
         }
+    }
+
+    private function maybe_decode_json_meta( $value ) {
+        if ( empty( $value ) ) {
+            return $value;
+        }
+
+        if ( is_string( $value ) ) {
+            $decoded = json_decode( $value, true );
+            if ( json_last_error() === JSON_ERROR_NONE ) {
+                return $decoded;
+            }
+        }
+
+        return $value;
+    }
+
+    private function format_timestamp_for_response( $timestamp ) {
+        if ( ! $timestamp ) {
+            return null;
+        }
+
+        return gmdate( 'c', intval( $timestamp ) );
     }
 
     public function handle_map( $request ) {
@@ -431,6 +473,22 @@ class REST_Map {
                     'poi_phone' => get_post_meta($post->ID, '_poi_phone', true),
                     'poi_website' => get_post_meta($post->ID, '_poi_website', true),
                     'poi_rating' => get_post_meta($post->ID, '_poi_rating', true),
+                    'poi_user_rating_count' => get_post_meta($post->ID, '_poi_user_rating_count', true),
+                    'poi_price_level' => get_post_meta($post->ID, '_poi_price_level', true),
+                    'poi_opening_hours' => get_post_meta($post->ID, '_poi_opening_hours', true),
+                    'poi_reviews' => get_post_meta($post->ID, '_poi_reviews', true),
+                    'poi_photos' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_photos', true)),
+                    'poi_photo_url' => get_post_meta($post->ID, '_poi_photo_url', true),
+                    'poi_photo_license' => get_post_meta($post->ID, '_poi_photo_license', true),
+                    'poi_photo_author' => get_post_meta($post->ID, '_poi_photo_author', true),
+                    'poi_google_place_id' => get_post_meta($post->ID, '_poi_google_place_id', true) ?: get_post_meta($post->ID, '_poi_place_id', true),
+                    'poi_tripadvisor_location_id' => get_post_meta($post->ID, '_poi_tripadvisor_location_id', true),
+                    'poi_primary_external_source' => get_post_meta($post->ID, '_poi_primary_external_source', true) ?: 'google_places',
+                    'poi_social_links' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_social_links', true)),
+                    'poi_external_cached_until' => array(
+                        'google_places' => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_google_cache_expires', true))),
+                        'tripadvisor'   => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_tripadvisor_cache_expires', true))),
+                    ),
                     'poi_description' => get_post_meta($post->ID, '_poi_description', true),
                     // Univerzální metadata pro všechny typy
                     'content' => $post->post_content,
@@ -1575,17 +1633,24 @@ class REST_Map {
     public function handle_google_place_details( $request ) {
         $params = $request->get_json_params();
         $place_id = sanitize_text_field($params['placeId'] ?? '');
-        
+
         if (!$place_id) {
             return new \WP_Error('missing_place_id', 'Chybí Place ID', array('status' => 400));
         }
-        
+        $place_data = $this->fetch_google_place_details_raw( $place_id );
+        if ( is_wp_error( $place_data ) ) {
+            return $place_data;
+        }
+
+        return rest_ensure_response( $place_data );
+    }
+
+    private function fetch_google_place_details_raw( $place_id ) {
         $api_key = get_option('db_google_api_key');
         if (!$api_key) {
             return new \WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 500));
         }
-        
-        // Použijeme starší verzi Google Places API (Place Details)
+
         $url = 'https://maps.googleapis.com/maps/api/place/details/json';
         $args = array(
             'place_id' => $place_id,
@@ -1593,40 +1658,38 @@ class REST_Map {
             'key' => $api_key,
             'language' => 'cs'
         );
-        
+
         $url = add_query_arg($args, $url);
-        
+
         $response = wp_remote_get($url, array(
             'timeout' => 30
         ));
-        
+
         if (is_wp_error($response)) {
             return new \WP_Error('google_api_error', 'Chyba při volání Google API: ' . $response->get_error_message(), array('status' => 500));
         }
-        
+
         $status_code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
-        
+
         // Log pro debugging
         error_log('Google Place Details API Response: ' . $body);
-        
+
         if ($status_code !== 200) {
             return new \WP_Error('google_api_error', 'Google API chyba: HTTP ' . $status_code, array('status' => 500));
         }
-        
+
         if (isset($data['error_message'])) {
             return new \WP_Error('google_api_error', 'Google API chyba: ' . $data['error_message'], array('status' => 500));
         }
-        
-        if ($data['status'] !== 'OK') {
-            return new \WP_Error('google_api_error', 'Google API chyba: ' . $data['status'], array('status' => 500));
+
+        if (($data['status'] ?? '') !== 'OK') {
+            return new \WP_Error('google_api_error', 'Google API chyba: ' . ($data['status'] ?? 'UNKNOWN_ERROR'), array('status' => 500));
         }
-        
-        // Převedeme starší formát na nový formát pro frontend
+
         $result = $data['result'];
-        
-        // Pro fotky použijeme pouze první (titulní) fotku
+
         $main_photo = null;
         if (isset($result['photos']) && is_array($result['photos']) && count($result['photos']) > 0) {
             $main_photo = array(
@@ -1636,8 +1699,8 @@ class REST_Map {
                 'htmlAttributions' => $result['photos'][0]['html_attributions'] ?? array()
             );
         }
-        
-        $place_data = array(
+
+        return array(
             'placeId' => $result['place_id'],
             'displayName' => array('text' => $result['name']),
             'formattedAddress' => $result['formatted_address'] ?? '',
@@ -1658,15 +1721,11 @@ class REST_Map {
             'iconBackgroundColor' => $result['icon_background_color'] ?? '',
             'iconMaskUri' => $result['icon_mask_base_uri'] ?? '',
             'editorialSummary' => $result['editorial_summary'] ?? null,
-            
-            // Další dostupná data
             'url' => $result['url'] ?? '',
             'vicinity' => $result['vicinity'] ?? '',
             'utcOffset' => $result['utc_offset'] ?? '',
             'businessStatus' => $result['business_status'] ?? '',
             'reviews' => $result['reviews'] ?? array(),
-            
-            // Restaurační služby
             'delivery' => $result['delivery'] ?? false,
             'dineIn' => $result['dine_in'] ?? false,
             'takeout' => $result['takeout'] ?? false,
@@ -1675,16 +1734,409 @@ class REST_Map {
             'servesBreakfast' => $result['serves_breakfast'] ?? false,
             'servesLunch' => $result['serves_lunch'] ?? false,
             'servesDinner' => $result['serves_dinner'] ?? false,
-            
-            // Přístupnost
             'wheelchairAccessibleEntrance' => $result['wheelchair_accessible_entrance'] ?? false,
             'curbsidePickup' => $result['curbside_pickup'] ?? false,
             'reservable' => $result['reservable'] ?? false,
-            
-            'rawData' => $result // Store full raw data
+            'rawData' => $result
         );
-        
-        return rest_ensure_response($place_data);
+    }
+
+    private function normalize_google_payload( $place_data ) {
+        $photos = array();
+        if ( ! empty( $place_data['photos'] ) && is_array( $place_data['photos'] ) ) {
+            foreach ( $place_data['photos'] as $photo ) {
+                $photos[] = array(
+                    'provider' => 'google_places',
+                    'photo_reference' => $photo['photoReference'] ?? ($photo['photo_reference'] ?? ''),
+                    'width' => $photo['width'] ?? 0,
+                    'height' => $photo['height'] ?? 0,
+                    'html_attributions' => $photo['htmlAttributions'] ?? ($photo['html_attributions'] ?? array())
+                );
+            }
+        }
+
+        return array(
+            'name' => $place_data['displayName']['text'] ?? '',
+            'address' => $place_data['formattedAddress'] ?? '',
+            'phone' => $place_data['nationalPhoneNumber'] ?? '',
+            'internationalPhone' => $place_data['internationalPhoneNumber'] ?? '',
+            'website' => $place_data['websiteUri'] ?? '',
+            'rating' => isset($place_data['rating']) ? floatval($place_data['rating']) : null,
+            'userRatingCount' => isset($place_data['userRatingCount']) ? intval($place_data['userRatingCount']) : null,
+            'priceLevel' => $place_data['priceLevel'] ?? '',
+            'openingHours' => $place_data['regularOpeningHours'] ?? null,
+            'photos' => $photos,
+            'mapUrl' => $place_data['url'] ?? '',
+            'sourceUrl' => $place_data['url'] ?? '',
+            'socialLinks' => array(),
+            'raw' => $place_data,
+        );
+    }
+
+    private function request_tripadvisor_details( $location_id ) {
+        $api_key = get_option('db_tripadvisor_api_key');
+        if (!$api_key) {
+            return new \WP_Error('no_api_key', 'Tripadvisor API klíč není nastaven', array('status' => 500));
+        }
+
+        $url = sprintf('https://api.content.tripadvisor.com/api/v1/location/%s/details', rawurlencode($location_id));
+        $url = add_query_arg(array(
+            'key' => $api_key,
+            'language' => 'cs',
+            'currency' => 'CZK'
+        ), $url);
+
+        $response = wp_remote_get($url, array('timeout' => 30));
+        if (is_wp_error($response)) {
+            return new \WP_Error('tripadvisor_api_error', 'Chyba při volání Tripadvisor API: ' . $response->get_error_message(), array('status' => 500));
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+
+        if ($status_code !== 200) {
+            return new \WP_Error('tripadvisor_api_error', 'Tripadvisor API chyba: HTTP ' . $status_code, array('status' => 500));
+        }
+
+        $data = json_decode($body, true);
+        if (!is_array($data)) {
+            return new \WP_Error('tripadvisor_invalid', 'Neplatná odpověď Tripadvisor API', array('status' => 500));
+        }
+
+        return $data;
+    }
+
+    private function normalize_tripadvisor_payload( $data ) {
+        $address = '';
+        if ( ! empty( $data['address_obj']['address_string'] ) ) {
+            $address = $data['address_obj']['address_string'];
+        } elseif ( ! empty( $data['address'] ) ) {
+            $address = $data['address'];
+        }
+
+        $photos = array();
+        if ( ! empty( $data['photo']['images'] ) && is_array( $data['photo']['images'] ) ) {
+            foreach ( $data['photo']['images'] as $size => $img ) {
+                if ( ! empty( $img['url'] ) ) {
+                    $photos[] = array(
+                        'provider' => 'tripadvisor',
+                        'url' => $img['url'],
+                        'width' => $img['width'] ?? 0,
+                        'height' => $img['height'] ?? 0,
+                        'caption' => $data['photo']['caption'] ?? '',
+                    );
+                    break; // pouze jednu reprezentativní velikost
+                }
+            }
+        }
+        if ( empty( $photos ) && ! empty( $data['additional_photos'] ) && is_array( $data['additional_photos'] ) ) {
+            foreach ( $data['additional_photos'] as $photo ) {
+                if ( ! empty( $photo['images']['large']['url'] ) ) {
+                    $photos[] = array(
+                        'provider' => 'tripadvisor',
+                        'url' => $photo['images']['large']['url'],
+                        'width' => $photo['images']['large']['width'] ?? 0,
+                        'height' => $photo['images']['large']['height'] ?? 0,
+                        'caption' => $photo['caption'] ?? '',
+                    );
+                }
+            }
+        }
+
+        $social = array();
+        if ( ! empty( $data['social_media'] ) && is_array( $data['social_media'] ) ) {
+            foreach ( $data['social_media'] as $social_item ) {
+                if ( ! empty( $social_item['type'] ) && ! empty( $social_item['url'] ) ) {
+                    $social[ strtolower( $social_item['type'] ) ] = $social_item['url'];
+                }
+            }
+        }
+
+        if ( ! empty( $data['email'] ) ) {
+            $social['email'] = $data['email'];
+        }
+
+        return array(
+            'name' => $data['name'] ?? '',
+            'address' => $address,
+            'phone' => $data['phone'] ?? '',
+            'internationalPhone' => $data['phone'] ?? '',
+            'website' => $data['website'] ?? '',
+            'rating' => isset($data['rating']) ? floatval($data['rating']) : null,
+            'userRatingCount' => isset($data['num_reviews']) ? intval($data['num_reviews']) : null,
+            'priceLevel' => $data['price_level'] ?? ($data['price'] ?? ''),
+            'openingHours' => $data['hours'] ?? null,
+            'photos' => $photos,
+            'mapUrl' => $data['web_url'] ?? '',
+            'sourceUrl' => $data['website'] ?? ($data['web_url'] ?? ''),
+            'socialLinks' => $social,
+            'raw' => $data,
+        );
+    }
+
+    private function get_service_preference( $post_id ) {
+        $preferred = get_post_meta( $post_id, '_poi_primary_external_source', true );
+        $preferred = $preferred ?: 'google_places';
+
+        $order = array('google_places', 'tripadvisor');
+        if ($preferred === 'tripadvisor') {
+            $order = array('tripadvisor', 'google_places');
+        }
+
+        $available = array();
+        foreach ( $order as $service ) {
+            if ( $service === 'google_places' ) {
+                if ( $this->get_google_place_id( $post_id ) ) {
+                    $available[] = $service;
+                }
+            } elseif ( $service === 'tripadvisor' ) {
+                if ( $this->get_tripadvisor_location_id( $post_id ) ) {
+                    $available[] = $service;
+                }
+            }
+        }
+
+        return $available;
+    }
+
+    private function get_google_place_id( $post_id ) {
+        $google_place_id = get_post_meta( $post_id, '_poi_google_place_id', true );
+        if ( $google_place_id ) {
+            return $google_place_id;
+        }
+
+        return get_post_meta( $post_id, '_poi_place_id', true );
+    }
+
+    private function get_tripadvisor_location_id( $post_id ) {
+        return get_post_meta( $post_id, '_poi_tripadvisor_location_id', true );
+    }
+
+    private function maybe_fetch_google_place_data( $post_id ) {
+        $place_id = $this->get_google_place_id( $post_id );
+        if ( ! $place_id ) {
+            return null;
+        }
+
+        $cache_key = '_poi_google_cache';
+        $cache_exp_key = '_poi_google_cache_expires';
+        $cached_payload = get_post_meta( $post_id, $cache_key, true );
+        $cached_expires = intval( get_post_meta( $post_id, $cache_exp_key, true ) );
+        $now = current_time( 'timestamp' );
+
+        if ( $cached_payload && $cached_expires > $now ) {
+            $decoded = json_decode( $cached_payload, true );
+            if ( is_array( $decoded ) ) {
+                return $decoded;
+            }
+        }
+
+        if ( ! $this->consume_quota( 'google_places' ) ) {
+            return new \WP_Error( 'quota_exceeded', 'Denní limit Google Places API byl vyčerpán.', array( 'status' => 429 ) );
+        }
+
+        $raw = $this->fetch_google_place_details_raw( $place_id );
+        if ( is_wp_error( $raw ) ) {
+            return $raw;
+        }
+
+        $normalized = $this->normalize_google_payload( $raw );
+        $normalized['fetchedAt'] = gmdate( 'c', current_time( 'timestamp', true ) );
+
+        update_post_meta( $post_id, $cache_key, wp_json_encode( $normalized ) );
+        update_post_meta( $post_id, $cache_exp_key, $now + self::GOOGLE_CACHE_TTL );
+
+        $this->persist_enriched_fields( $post_id, $normalized );
+
+        return $normalized;
+    }
+
+    private function maybe_fetch_tripadvisor_data( $post_id ) {
+        $location_id = $this->get_tripadvisor_location_id( $post_id );
+        if ( ! $location_id ) {
+            return null;
+        }
+
+        $cache_key = '_poi_tripadvisor_cache';
+        $cache_exp_key = '_poi_tripadvisor_cache_expires';
+        $cached_payload = get_post_meta( $post_id, $cache_key, true );
+        $cached_expires = intval( get_post_meta( $post_id, $cache_exp_key, true ) );
+        $now = current_time( 'timestamp' );
+
+        if ( $cached_payload && $cached_expires > $now ) {
+            $decoded = json_decode( $cached_payload, true );
+            if ( is_array( $decoded ) ) {
+                return $decoded;
+            }
+        }
+
+        if ( ! $this->consume_quota( 'tripadvisor' ) ) {
+            return new \WP_Error( 'quota_exceeded', 'Denní limit Tripadvisor API byl vyčerpán.', array( 'status' => 429 ) );
+        }
+
+        $raw = $this->request_tripadvisor_details( $location_id );
+        if ( is_wp_error( $raw ) ) {
+            return $raw;
+        }
+
+        $normalized = $this->normalize_tripadvisor_payload( $raw );
+        $normalized['fetchedAt'] = gmdate( 'c', current_time( 'timestamp', true ) );
+
+        update_post_meta( $post_id, $cache_key, wp_json_encode( $normalized ) );
+        update_post_meta( $post_id, $cache_exp_key, $now + self::TRIPADVISOR_CACHE_TTL );
+
+        $this->persist_enriched_fields( $post_id, $normalized );
+
+        return $normalized;
+    }
+
+    private function consume_quota( $service ) {
+        $limit = $this->get_service_daily_limit( $service );
+        if ( $limit === 0 ) {
+            return true;
+        }
+
+        $usage = get_option( self::USAGE_OPTION, array() );
+        if ( ! is_array( $usage ) ) {
+            $usage = array();
+        }
+
+        $now = current_time( 'timestamp' );
+        if ( empty( $usage[ $service ] ) || ! is_array( $usage[ $service ] ) ) {
+            $usage[ $service ] = array( 'count' => 0, 'day_start' => $now );
+        }
+
+        $day_start = intval( $usage[ $service ]['day_start'] );
+        if ( $now - $day_start >= DAY_IN_SECONDS ) {
+            $usage[ $service ] = array( 'count' => 0, 'day_start' => $now );
+        }
+
+        if ( $usage[ $service ]['count'] >= $limit ) {
+            update_option( self::USAGE_OPTION, $usage, false );
+            return false;
+        }
+
+        $usage[ $service ]['count']++;
+        update_option( self::USAGE_OPTION, $usage, false );
+        return true;
+    }
+
+    private function get_service_daily_limit( $service ) {
+        $defaults = array(
+            'google_places' => self::GOOGLE_DAILY_LIMIT,
+            'tripadvisor' => self::TRIPADVISOR_DAILY_LIMIT,
+        );
+
+        $default = isset( $defaults[ $service ] ) ? $defaults[ $service ] : 0;
+        return (int) apply_filters( 'db_poi_service_daily_limit', $default, $service );
+    }
+
+    public function handle_poi_external( $request ) {
+        $post_id = intval( $request['id'] );
+        if ( ! $post_id ) {
+            return new \WP_Error( 'missing_id', 'Chybí ID příspěvku', array( 'status' => 400 ) );
+        }
+
+        $post = get_post( $post_id );
+        if ( ! $post || $post->post_type !== 'poi' ) {
+            return new \WP_Error( 'invalid_post', 'Příspěvek není typu POI', array( 'status' => 404 ) );
+        }
+
+        $services = $this->get_service_preference( $post_id );
+        $errors = array();
+        $payload = null;
+
+        foreach ( $services as $service ) {
+            if ( $service === 'google_places' ) {
+                $data = $this->maybe_fetch_google_place_data( $post_id );
+            } elseif ( $service === 'tripadvisor' ) {
+                $data = $this->maybe_fetch_tripadvisor_data( $post_id );
+            } else {
+                continue;
+            }
+
+            if ( is_wp_error( $data ) ) {
+                $errors[ $service ] = $data->get_error_message();
+                continue;
+            }
+
+            if ( $data ) {
+                $payload = array(
+                    'provider' => $service,
+                    'data' => $data,
+                    'expiresAt' => $this->get_service_expiration( $post_id, $service ),
+                    'meta' => array(
+                        'google_place_id' => $this->get_google_place_id( $post_id ),
+                        'tripadvisor_location_id' => $this->get_tripadvisor_location_id( $post_id ),
+                    ),
+                );
+                break;
+            }
+        }
+
+        if ( ! $payload ) {
+            return rest_ensure_response( array(
+                'provider' => null,
+                'data' => null,
+                'errors' => $errors,
+            ) );
+        }
+
+        if ( ! empty( $errors ) ) {
+            $payload['errors'] = $errors;
+        }
+
+        return rest_ensure_response( $payload );
+    }
+
+    private function get_service_expiration( $post_id, $service ) {
+        if ( $service === 'google_places' ) {
+            $expires = intval( get_post_meta( $post_id, '_poi_google_cache_expires', true ) );
+            return $this->format_timestamp_for_response( $expires );
+        }
+
+        if ( $service === 'tripadvisor' ) {
+            $expires = intval( get_post_meta( $post_id, '_poi_tripadvisor_cache_expires', true ) );
+            return $this->format_timestamp_for_response( $expires );
+        }
+
+        return null;
+    }
+
+    private function persist_enriched_fields( $post_id, $data ) {
+        $maybe_update_if_empty = function( $meta_key, $value ) use ( $post_id ) {
+            if ( $value === null || $value === '' ) {
+                return;
+            }
+            $existing = get_post_meta( $post_id, $meta_key, true );
+            if ( $existing === '' ) {
+                update_post_meta( $post_id, $meta_key, $value );
+            }
+        };
+
+        $maybe_update_if_empty( '_poi_address', $data['address'] ?? '' );
+        $maybe_update_if_empty( '_poi_phone', $data['phone'] ?? '' );
+        $maybe_update_if_empty( '_poi_website', $data['website'] ?? '' );
+
+        if ( isset( $data['rating'] ) ) {
+            update_post_meta( $post_id, '_poi_rating', $data['rating'] );
+        }
+        if ( isset( $data['userRatingCount'] ) ) {
+            update_post_meta( $post_id, '_poi_user_rating_count', $data['userRatingCount'] );
+        }
+        if ( ! empty( $data['openingHours'] ) ) {
+            $encoded = is_string( $data['openingHours'] ) ? $data['openingHours'] : wp_json_encode( $data['openingHours'] );
+            update_post_meta( $post_id, '_poi_opening_hours', $encoded );
+        }
+        if ( ! empty( $data['photos'] ) ) {
+            update_post_meta( $post_id, '_poi_photos', wp_json_encode( $data['photos'] ) );
+        }
+        if ( ! empty( $data['socialLinks'] ) ) {
+            update_post_meta( $post_id, '_poi_social_links', wp_json_encode( $data['socialLinks'] ) );
+        }
+        if ( ! empty( $data['mapUrl'] ) ) {
+            update_post_meta( $post_id, '_poi_url', $data['mapUrl'] );
+        }
     }
 
     /**

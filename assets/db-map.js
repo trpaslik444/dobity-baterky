@@ -2403,6 +2403,94 @@ document.addEventListener('DOMContentLoaded', async function() {
     tryLoad();
   }
 
+  async function enrichPOIFeature(feature) {
+    if (!feature || !feature.properties || feature.properties.post_type !== 'poi') {
+      return feature;
+    }
+
+    const props = feature.properties;
+    if (!props.poi_external_expires_at && props.poi_external_cached_until) {
+      try {
+        const providerKey = props.poi_external_provider || props.poi_primary_external_source || 'google_places';
+        const expires = props.poi_external_cached_until[providerKey];
+        if (expires) {
+          props.poi_external_expires_at = expires;
+        }
+      } catch (_) {}
+    }
+    try {
+      if (props.poi_external_expires_at) {
+        const expires = new Date(props.poi_external_expires_at).getTime();
+        if (expires && Date.now() < expires - 5000) {
+          return feature;
+        }
+      }
+
+      const restBase = (window.dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external').replace(/\/$/, '');
+      const nonce = window.dbMapData?.restNonce || '';
+      const response = await fetch(`${restBase}/${props.id}`, {
+        headers: {
+          'X-WP-Nonce': nonce,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        return feature;
+      }
+
+      const payload = await response.json();
+      if (!payload || !payload.data) {
+        return feature;
+      }
+
+      const enriched = { ...feature, properties: { ...props } };
+      const enrichedProps = enriched.properties;
+      const data = payload.data || {};
+
+      if (data.phone) enrichedProps.poi_phone = data.phone;
+      if (data.internationalPhone) enrichedProps.poi_international_phone = data.internationalPhone;
+      if (data.address) enrichedProps.poi_address = data.address;
+      if (data.website) enrichedProps.poi_website = data.website;
+      if (typeof data.rating !== 'undefined' && data.rating !== null) enrichedProps.poi_rating = data.rating;
+      if (typeof data.userRatingCount !== 'undefined' && data.userRatingCount !== null) enrichedProps.poi_user_rating_count = data.userRatingCount;
+      if (data.priceLevel) enrichedProps.poi_price_level = data.priceLevel;
+      if (data.mapUrl) enrichedProps.poi_url = data.mapUrl;
+      if (data.openingHours) {
+        enrichedProps.poi_opening_hours = typeof data.openingHours === 'string' ? data.openingHours : JSON.stringify(data.openingHours);
+      }
+      if (Array.isArray(data.photos) && data.photos.length) {
+        enrichedProps.poi_photos = data.photos;
+        if (!enrichedProps.image) {
+          const firstPhoto = data.photos[0];
+          if (firstPhoto && typeof firstPhoto === 'object') {
+            if (firstPhoto.url) {
+              enrichedProps.image = firstPhoto.url;
+            } else if ((firstPhoto.photo_reference || firstPhoto.photoReference) && window.dbMapData?.googleApiKey) {
+              const ref = firstPhoto.photo_reference || firstPhoto.photoReference;
+              enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${window.dbMapData.googleApiKey}`;
+            }
+          } else if (typeof firstPhoto === 'string') {
+            enrichedProps.image = firstPhoto;
+          }
+        }
+      }
+      if (data.socialLinks && typeof data.socialLinks === 'object') {
+        enrichedProps.poi_social_links = data.socialLinks;
+      }
+
+      enrichedProps.poi_external_provider = payload.provider || enrichedProps.poi_external_provider || null;
+      if (payload.expiresAt) {
+        enrichedProps.poi_external_expires_at = payload.expiresAt;
+      }
+
+      return enriched;
+    } catch (error) {
+      console.error('[DB Map] Chyba při obohacení POI', error);
+      return feature;
+    }
+  }
+
   // Funkce pro načítání detailu POI
   async function loadPOIDetail(poiId, lat, lng) {
     try {
@@ -2414,9 +2502,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       });
       const data = await response.json();
-      
+
       if (data.features && data.features.length > 0) {
-        const feature = data.features[0];
+        let feature = data.features[0];
+        feature = await enrichPOIFeature(feature);
         featureCache.set(feature.properties.id, feature);
         openDetailModal(feature);
       }
@@ -3166,27 +3255,44 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Rating (pokud je dostupný)
     let ratingInfo = '';
-    if (p.rating) {
+    const ratingValue = p.post_type === 'poi' ? (p.poi_rating || p.rating) : p.rating;
+    const ratingCount = p.post_type === 'poi' ? (p.poi_user_rating_count || '') : (p.user_rating_count || '');
+    if (ratingValue) {
+      const countText = ratingCount ? `<span style="font-size:12px;color:#684c0f;margin-left:8px;">(${ratingCount} hodnocení)</span>` : '';
       ratingInfo = `
         <div style="margin: 16px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
           <div style="font-weight: 600; color: #856404;">Hodnocení</div>
-          <div style="color: #856404; margin-top: 4px;">★★★★☆ ${p.rating}</div>
+          <div style="color: #856404; margin-top: 4px; display:flex;align-items:center;gap:6px;">
+            <span>★★★★☆ ${parseFloat(ratingValue).toFixed(1)}</span>
+            ${countText}
+          </div>
         </div>
       `;
     }
-    
+
     // Fotky a média
     let photosSection = '';
     if (p.poi_photos && Array.isArray(p.poi_photos) && p.poi_photos.length > 0) {
       const photoItems = p.poi_photos.slice(0, 6).map(photo => {
-        const photoUrl = photo.photo_reference ? 
-          `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photo.photo_reference}&key=${window.dbMapData?.googleApiKey || ''}` :
-          photo;
+        let photoUrl = '';
+        if (photo && typeof photo === 'object') {
+          if (photo.url) {
+            photoUrl = photo.url;
+          } else if ((photo.photo_reference || photo.photoReference) && window.dbMapData?.googleApiKey) {
+            const ref = photo.photo_reference || photo.photoReference;
+            photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${window.dbMapData?.googleApiKey || ''}`;
+          }
+        } else if (typeof photo === 'string') {
+          photoUrl = photo;
+        }
+        if (!photoUrl) {
+          return '';
+        }
         return `<div class="photo-item" style="flex: 0 0 calc(50% - 8px); margin: 4px; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
           <img src="${photoUrl}" alt="Foto" style="width: 100%; height: 120px; object-fit: cover; display: block;" loading="lazy">
         </div>`;
       }).join('');
-      
+
       photosSection = `
         <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
           <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">Fotky</div>
@@ -3198,7 +3304,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Kontaktní informace
     let contactSection = '';
     const contactItems = [];
-    
+
     if (p.poi_phone || p.rv_phone || p.phone) {
       const phone = p.poi_phone || p.rv_phone || p.phone;
       contactItems.push(`<div style="margin: 8px 0; display: flex; align-items: center; gap: 8px;">
@@ -3222,7 +3328,23 @@ document.addEventListener('DOMContentLoaded', async function() {
         <span style="color: #666; line-height: 1.4;">${address}</span>
       </div>`);
     }
-    
+
+    let socialLinks = p.poi_social_links;
+    if (typeof socialLinks === 'string') {
+      try { socialLinks = JSON.parse(socialLinks); } catch (_) { socialLinks = null; }
+    }
+    if (socialLinks && typeof socialLinks === 'object') {
+      Object.entries(socialLinks).forEach(([network, url]) => {
+        if (!url) return;
+        const icon = network === 'facebook' ? '📘' : network === 'instagram' ? '📸' : network === 'email' ? '✉️' : '🔗';
+        const href = network === 'email' ? `mailto:${url}` : url;
+        contactItems.push(`<div style="margin: 8px 0; display:flex; align-items:center; gap:8px;">
+          <span style="color:#049FE8;font-size:1.2em;">${icon}</span>
+          <a href="${href}" target="_blank" rel="noopener" style="color:#049FE8;text-decoration:none;font-weight:500;">${network}</a>
+        </div>`);
+      });
+    }
+
     if (contactItems.length > 0) {
       contactSection = `
         <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
