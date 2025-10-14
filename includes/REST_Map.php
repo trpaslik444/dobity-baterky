@@ -1690,14 +1690,17 @@ class REST_Map {
 
         $result = $data['result'];
 
-        $main_photo = null;
+        // Předej všechny fotky z Places Details (FE si vybere, kolik zobrazí)
+        $photos_all = array();
         if (isset($result['photos']) && is_array($result['photos']) && count($result['photos']) > 0) {
-            $main_photo = array(
-                'photoReference' => $result['photos'][0]['photo_reference'] ?? '',
-                'width' => $result['photos'][0]['width'] ?? 0,
-                'height' => $result['photos'][0]['height'] ?? 0,
-                'htmlAttributions' => $result['photos'][0]['html_attributions'] ?? array()
-            );
+            foreach ($result['photos'] as $ph) {
+                $photos_all[] = array(
+                    'photoReference' => $ph['photo_reference'] ?? '',
+                    'width' => $ph['width'] ?? 0,
+                    'height' => $ph['height'] ?? 0,
+                    'htmlAttributions' => $ph['html_attributions'] ?? array()
+                );
+            }
         }
 
         return array(
@@ -1716,7 +1719,8 @@ class REST_Map {
             'userRatingCount' => $result['user_ratings_total'] ?? 0,
             'priceLevel' => $result['price_level'] ?? '',
             'regularOpeningHours' => $result['opening_hours'] ?? null,
-            'photos' => $main_photo ? array($main_photo) : array(),
+            // Vrátíme všechny fotky (bez přímé URL – ty generujeme v normalize_google_payload)
+            'photos' => $photos_all,
             'iconUri' => $result['icon'] ?? '',
             'iconBackgroundColor' => $result['icon_background_color'] ?? '',
             'iconMaskUri' => $result['icon_mask_base_uri'] ?? '',
@@ -1744,18 +1748,32 @@ class REST_Map {
     private function normalize_google_payload( $place_data ) {
         $photos = array();
         if ( ! empty( $place_data['photos'] ) && is_array( $place_data['photos'] ) ) {
+            $api_key = get_option('db_google_api_key');
+            $max = 6; // vyrobíme až 6 fotek, FE si vezme první 3
+            $count = 0;
             foreach ( $place_data['photos'] as $photo ) {
-                $photos[] = array(
+                $ref = $photo['photoReference'] ?? ($photo['photo_reference'] ?? '');
+                $item = array(
                     'provider' => 'google_places',
-                    'photo_reference' => $photo['photoReference'] ?? ($photo['photo_reference'] ?? ''),
+                    'photo_reference' => $ref,
                     'width' => $photo['width'] ?? 0,
                     'height' => $photo['height'] ?? 0,
                     'html_attributions' => $photo['htmlAttributions'] ?? ($photo['html_attributions'] ?? array())
                 );
+                if ( $ref !== '' && ! empty( $api_key ) ) {
+                    $item['url'] = add_query_arg( array(
+                        'maxwidth' => min( 1200, intval($photo['width'] ?? 1200) ?: 1200 ),
+                        'photo_reference' => $ref,
+                        'key' => $api_key,
+                    ), 'https://maps.googleapis.com/maps/api/place/photo' );
+                }
+                $photos[] = $item;
+                $count++;
+                if ( $count >= $max ) break;
             }
         }
 
-        return array(
+        $payload = array(
             'name' => $place_data['displayName']['text'] ?? '',
             'address' => $place_data['formattedAddress'] ?? '',
             'phone' => $place_data['nationalPhoneNumber'] ?? '',
@@ -1771,6 +1789,22 @@ class REST_Map {
             'socialLinks' => array(),
             'raw' => $place_data,
         );
+
+        // Vytvořit přímou URL pro první fotku, pokud je photo_reference k dispozici a máme API key.
+        $api_key = get_option('db_google_api_key');
+        if (!empty($api_key) && !empty($photos) && is_array($photos)) {
+            $ref = $photos[0]['photo_reference'] ?? '';
+            if ($ref !== '') {
+                // Uložit i přímou URL pro FE hero image bez nutnosti znát klíč na FE
+                $payload['photoUrl'] = add_query_arg(array(
+                    'maxwidth' => 1200,
+                    'photo_reference' => $ref,
+                    'key' => $api_key,
+                ), 'https://maps.googleapis.com/maps/api/place/photo');
+            }
+        }
+
+        return $payload;
     }
 
     private function request_tripadvisor_details( $location_id ) {
@@ -2136,6 +2170,10 @@ class REST_Map {
         }
         if ( ! empty( $data['mapUrl'] ) ) {
             update_post_meta( $post_id, '_poi_url', $data['mapUrl'] );
+        }
+        // Ulož přímou URL fotky pro snadné použití na FE
+        if ( ! empty( $data['photoUrl'] ) && is_string( $data['photoUrl'] ) ) {
+            update_post_meta( $post_id, '_poi_photo_url', esc_url_raw( $data['photoUrl'] ) );
         }
     }
 

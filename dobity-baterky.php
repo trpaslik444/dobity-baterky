@@ -25,7 +25,7 @@ if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'DB_DEBUG' ) && DB_DEBUG ) {
 define( 'DB_PLUGIN_FILE', __FILE__ );
 define( 'DB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'DB_PLUGIN_VERSION', '1.0.6-local-working' );
+define( 'DB_PLUGIN_VERSION', '1.0.8-local-hero-carousel' );
 
 // -----------------------------------------------------------------------------
 // Access helpers – jednotná kontrola přístupu k mapové appce
@@ -415,6 +415,8 @@ add_action('wp_enqueue_scripts', function() {
         'ajaxUrl' => admin_url('admin-ajax.php'),
         'adminNonce' => wp_create_nonce('db_admin_actions'),
         'adminUrl' => admin_url(),
+        // Google Places Photos API vyžaduje klíč i na frontendu (URL redirect). Klíč by měl být omezen refererem.
+        'googleApiKey' => get_option('db_google_api_key') ?: '',
         'chargerColors' => array(
             'ac' => get_option('db_charger_ac_color', '#049FE8'),
             'dc' => get_option('db_charger_dc_color', '#FFACC4'),
@@ -586,6 +588,14 @@ if ( file_exists( __DIR__ . '/includes/REST_Nearby.php' ) ) {
     }
 }
 
+// REST API: POI Discovery (admin only)
+if ( file_exists( __DIR__ . '/includes/REST_POI_Discovery.php' ) ) {
+    require_once __DIR__ . '/includes/REST_POI_Discovery.php';
+    if ( class_exists( 'DB\REST_POI_Discovery' ) ) {
+        DB\REST_POI_Discovery::get_instance()->register();
+    }
+}
+
 // Background Jobs pro recompute
 if ( file_exists( __DIR__ . '/includes/Jobs/Nearby_Recompute_Job.php' ) ) {
     require_once __DIR__ . '/includes/Jobs/Nearby_Recompute_Job.php';
@@ -619,6 +629,12 @@ if (defined('WP_CLI') && WP_CLI) {
         require_once __DIR__ . '/includes/CLI/Provider_Enrichment_Command.php';
         if ( class_exists( 'DB\\CLI\\Provider_Enrichment_Command' ) ) {
             \WP_CLI::add_command('db-providers', 'DB\\CLI\\Provider_Enrichment_Command');
+        }
+    }
+    if ( file_exists( __DIR__ . '/includes/CLI/POI_Discovery_Command.php' ) ) {
+        require_once __DIR__ . '/includes/CLI/POI_Discovery_Command.php';
+        if ( class_exists( 'DB\\CLI\\POI_Discovery_Command' ) ) {
+            \WP_CLI::add_command('db-poi', 'DB\\CLI\\POI_Discovery_Command');
         }
     }
 }
