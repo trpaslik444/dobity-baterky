@@ -2414,12 +2414,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       } catch (_) {}
     }
     try {
-      // Pokud expirace ještě neproběhla, fetch přeskoč POUZE když už máme obohacená data
+      // Cache-first: přeskočit jen pokud máme klíčová data (web, fotky, otevírací doba)
       if (props.poi_external_expires_at) {
         const expires = new Date(props.poi_external_expires_at).getTime();
-        const hasEnriched = !!(props.poi_website || props.poi_photos || props.poi_phone || props.poi_opening_hours || props.poi_social_links);
-        try { console.debug('[DB Map][POI enrich] cache state', { id: props.id, expiresAt: props.poi_external_expires_at, hasEnriched }); } catch(_) {}
-        if (expires && Date.now() < expires - 5000 && hasEnriched) {
+        const missingHours = !props.poi_opening_hours;
+        const missingWebsite = !props.poi_website;
+        const missingPhotos = !(Array.isArray(props.poi_photos) && props.poi_photos.length > 0);
+        const shouldSkip = expires && Date.now() < (expires - 5000) && !(missingHours || missingWebsite || missingPhotos);
+        try { console.debug('[DB Map][POI enrich] cache state', { id: props.id, expiresAt: props.poi_external_expires_at, missingHours, missingWebsite, missingPhotos, shouldSkip }); } catch(_) {}
+        if (shouldSkip) {
           return feature;
         }
       }
@@ -2440,8 +2443,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       const payload = await response.json();
-      try { console.debug('[DB Map][POI enrich] payload', { id: props.id, provider: payload?.provider, hasData: !!payload?.data }); } catch(_) {}
+      try { console.debug('[DB Map][POI enrich] payload', { id: props.id, provider: payload?.provider, hasData: !!payload?.data, status: payload?.status }); } catch(_) {}
+      // Obsluha stavů bez dat
       if (!payload || !payload.data) {
+        if (payload && payload.status === 'review_required') {
+          props.poi_status = 'review_required';
+          props.poi_status_message = 'Podrobnosti čekají na potvrzení administrátorem.';
+        } else if (payload && payload.status === 'quota_blocked') {
+          props.poi_status = 'quota_blocked';
+          props.poi_status_message = 'Podrobnosti jsou dočasně nedostupné (limit API). Zkuste to později.';
+        }
         return feature;
       }
 
@@ -2458,7 +2469,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (data.priceLevel) enrichedProps.poi_price_level = data.priceLevel;
       if (data.mapUrl) enrichedProps.poi_url = data.mapUrl;
       if (data.openingHours) {
-        enrichedProps.poi_opening_hours = typeof data.openingHours === 'string' ? data.openingHours : JSON.stringify(data.openingHours);
+        let oh = data.openingHours;
+        // Normalizace na weekdayDescriptions
+        if (oh && typeof oh === 'object' && !oh.weekdayDescriptions && Array.isArray(oh.weekday_text)) {
+          oh = { weekdayDescriptions: oh.weekday_text };
+        }
+        enrichedProps.poi_opening_hours = typeof oh === 'string' ? oh : JSON.stringify(oh);
+        try { console.debug('[DB Map][POI enrich] openingHours set', { id: enrichedProps.id, oh: enrichedProps.poi_opening_hours }); } catch(_) {}
+      } else {
+        try { console.debug('[DB Map][POI enrich] openingHours missing', { id: enrichedProps.id }); } catch(_) {}
       }
       // Základní služby/nabídka
       if (typeof data.dineIn !== 'undefined') enrichedProps.poi_dine_in = !!data.dineIn;
@@ -2505,6 +2524,20 @@ document.addEventListener('DOMContentLoaded', async function() {
       try { console.error('[DB Map][POI enrich] chyba', error); } catch(_) {}
       return feature;
     }
+  }
+
+  // Určí, zda má smysl volat REST pro doplnění detailu (kvůli loaderu)
+  function shouldFetchPOIDetails(props) {
+    if (!props) return false;
+    const expiresAt = props.poi_external_expires_at ? Date.parse(props.poi_external_expires_at) : 0;
+    const missingHours = !props.poi_opening_hours;
+    const missingWebsite = !props.poi_website;
+    const hasPhotos = Array.isArray(props.poi_photos) && props.poi_photos.length > 0;
+    const hasAnyPhoto = hasPhotos || !!props.poi_photo_url || !!props.image;
+    const missingPhotos = !hasAnyPhoto;
+    const notExpired = expiresAt && Date.now() < (expiresAt - 5000);
+    const need = (missingHours || missingWebsite || missingPhotos);
+    return !notExpired || need;
   }
 
   // Funkce pro načítání detailu POI
@@ -3169,7 +3202,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Pokud je to POI, pokus se před renderem obohatit (pokud chybí data)
     if (feature && feature.properties && feature.properties.post_type === 'poi') {
-      const needsEnrich = !(feature.properties.poi_website || feature.properties.poi_photos || feature.properties.poi_phone || feature.properties.poi_opening_hours || feature.properties.poi_social_links);
+      const needsEnrich = shouldFetchPOIDetails(feature.properties);
       if (needsEnrich) {
         try { console.debug('[DB Map][Detail] enriching now', { id: feature.properties.id }); } catch(_) {}
         try {
@@ -3231,14 +3264,19 @@ document.addEventListener('DOMContentLoaded', async function() {
           u = ph;
         }
         if (u && !photoUrls.includes(u)) photoUrls.push(u);
-        if (photoUrls.length >= 3) break;
       }
     }
-    if (p.poi_photo_url && !photoUrls.includes(p.poi_photo_url) && photoUrls.length < 3) {
+    if (p.poi_photo_url && !photoUrls.includes(p.poi_photo_url)) {
       photoUrls.push(p.poi_photo_url);
     }
-    const thumbsHtml = photoUrls.length > 1
-      ? `<div class="hero-thumbs">${photoUrls.map(u => `<img class="hero-thumb" data-url="${u}" src="${u}" alt="" />`).join('')}</div>`
+    // Mini-náhledy pod hlavní fotkou – malé čtverce jako ikony, řazené zleva (maximálně na šířku hero)
+    const thumbPhotos = photoUrls.slice(1, 9); // Všechny fotky kromě první (hero), max 8 náhledů
+    const thumbsHtml = thumbPhotos.length > 0
+      ? `<div class="hero-thumbs" style="display:flex;gap:6px;margin:8px 0 0 0;align-items:center;">
+           ${thumbPhotos.map(u => `<div style="width:32px;height:32px;border-radius:6px;overflow:hidden;flex-shrink:0;">
+               <img class="hero-thumb" data-url="${u}" src="${u}" alt="" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" />
+             </div>`).join('')}
+         </div>`
       : '';
     
     // Generování detailních informací o konektorech pro nabíječky
@@ -3375,12 +3413,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         </div>`;
       }).join('');
 
-      photosSection = `
-        <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
-          <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">Fotky</div>
-          <div style="display: flex; flex-wrap: wrap; gap: 8px;">${photoItems}</div>
-        </div>
-      `;
+      photosSection = ''; // Odstraněno - fotky se zobrazují jen jako náhledy pod hero
     }
     
     // Kontaktní informace
@@ -3420,24 +3453,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!url) return;
         const icon = network === 'facebook' ? '📘' : network === 'instagram' ? '📸' : network === 'email' ? '✉️' : '🔗';
         const href = network === 'email' ? `mailto:${url}` : url;
+        const label = network === 'instagram' ? 'Instagram' : network === 'facebook' ? 'Facebook' : network === 'email' ? 'E‑mail' : 'Webové stránky';
         contactItems.push(`<div style="margin: 8px 0; display:flex; align-items:center; gap:8px;">
           <span style="color:#049FE8;font-size:1.2em;">${icon}</span>
-          <a href="${href}" target="_blank" rel="noopener" style="color:#049FE8;text-decoration:none;font-weight:500;">${network}</a>
+          <a href="${href}" target="_blank" rel="noopener" style="color:#049FE8;text-decoration:none;font-weight:500;">${label}</a>
         </div>`);
       });
     }
 
-    if (contactItems.length > 0) {
-      contactSection = `
-        <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
-          <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">Kontaktní informace</div>
-          ${contactItems.join('')}
-        </div>
-      `;
-    }
-    
-    // Otevírací doba
-    let openingHoursSection = '';
     if (p.poi_opening_hours) {
       let hoursHtml = '';
       try {
@@ -3446,29 +3469,29 @@ document.addEventListener('DOMContentLoaded', async function() {
           const isOpen = checkIfOpen(p.poi_opening_hours);
           const statusText = isOpen ? 'Otevřeno' : 'Zavřeno';
           const statusColor = isOpen ? '#10b981' : '#ef4444';
-          
           hoursHtml = `
-            <div style="margin-bottom: 12px; padding: 8px; background: ${isOpen ? '#d1fae5' : '#fee2e2'}; border-radius: 8px; border-left: 4px solid ${statusColor};">
-              <div style="font-weight: 600; color: ${statusColor};">${statusText}</div>
+            <div style="margin: 8px 0; display:flex; align-items:flex-start; gap:8px;">
+              <span style="font-size:1.2em;color:${statusColor}">${isOpen ? '🟢' : '🔴'}</span>
+              <div>
+                <div style="font-weight:600;color:${statusColor};margin-bottom:4px;">${statusText}</div>
+                <div style="font-size:0.9em;color:#666;">${hours.weekdayDescriptions.map(day => `<div style=\"margin:2px 0;\">${day}</div>`).join('')}</div>
             </div>
-            <div style="font-size: 0.9em; color: #666;">
-              ${hours.weekdayDescriptions.map(day => `<div style="margin: 2px 0;">${day}</div>`).join('')}
-            </div>
-          `;
+            </div>`;
         }
       } catch (error) {
-        hoursHtml = `<div style="color: #666; font-size: 0.9em;">${p.poi_opening_hours}</div>`;
+        hoursHtml = `<div style="margin: 8px 0; color: #666;">${p.poi_opening_hours}</div>`;
       }
-      
-      if (hoursHtml) {
-        openingHoursSection = `
+      if (hoursHtml) contactItems.push(hoursHtml);
+    }
+    if (contactItems.length > 0) {
+      contactSection = `
           <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
-            <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">Otevírací doba</div>
-            ${hoursHtml}
+          ${contactItems.join('')}
           </div>
         `;
       }
-    }
+    // Kompatibilita: proměnná zůstává deklarovaná kvůli pozdějšímu použití v sestavení infoRows
+    let openingHoursSection = '';
 
     // Blízké POI (načítáme asynchronně)
     let nearbyPOISection = '';
@@ -3677,7 +3700,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 const heroEl = detailModal.querySelector('.hero');
                 if (heroEl) heroEl.insertAdjacentElement('afterend', cont);
               }
-              cont.innerHTML = urls.map(u => `<img class="hero-thumb" data-url="${u}" src="${u}" alt="" />`).join('');
+              cont.innerHTML = urls.map(u => `<div style="width:32px;height:32px;border-radius:6px;overflow:hidden;flex-shrink:0;display:inline-block;margin-right:6px;"><img class="hero-thumb" data-url="${u}" src="${u}" alt="" style="width:100%;height:100%;object-fit:cover;cursor:pointer;" /></div>`).join('');
               bindThumbClicks();
             }
           } catch(_) {}
@@ -5745,7 +5768,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Seznam IP geolokace služeb s fallback
     const services = [
       'https://ipapi.co/json/',
-      'https://ip-api.com/json/',
       'https://ipinfo.io/json'
     ];
     
@@ -5765,10 +5787,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         clearTimeout(timeoutId);
         
-        if (!response.ok) {
-          
-          continue;
-        }
+        if (!response.ok) { continue; }
         
         const data = await response.json();
         
@@ -5779,12 +5798,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             lat: data.latitude,
             lon: data.longitude,
             country_code: data.country_code
-          };
-        } else if (service.includes('ip-api.com')) {
-          result = {
-            lat: data.lat,
-            lon: data.lon,
-            country_code: data.countryCode
           };
         } else if (service.includes('ipinfo.io')) {
           // ipinfo.io vrací lokaci jako "lat,lng"

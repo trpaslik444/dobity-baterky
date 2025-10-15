@@ -20,6 +20,11 @@ class REST_POI_Discovery {
 				'callback' => [$this, 'handle_discover_one'],
 				'permission_callback' => function() { return current_user_can('manage_options'); },
 			]);
+			register_rest_route('db/v1', '/poi-discovery/worker', [
+				'methods' => 'POST',
+				'callback' => [$this, 'handle_worker_run'],
+				'permission_callback' => '__return_true',
+			]);
 		});
 	}
 
@@ -31,6 +36,16 @@ class REST_POI_Discovery {
 
 		$svc = new POI_Discovery();
 		$res = $svc->discoverForPoi($post_id, $save, $with_ta);
+		return rest_ensure_response($res);
+	}
+
+	public function handle_worker_run($request) {
+		$token = (string) ($request->get_param('token') ?? '');
+		$delay = (int) ($request->get_param('delay') ?? 0);
+		if (!\DB\Jobs\POI_Discovery_Worker::verify_token($token)) {
+			return new \WP_Error('forbidden', 'Bad token', ['status' => 403]);
+		}
+		$res = \DB\Jobs\POI_Discovery_Worker::run($delay);
 		return rest_ensure_response($res);
 	}
 }

@@ -25,7 +25,7 @@ if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'DB_DEBUG' ) && DB_DEBUG ) {
 define( 'DB_PLUGIN_FILE', __FILE__ );
 define( 'DB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'DB_PLUGIN_VERSION', '1.0.8-local-hero-carousel' );
+define( 'DB_PLUGIN_VERSION', '1.0.8' );
 
 // -----------------------------------------------------------------------------
 // Access helpers – jednotná kontrola přístupu k mapové appce
@@ -565,6 +565,14 @@ if (is_admin()) {
                 new DB\Admin\Nearby_Queue_Admin();
             }
         }
+
+        // POI Discovery Admin (submenu pod POI)
+        if ( file_exists( __DIR__ . '/includes/Admin/POI_Discovery_Admin.php' ) ) {
+            require_once __DIR__ . '/includes/Admin/POI_Discovery_Admin.php';
+            if ( class_exists( 'DB\Admin\POI_Discovery_Admin' ) ) {
+                new DB\Admin\POI_Discovery_Admin();
+            }
+        }
         
         // Inicializovat automatické zpracování
         if ( file_exists( __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php' ) ) {
@@ -594,6 +602,11 @@ if ( file_exists( __DIR__ . '/includes/REST_POI_Discovery.php' ) ) {
     if ( class_exists( 'DB\REST_POI_Discovery' ) ) {
         DB\REST_POI_Discovery::get_instance()->register();
     }
+}
+
+// POI Discovery Worker helpers
+if ( file_exists( __DIR__ . '/includes/Jobs/POI_Discovery_Worker.php' ) ) {
+    require_once __DIR__ . '/includes/Jobs/POI_Discovery_Worker.php';
 }
 
 // Background Jobs pro recompute

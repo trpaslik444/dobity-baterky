@@ -27,6 +27,8 @@ class Activation {
         
         // Vytvoření tabulky pro nearby queue
         self::create_nearby_queue_table();
+        // Vytvoření tabulky pro POI discovery queue
+        self::create_poi_discovery_queue_table();
         
         // Vypnout automatické zpracování při aktivaci
         update_option('db_nearby_auto_enabled', false);
@@ -107,6 +109,16 @@ class Activation {
             if (class_exists('DB\Jobs\Nearby_Queue_Manager')) {
                 $queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
                 $queue_manager->create_table();
+            }
+        }
+    }
+
+    private static function create_poi_discovery_queue_table() {
+        if (file_exists(__DIR__ . '/Jobs/POI_Discovery_Queue_Manager.php')) {
+            require_once __DIR__ . '/Jobs/POI_Discovery_Queue_Manager.php';
+            if (class_exists('DB\Jobs\POI_Discovery_Queue_Manager')) {
+                $qm = new \DB\Jobs\POI_Discovery_Queue_Manager();
+                $qm->create_table();
             }
         }
     }

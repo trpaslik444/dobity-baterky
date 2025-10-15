@@ -29,11 +29,27 @@ class POI {
         error_log('[POI DEBUG] Registruji POI CPT');
         add_action( 'init', array( $this, 'register_cpt' ) );
         add_action( 'init', array( $this, 'register_taxonomy' ) );
+        // Po publikaci POI -> zařadit do discovery fronty
+        add_action( 'publish_poi', array( $this, 'enqueue_discovery_on_publish' ), 10, 1 );
         // Sloupec a meta pro "DB doporučuje"
         add_filter( 'manage_poi_posts_columns', array( $this, 'add_recommended_column' ) );
         add_action( 'manage_poi_posts_custom_column', array( $this, 'render_recommended_column' ), 10, 2 );
         add_filter( 'manage_edit-poi_sortable_columns', function($cols){ $cols['db_recommended']= 'db_recommended'; return $cols; } );
         add_action( 'pre_get_posts', array( $this, 'sort_by_recommended' ) );
+    }
+
+    public function enqueue_discovery_on_publish( $post_id ) {
+        try {
+            if ( file_exists( __DIR__ . '/Jobs/POI_Discovery_Queue_Manager.php' ) ) {
+                require_once __DIR__ . '/Jobs/POI_Discovery_Queue_Manager.php';
+                $qm = new \DB\Jobs\POI_Discovery_Queue_Manager();
+                $qm->enqueue( (int)$post_id, 0 );
+                if ( file_exists( __DIR__ . '/Jobs/POI_Discovery_Worker.php' ) ) {
+                    require_once __DIR__ . '/Jobs/POI_Discovery_Worker.php';
+                    \DB\Jobs\POI_Discovery_Worker::dispatch(1);
+                }
+            }
+        } catch ( \Throwable $__ ) {}
     }
 
     /**

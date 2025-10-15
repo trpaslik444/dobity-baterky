@@ -15,6 +15,7 @@ if (!defined('ABSPATH')) {
 class POI_Discovery {
 	private const GOOGLE_TEXTSEARCH_URL = 'https://maps.googleapis.com/maps/api/place/textsearch/json';
 	private const TRIPADVISOR_SEARCH_URL = 'https://api.content.tripadvisor.com/api/v1/location/search';
+    private const GOOGLE_DETAILS_URL    = 'https://maps.googleapis.com/maps/api/place/details/json';
 
 	/**
 	 * Spustí discovery pro jedno POI.
@@ -41,12 +42,27 @@ class POI_Discovery {
 			$tripadvisorId = $this->discoverTripadvisorLocationId($title, $hasCoords ? $lat : null, $hasCoords ? $lng : null);
 		}
 
-		if ($save) {
-			if ($googlePlaceId && get_post_meta($postId, '_poi_google_place_id', true) === '') {
+        if ($save) {
+            if ($googlePlaceId && get_post_meta($postId, '_poi_google_place_id', true) === '') {
 				update_post_meta($postId, '_poi_google_place_id', $googlePlaceId);
 				// Zneplatnit případnou starou cache
 				delete_post_meta($postId, '_poi_google_cache');
 				delete_post_meta($postId, '_poi_google_cache_expires');
+                // Korekce GPS z Google Details (pokud se výrazně liší)
+                $geo = $this->fetchGooglePlaceGeometry($googlePlaceId);
+                if ($geo && isset($geo['lat']) && isset($geo['lng'])) {
+                    $newLat = (float)$geo['lat'];
+                    $newLng = (float)$geo['lng'];
+                    $hadCoords = ($lat !== 0.0 || $lng !== 0.0);
+                    $dist = $hadCoords ? $this->haversineM($lat, $lng, $newLat, $newLng) : 0;
+                    if (!$hadCoords || $dist > 80) {
+                        update_post_meta($postId, '_poi_lat', $newLat);
+                        update_post_meta($postId, '_poi_lng', $newLng);
+                        if (function_exists('error_log')) {
+                            @error_log('[DB_POI_DISCOVERY] GPS corrected for POI ' . $postId . ' place ' . $googlePlaceId . ' dist=' . (int)$dist . 'm to ' . $newLat . ',' . $newLng);
+                        }
+                    }
+                }
 			}
 			if ($tripadvisorId && get_post_meta($postId, '_poi_tripadvisor_location_id', true) === '') {
 				update_post_meta($postId, '_poi_tripadvisor_location_id', $tripadvisorId);
@@ -166,6 +182,38 @@ class POI_Discovery {
 		}
 		return $bestPlaceId ?: null;
 	}
+
+    /**
+     * Vrátí geometrii místa z Google Place Details.
+     * @return array{lat: float, lng: float}|null
+     */
+    private function fetchGooglePlaceGeometry(string $placeId): ?array {
+        $apiKey = (string) get_option('db_google_api_key');
+        if ($apiKey === '' || $placeId === '') {
+            return null;
+        }
+        $url = add_query_arg(array(
+            'place_id' => $placeId,
+            'fields'   => 'geometry',
+            'key'      => $apiKey,
+        ), self::GOOGLE_DETAILS_URL);
+        $response = wp_remote_get($url, array('timeout' => 10, 'user-agent' => 'DobityBaterky/poi-discovery (+https://dobitybaterky.cz)'));
+        if (is_wp_error($response)) {
+            return null;
+        }
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
+            return null;
+        }
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode((string)$body, true);
+        $loc = $data['result']['geometry']['location'] ?? null;
+        if (!is_array($loc)) return null;
+        $lat = isset($loc['lat']) ? (float)$loc['lat'] : null;
+        $lng = isset($loc['lng']) ? (float)$loc['lng'] : null;
+        if ($lat === null || $lng === null) return null;
+        return array('lat' => $lat, 'lng' => $lng);
+    }
 
 	private function discoverTripadvisorLocationId(string $title, ?float $lat, ?float $lng): ?string {
 		$apiKey = (string) get_option('db_tripadvisor_api_key');
