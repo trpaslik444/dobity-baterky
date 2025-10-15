@@ -573,6 +573,13 @@ if (is_admin()) {
                 new DB\Admin\POI_Discovery_Admin();
             }
         }
+
+        if ( file_exists( __DIR__ . '/includes/Admin/Charging_Discovery_Admin.php' ) ) {
+            require_once __DIR__ . '/includes/Admin/Charging_Discovery_Admin.php';
+            if ( class_exists( 'DB\Admin\Charging_Discovery_Admin' ) ) {
+                new DB\Admin\Charging_Discovery_Admin();
+            }
+        }
         
         // Inicializovat automatické zpracování
         if ( file_exists( __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php' ) ) {
@@ -604,9 +611,20 @@ if ( file_exists( __DIR__ . '/includes/REST_POI_Discovery.php' ) ) {
     }
 }
 
+if ( file_exists( __DIR__ . '/includes/REST_Charging_Discovery.php' ) ) {
+    require_once __DIR__ . '/includes/REST_Charging_Discovery.php';
+    if ( class_exists( 'DB\REST_Charging_Discovery' ) ) {
+        DB\REST_Charging_Discovery::get_instance()->register();
+    }
+}
+
 // POI Discovery Worker helpers
 if ( file_exists( __DIR__ . '/includes/Jobs/POI_Discovery_Worker.php' ) ) {
     require_once __DIR__ . '/includes/Jobs/POI_Discovery_Worker.php';
+}
+
+if ( file_exists( __DIR__ . '/includes/Jobs/Charging_Discovery_Worker.php' ) ) {
+    require_once __DIR__ . '/includes/Jobs/Charging_Discovery_Worker.php';
 }
 
 // Background Jobs pro recompute
@@ -648,6 +666,12 @@ if (defined('WP_CLI') && WP_CLI) {
         require_once __DIR__ . '/includes/CLI/POI_Discovery_Command.php';
         if ( class_exists( 'DB\\CLI\\POI_Discovery_Command' ) ) {
             \WP_CLI::add_command('db-poi', 'DB\\CLI\\POI_Discovery_Command');
+        }
+    }
+    if ( file_exists( __DIR__ . '/includes/CLI/Charging_Discovery_Command.php' ) ) {
+        require_once __DIR__ . '/includes/CLI/Charging_Discovery_Command.php';
+        if ( class_exists( 'DB\\CLI\\Charging_Discovery_Command' ) ) {
+            \WP_CLI::add_command('db-charging', 'DB\\CLI\\Charging_Discovery_Command');
         }
     }
 }

@@ -2526,6 +2526,120 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
+  async function enrichChargingFeature(feature) {
+    if (!feature || !feature.properties || feature.properties.post_type !== 'charging_location') {
+      return feature;
+    }
+
+    const props = feature.properties;
+    try { console.debug('[DB Map][Charging enrich] start', { id: props.id, title: props.title }); } catch (_) {}
+
+    const hasFreshLive = props.charging_live_expires_at && Date.parse(props.charging_live_expires_at) > Date.now();
+    const hasMeta = !!(props.charging_google_details || props.charging_ocm_details);
+    if (hasFreshLive && hasMeta) {
+      return feature;
+    }
+
+    const restBase = (window.dbMapData?.chargingExternalUrl || '/wp-json/db/v1/charging-external').replace(/\/$/, '');
+    const nonce = window.dbMapData?.restNonce || '';
+    try { console.debug('[DB Map][Charging enrich] fetching', { url: `${restBase}/${props.id}`, hasNonce: !!nonce }); } catch (_) {}
+    const response = await fetch(`${restBase}/${props.id}`, {
+      headers: {
+        'X-WP-Nonce': nonce,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      try { console.warn('[DB Map][Charging enrich] failed', response.status); } catch (_) {}
+      return feature;
+    }
+
+    const payload = await response.json();
+    const enriched = { ...feature, properties: { ...props } };
+    const enrichedProps = enriched.properties;
+    const metadata = payload?.metadata || {};
+
+    if (metadata.google) {
+      enrichedProps.charging_google_details = metadata.google;
+      if (!enrichedProps.image && metadata.google.photos && metadata.google.photos.length > 0) {
+        const first = metadata.google.photos[0];
+        if (first.url) {
+          enrichedProps.image = first.url;
+        } else if (first.photo_reference && window.dbMapData?.googleApiKey) {
+          enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${first.photo_reference}&key=${window.dbMapData.googleApiKey}`;
+        }
+      }
+      if (metadata.google.photos) {
+        enrichedProps.poi_photos = (metadata.google.photos || []).map((photo) => {
+          if (photo.url) return photo;
+          if ((photo.photo_reference || photo.photoReference) && window.dbMapData?.googleApiKey) {
+            const ref = photo.photo_reference || photo.photoReference;
+            return {
+              url: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${window.dbMapData.googleApiKey}`,
+              source: 'google_places'
+            };
+          }
+          return photo;
+        });
+      }
+      if (metadata.google.formatted_address && !enrichedProps.address) {
+        enrichedProps.address = metadata.google.formatted_address;
+      }
+    }
+
+    if (metadata.open_charge_map) {
+      enrichedProps.charging_ocm_details = metadata.open_charge_map;
+      if ((!Array.isArray(enrichedProps.connectors) || !enrichedProps.connectors.length) && Array.isArray(metadata.open_charge_map.connectors)) {
+        enrichedProps.connectors = metadata.open_charge_map.connectors;
+      }
+      if (!enrichedProps.station_max_power_kw && Array.isArray(metadata.open_charge_map.connectors)) {
+        const max = metadata.open_charge_map.connectors.reduce((acc, conn) => Math.max(acc, conn.power_kw || conn.powerKw || 0), 0);
+        if (max > 0) enrichedProps.station_max_power_kw = max;
+      }
+      if (!enrichedProps.evse_count && metadata.open_charge_map.status_summary && typeof metadata.open_charge_map.status_summary.total !== 'undefined') {
+        enrichedProps.evse_count = metadata.open_charge_map.status_summary.total;
+      }
+    }
+
+    const live = payload?.live_status || null;
+    if (live) {
+      if (typeof live.available === 'number') enrichedProps.charging_live_available = live.available;
+      if (typeof live.total === 'number') enrichedProps.charging_live_total = live.total;
+      if (live.source) enrichedProps.charging_live_source = live.source;
+      if (live.updated_at) enrichedProps.charging_live_updated_at = live.updated_at;
+      enrichedProps.charging_live_expires_at = new Date(Date.now() + 90 * 1000).toISOString();
+    }
+
+    enrichedProps.charging_external_expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    try { console.debug('[DB Map][Charging enrich] enriched props applied', { id: enrichedProps.id, hasLive: typeof enrichedProps.charging_live_available !== 'undefined' }); } catch (_) {}
+    return enriched;
+  }
+
+  function shouldFetchChargingDetails(props) {
+    if (!props) return false;
+    const liveExpire = props.charging_live_expires_at ? Date.parse(props.charging_live_expires_at) : 0;
+    const needLive = !(typeof props.charging_live_available === 'number' && typeof props.charging_live_total === 'number');
+    const needMeta = !(props.charging_google_details || props.charging_ocm_details);
+    const liveFresh = liveExpire && Date.now() < (liveExpire - 1000);
+    return needMeta || needLive || !liveFresh;
+  }
+
+  function formatRelativeLiveTime(dateString) {
+    if (!dateString) return '';
+    const ts = Date.parse(dateString);
+    if (!ts) return '';
+    const diffMs = Date.now() - ts;
+    if (diffMs < 60000) return 'před chvílí';
+    const diffMinutes = Math.round(diffMs / 60000);
+    if (diffMinutes === 1) return 'před minutou';
+    if (diffMinutes < 60) return `před ${diffMinutes} minutami`;
+    const diffHours = Math.round(diffMinutes / 60);
+    if (diffHours === 1) return 'před hodinou';
+    if (diffHours < 6) return `před ${diffHours} hodinami`;
+    return new Date(ts).toLocaleString('cs-CZ', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+  }
+
   // Určí, zda má smysl volat REST pro doplnění detailu (kvůli loaderu)
   function shouldFetchPOIDetails(props) {
     if (!props) return false;
@@ -3214,6 +3328,23 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         } catch(err) {
           try { console.warn('[DB Map][Detail] enrich failed', err); } catch(_) {}
+        }
+      }
+    }
+
+    if (feature && feature.properties && feature.properties.post_type === 'charging_location') {
+      const needsChargingEnrich = shouldFetchChargingDetails(feature.properties);
+      if (needsChargingEnrich) {
+        try { console.debug('[DB Map][Detail] enriching charging now', { id: feature.properties.id }); } catch(_) {}
+        try {
+          const enrichedCharging = await enrichChargingFeature(feature);
+          if (enrichedCharging && enrichedCharging !== feature) {
+            feature = enrichedCharging;
+            featureCache.set(enrichedCharging.properties.id, enrichedCharging);
+            try { console.debug('[DB Map][Detail] charging enriched', { id: enrichedCharging.properties.id, live: enrichedCharging.properties.charging_live_available }); } catch(_) {}
+          }
+        } catch (err) {
+          try { console.warn('[DB Map][Detail] charging enrich failed', err); } catch(_) {}
         }
       }
     }
@@ -4969,22 +5100,46 @@ document.addEventListener('DOMContentLoaded', async function() {
               <div class="db-map-card-desc">${p.description || '<span style="color:#aaa;">(Popis zatím není k&nbsp;dispozici)</span>'}</div>
               ${p.post_type === 'charging_location' ? (() => {
                 let additionalInfo = '';
-                
+
                 // Poskytovatel/operátor
                 if (p.operator_original || p.provider) {
                   additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> ${p.operator_original || p.provider}</div>`;
                 }
-                
+
+                if (!p.operator_original && !p.provider && p.charging_ocm_details && p.charging_ocm_details.data_provider) {
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> ${p.charging_ocm_details.data_provider}</div>`;
+                }
+
                 // Maximální výkon stanice
                 if (p.station_max_power_kw) {
                   additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Max. výkon:</strong> ${p.station_max_power_kw} kW</div>`;
                 }
-                
+
                 // Počet nabíjecích bodů
                 if (p.evse_count) {
                   additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Nabíjecí body:</strong> ${p.evse_count}</div>`;
                 }
-                
+
+                if (typeof p.charging_live_available === 'number' && typeof p.charging_live_total === 'number') {
+                  const available = Math.max(0, p.charging_live_available);
+                  const total = Math.max(0, p.charging_live_total);
+                  const ratio = total > 0 ? (available / total) : 0;
+                  let color = '#ef4444';
+                  if (ratio >= 0.5) color = '#10b981';
+                  else if (ratio > 0) color = '#f59e0b';
+                  const updatedText = formatRelativeLiveTime(p.charging_live_updated_at);
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Dostupnost:</strong> <span style="color:${color}; font-weight: 600;">${available}/${total} volných</span>${updatedText ? `<span style=\"display:block;color:#94a3b8;font-size:0.75em;\">Aktualizace ${updatedText}</span>` : ''}</div>`;
+                }
+
+                if (p.charging_google_details && p.charging_google_details.phone) {
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Telefon:</strong> <a href="tel:${p.charging_google_details.phone}" style="color: #049FE8; text-decoration: none;">${p.charging_google_details.phone}</a></div>`;
+                }
+
+                if (p.charging_google_details && p.charging_google_details.website) {
+                  const web = p.charging_google_details.website;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Web:</strong> <a href="${web}" target="_blank" rel="noopener" style="color: #049FE8; text-decoration: none;">${web.replace(/^https?:\/\//, '')}</a></div>`;
+                }
+
                 return additionalInfo ? `<div class="db-map-card-amenities" style="margin-top:0.5em;padding-top:0.5em;border-top:1px solid #f0f0f0;" data-debug="amenities-container-${p.id}">${additionalInfo}</div>` : '';
               })() : ''}
               ${p.post_type === 'poi' ? (() => {

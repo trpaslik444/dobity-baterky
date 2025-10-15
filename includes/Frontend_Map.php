@@ -70,6 +70,7 @@ class Frontend_Map {
             'restUrl'   => rest_url( 'db/v1/map' ),
             'searchUrl' => rest_url( 'db/v1/map-search' ),
             'poiExternalUrl' => rest_url( 'db/v1/poi-external' ),
+            'chargingExternalUrl' => rest_url( 'db/v1/charging-external' ),
             'restNonce' => wp_create_nonce( 'wp_rest' ),
             'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
             'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
