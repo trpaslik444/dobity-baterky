@@ -24,7 +24,6 @@ class POI_Discovery_Batch_Processor {
 		foreach ($items as $row) {
 			$id = (int)$row->id; $poi_id = (int)$row->poi_id;
 			$this->queue->mark_processing($id);
-			$attempted++; // Count all attempted items
 			try {
 			$useGoogle = $this->quota->can_use_google();
 			$useTA = $this->quota->can_use_tripadvisor();
@@ -41,6 +40,8 @@ class POI_Discovery_Batch_Processor {
 				);
 				continue;
 			}
+			
+			$attempted++; // Count only items that will actually be processed
 			
 			$withTA = $useTA; // Only use Tripadvisor when quota allows
 			$res = $svc->discoverForPoi($poi_id, false, $withTA, $useGoogle);
