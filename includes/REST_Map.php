@@ -2133,8 +2133,14 @@ class REST_Map {
                 $status = $quota->get_status();
                 // Try to prepare review candidates
                 $candidates = array();
-                if ($quota->can_use_google()) { $candidates = array_merge($candidates, $this->find_google_candidates_for_post($post_id)); }
-                if ($quota->can_use_tripadvisor()) { $candidates = array_merge($candidates, $this->find_tripadvisor_candidates_for_post($post_id)); }
+                if ($quota->can_use_google()) { 
+                    $candidates = array_merge($candidates, $this->find_google_candidates_for_post($post_id)); 
+                    $quota->record_google(1); // Record quota usage for candidate search
+                }
+                if ($quota->can_use_tripadvisor()) { 
+                    $candidates = array_merge($candidates, $this->find_tripadvisor_candidates_for_post($post_id)); 
+                    $quota->record_tripadvisor(1); // Record quota usage for candidate search
+                }
                 if (!empty($candidates)) {
                     update_post_meta($post_id, '_poi_review_candidates', wp_json_encode($candidates));
                     return rest_ensure_response(array(
