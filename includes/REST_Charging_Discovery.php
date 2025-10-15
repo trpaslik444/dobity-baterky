@@ -89,6 +89,22 @@ class REST_Charging_Discovery {
         $svc = new Charging_Discovery();
         $googleId = (string) get_post_meta($postId, '_charging_google_place_id', true);
         $ocmId = (string) get_post_meta($postId, '_openchargemap_id', true);
+        
+        // Pokud nemáme externí ID, spustit discovery
+        if ($googleId === '' && $ocmId === '') {
+            $discoveryResult = $svc->discoverForCharging($postId, true, false, true, true);
+            $googleId = $discoveryResult['google'] ?? '';
+            $ocmId = $discoveryResult['open_charge_map'] ?? '';
+            
+            // Aktualizovat metadata po discovery
+            if ($googleId !== '') {
+                update_post_meta($postId, '_charging_google_place_id', $googleId);
+            }
+            if ($ocmId !== '') {
+                update_post_meta($postId, '_openchargemap_id', $ocmId);
+            }
+        }
+        
         $meta = $svc->getCachedMetadata($postId);
         if ($googleId !== '' && $meta['google'] === null) {
             $meta['google'] = $svc->refreshGoogleMetadata($postId, $googleId, false);
@@ -118,13 +134,28 @@ class REST_Charging_Discovery {
             // Vytvořit přímou URL pro první fotku
             $api_key = get_option('db_google_api_key');
             if (!empty($api_key) && !empty($photos)) {
-                $ref = $photos[0]['photo_reference'] ?? '';
-                if ($ref !== '') {
-                    $data['photoUrl'] = add_query_arg([
-                        'maxwidth' => 1200,
-                        'photo_reference' => $ref,
-                        'key' => $api_key,
-                    ], 'https://maps.googleapis.com/maps/api/place/photo');
+                $firstPhoto = $photos[0];
+                $ref = $firstPhoto['photo_reference'] ?? '';
+                
+                if ($ref === 'streetview' && isset($firstPhoto['street_view_url'])) {
+                    // Street View obrázek
+                    $data['photoUrl'] = $firstPhoto['street_view_url'];
+                } elseif ($ref !== '' && $ref !== 'streetview') {
+                    // Nové Google Places API v1 foto
+                    if (strpos($ref, 'places/') === 0) {
+                        // Nové API v1 formát
+                        $data['photoUrl'] = add_query_arg([
+                            'maxWidthPx' => 1200,
+                            'key' => $api_key,
+                        ], "https://places.googleapis.com/v1/$ref/media");
+                    } else {
+                        // Staré API formát (fallback)
+                        $data['photoUrl'] = add_query_arg([
+                            'maxwidth' => 1200,
+                            'photo_reference' => $ref,
+                            'key' => $api_key,
+                        ], 'https://maps.googleapis.com/maps/api/place/photo');
+                    }
                 }
             }
         }

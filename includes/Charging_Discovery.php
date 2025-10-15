@@ -73,13 +73,61 @@ class Charging_Discovery {
         }
 
         if ($save) {
+            // Kontrola vzdálenosti před uložením ID
             if ($useGoogle && $discoveredGoogle) {
-                update_post_meta($postId, self::META_GOOGLE_ID, $discoveredGoogle);
-                $this->refreshGoogleMetadata($postId, $discoveredGoogle, true);
+                $googleDetails = $this->fetchGooglePlaceDetails($discoveredGoogle);
+                if ($googleDetails && $hasCoords) {
+                    $googleLat = $googleDetails['latitude'] ?? null;
+                    $googleLng = $googleDetails['longitude'] ?? null;
+                    if ($googleLat !== null && $googleLng !== null) {
+                        $distance = $this->haversineM($lat, $lng, $googleLat, $googleLng);
+                        if ($distance > 100) {
+                            // Příliš daleko - neukládat ID
+                            $discoveredGoogle = null;
+                            error_log("Charging Discovery: Google ID příliš daleko ({$distance}m) pro objekt $postId");
+                        } elseif ($distance > 50) {
+                            // Podezřelé - ale uložit s varováním
+                            error_log("Charging Discovery: Google ID podezřele daleko ({$distance}m) pro objekt $postId");
+                        }
+                    }
+                }
+                if ($discoveredGoogle) {
+                    update_post_meta($postId, self::META_GOOGLE_ID, $discoveredGoogle);
+                    $this->refreshGoogleMetadata($postId, $discoveredGoogle, true);
+                } else {
+                    // Pokud se ID neuložilo kvůli vzdálenosti, vymaž existující
+                    delete_post_meta($postId, self::META_GOOGLE_ID);
+                    delete_post_meta($postId, self::META_GOOGLE_CACHE);
+                    delete_post_meta($postId, self::META_GOOGLE_CACHE_EXP);
+                }
             }
+            
             if ($useOcm && $discoveredOcm) {
-                update_post_meta($postId, self::META_OCM_ID, $discoveredOcm);
-                $this->refreshOcmMetadata($postId, $discoveredOcm, true);
+                $ocmDetails = $this->fetchOcmStationDetails($discoveredOcm);
+                if ($ocmDetails && $hasCoords) {
+                    $ocmLat = $ocmDetails['latitude'] ?? null;
+                    $ocmLng = $ocmDetails['longitude'] ?? null;
+                    if ($ocmLat !== null && $ocmLng !== null) {
+                        $distance = $this->haversineM($lat, $lng, $ocmLat, $ocmLng);
+                        if ($distance > 100) {
+                            // Příliš daleko - neukládat ID
+                            $discoveredOcm = null;
+                            error_log("Charging Discovery: OCM ID příliš daleko ({$distance}m) pro objekt $postId");
+                        } elseif ($distance > 50) {
+                            // Podezřelé - ale uložit s varováním
+                            error_log("Charging Discovery: OCM ID podezřele daleko ({$distance}m) pro objekt $postId");
+                        }
+                    }
+                }
+                if ($discoveredOcm) {
+                    update_post_meta($postId, self::META_OCM_ID, $discoveredOcm);
+                    $this->refreshOcmMetadata($postId, $discoveredOcm, true);
+                } else {
+                    // Pokud se ID neuložilo kvůli vzdálenosti, vymaž existující
+                    delete_post_meta($postId, self::META_OCM_ID);
+                    delete_post_meta($postId, self::META_OCM_CACHE);
+                    delete_post_meta($postId, self::META_OCM_CACHE_EXP);
+                }
             }
         }
 
@@ -201,6 +249,7 @@ class Charging_Discovery {
         }
         $best = null;
         $score = -INF;
+        $candidates = [];
         foreach ($data['results'] as $item) {
             $placeId = (string) ($item['place_id'] ?? '');
             if ($placeId === '') {
@@ -208,23 +257,71 @@ class Charging_Discovery {
             }
             $candidateScore = 0.0;
             $name = (string) ($item['name'] ?? '');
+            $nameSimilarity = 0.0;
+            $addressBonus = 0.0;
+            
             if ($title !== '' && $name !== '') {
-                $candidateScore += similar_text(mb_strtolower($title), mb_strtolower($name));
+                // Základní podobnost názvu
+                $nameSimilarity = similar_text(mb_strtolower($title), mb_strtolower($name));
+                $candidateScore += $nameSimilarity;
+                
+                // Bonus za shodu poskytovatele a adresy
+                $titleParts = explode(' - ', $title);
+                if (count($titleParts) >= 2) {
+                    $provider = trim($titleParts[0]);
+                    $address = trim($titleParts[1]);
+                    
+                    // Bonus za shodu poskytovatele (celý nebo částečný)
+                    if (stripos($name, $provider) !== false) {
+                        $addressBonus += 10.0;
+                    } else {
+                        // Zkusit částečnou shodu - odstranit ", a.s." a podobné
+                        $providerShort = preg_replace('/,\s*(a\.s\.|s\.r\.o\.|spol\.\s*s\s*r\.o\.|s\.p\.|a\.s\.)$/i', '', $provider);
+                        if (stripos($name, $providerShort) !== false) {
+                            $addressBonus += 8.0; // Menší bonus za částečnou shodu
+                        }
+                    }
+                    
+                    // Bonus za slova z adresy
+                    $addressWords = preg_split('/[\s,]+/', $address);
+                    foreach ($addressWords as $word) {
+                        if (strlen($word) > 2 && stripos($name, $word) !== false) {
+                            $addressBonus += 5.0;
+                        }
+                    }
+                }
+                $candidateScore += $addressBonus;
             }
-            $rating = isset($item['rating']) ? (float) $item['rating'] : 0.0;
-            $candidateScore += $rating * 10.0;
+            // Hodnocení se nepoužívá pro výběr správného místa
+            $distanceScore = 0.0;
+            $dist = 0.0;
             if ($lat !== null && $lng !== null && isset($item['geometry']['location'])) {
                 $ilat = (float) ($item['geometry']['location']['lat'] ?? 0.0);
                 $ilng = (float) ($item['geometry']['location']['lng'] ?? 0.0);
                 $dist = $this->haversineM($lat, $lng, $ilat, $ilng);
-                // Preferovat nejbližší nabíječky - vzdálenost má větší váhu
-                $candidateScore += max(0.0, 1000.0 - min(1000.0, $dist)) / 10.0;
+                // Preferovat nejbližší nabíječky - vzdálenost má mnohem větší váhu
+                $distanceScore = max(0.0, 1000.0 - min(1000.0, $dist)) / 5.0; // Zvýšená váha vzdálenosti
+                $candidateScore += $distanceScore;
             }
+            
+            $candidates[] = [
+                'place_id' => $placeId,
+                'name' => $name,
+                'distance' => round($dist),
+                'name_similarity' => $nameSimilarity,
+                'address_bonus' => round($addressBonus, 2),
+                'distance_score' => round($distanceScore, 2),
+                'total_score' => round($candidateScore, 2)
+            ];
+            
             if ($candidateScore > $score) {
                 $score = $candidateScore;
                 $best = $placeId;
             }
         }
+        
+        // Debug logging odstraněno
+        
         return $best;
     }
 
@@ -286,8 +383,8 @@ class Charging_Discovery {
                 $ilat = (float) $poi['AddressInfo']['Latitude'];
                 $ilng = (float) $poi['AddressInfo']['Longitude'];
                 $dist = $this->haversineM($lat, $lng, $ilat, $ilng);
-                // Preferovat nejbližší nabíječky - vzdálenost má větší váhu
-                $candidateScore += max(0.0, 1000.0 - min(1000.0, $dist)) / 10.0;
+                // Preferovat nejbližší nabíječky - vzdálenost má mnohem větší váhu
+                $candidateScore += max(0.0, 1000.0 - min(1000.0, $dist)) / 5.0; // Zvýšená váha vzdálenosti
             }
             if ($candidateScore > $score) {
                 $score = $candidateScore;
@@ -302,19 +399,32 @@ class Charging_Discovery {
         if ($apiKey === '' || $placeId === '') {
             return null;
         }
-        $fields = implode(',', [
-            'name', 'geometry/location', 'formatted_address', 'photos', 'opening_hours',
-            'international_phone_number', 'website', 'url', 'rating', 'user_ratings_total', 'business_status'
-        ]);
-        $url = add_query_arg([
-            'place_id' => $placeId,
-            'fields' => $fields,
-            'language' => 'cs',
-            'key' => $apiKey,
-        ], self::GOOGLE_DETAILS_URL);
+        
+        // Použít nové Places API v1 pro data o konektorech
+        $url = "https://places.googleapis.com/v1/places/$placeId";
+        $fields = [
+            'displayName',
+            'formattedAddress', 
+            'location',
+            'photos',
+            'currentOpeningHours',
+            'internationalPhoneNumber',
+            'websiteUri',
+            'rating',
+            'userRatingCount',
+            'businessStatus',
+            'utcOffsetMinutes',
+            'evChargeOptions' // Nové pole pro data o konektorech
+        ];
+        
+        $url .= '?fields=' . implode(',', $fields) . '&key=' . $apiKey;
+        
         $response = wp_remote_get($url, [
             'timeout' => 12,
             'user-agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
+            'headers' => [
+                'Content-Type' => 'application/json',
+            ],
         ]);
         if (is_wp_error($response)) {
             return null;
@@ -324,37 +434,70 @@ class Charging_Discovery {
             return null;
         }
         $data = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($data) || !isset($data['result']) || !is_array($data['result'])) {
+        if (!is_array($data)) {
             return null;
         }
-        $result = $data['result'];
+        
+        // Nové API v1 má jinou strukturu - data jsou přímo v root objektu
         $photos = [];
-        if (!empty($result['photos']) && is_array($result['photos'])) {
-            foreach ($result['photos'] as $photo) {
-                if (!isset($photo['photo_reference'])) {
+        if (!empty($data['photos']) && is_array($data['photos'])) {
+            foreach ($data['photos'] as $photo) {
+                if (!isset($photo['name'])) {
                     continue;
                 }
                 $photos[] = [
-                    'photo_reference' => (string) $photo['photo_reference'],
-                    'width' => isset($photo['width']) ? (int) $photo['width'] : null,
-                    'height' => isset($photo['height']) ? (int) $photo['height'] : null,
+                    'photo_reference' => (string) $photo['name'], // Nové API používá 'name' místo 'photo_reference'
+                    'width' => isset($photo['widthPx']) ? (int) $photo['widthPx'] : null,
+                    'height' => isset($photo['heightPx']) ? (int) $photo['heightPx'] : null,
                 ];
             }
         }
-        $geometry = $result['geometry']['location'] ?? [];
+        
+        // Zpracování dat o konektorech
+        $connectors = [];
+        if (!empty($data['evChargeOptions']['connectorAggregation']) && is_array($data['evChargeOptions']['connectorAggregation'])) {
+            foreach ($data['evChargeOptions']['connectorAggregation'] as $connector) {
+                $connectors[] = [
+                    'type' => (string) ($connector['type'] ?? ''),
+                    'maxChargeRateKw' => isset($connector['maxChargeRateKw']) ? (int) $connector['maxChargeRateKw'] : null,
+                    'count' => isset($connector['count']) ? (int) $connector['count'] : null,
+                    'availableCount' => isset($connector['availableCount']) ? (int) $connector['availableCount'] : null,
+                    'outOfServiceCount' => isset($connector['outOfServiceCount']) ? (int) $connector['outOfServiceCount'] : null,
+                ];
+            }
+        }
+
+        // Pokud nejsou fotky, přidat Street View jako fallback
+        if (empty($photos) && isset($data['location']['latitude'], $data['location']['longitude'])) {
+            $streetViewUrl = $this->generateStreetViewUrl(
+                (float) $data['location']['latitude'], 
+                (float) $data['location']['longitude']
+            );
+            if ($streetViewUrl) {
+                $photos[] = [
+                    'photo_reference' => 'streetview',
+                    'street_view_url' => $streetViewUrl,
+                    'width' => 640,
+                    'height' => 480,
+                ];
+            }
+        }
+
         $payload = [
-            'name' => (string) ($result['name'] ?? ''),
-            'formatted_address' => (string) ($result['formatted_address'] ?? ''),
-            'latitude' => isset($geometry['lat']) ? (float) $geometry['lat'] : null,
-            'longitude' => isset($geometry['lng']) ? (float) $geometry['lng'] : null,
-            'opening_hours' => $result['opening_hours'] ?? null,
+            'name' => (string) ($data['displayName']['text'] ?? ''),
+            'formatted_address' => (string) ($data['formattedAddress'] ?? ''),
+            'latitude' => isset($data['location']['latitude']) ? (float) $data['location']['latitude'] : null,
+            'longitude' => isset($data['location']['longitude']) ? (float) $data['location']['longitude'] : null,
+            'opening_hours' => $data['currentOpeningHours'] ?? null,
             'photos' => $photos,
-            'rating' => isset($result['rating']) ? (float) $result['rating'] : null,
-            'user_ratings_total' => isset($result['user_ratings_total']) ? (int) $result['user_ratings_total'] : null,
-            'phone' => (string) ($result['international_phone_number'] ?? ''),
-            'website' => (string) ($result['website'] ?? ''),
-            'maps_url' => (string) ($result['url'] ?? ''),
-            'business_status' => (string) ($result['business_status'] ?? ''),
+            'rating' => isset($data['rating']) ? (float) $data['rating'] : null,
+            'user_ratings_total' => isset($data['userRatingCount']) ? (int) $data['userRatingCount'] : null,
+            'phone' => (string) ($data['internationalPhoneNumber'] ?? ''),
+            'website' => (string) ($data['websiteUri'] ?? ''),
+            'maps_url' => '', // Nové API neposkytuje maps_url přímo
+            'business_status' => (string) ($data['businessStatus'] ?? ''),
+            'connectorCount' => isset($data['evChargeOptions']['connectorCount']) ? (int) $data['evChargeOptions']['connectorCount'] : null,
+            'connectors' => $connectors,
         ];
         return $payload;
     }
@@ -482,5 +625,25 @@ class Charging_Discovery {
         $a = sin($dLat / 2) * sin($dLat / 2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) * sin($dLon / 2);
         $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
         return $earthRadius * $c;
+    }
+
+    /**
+     * Generuje URL pro Street View Static API jako fallback pro chybějící fotky
+     */
+    private function generateStreetViewUrl(float $lat, float $lng): ?string {
+        $apiKey = (string) get_option('db_google_api_key');
+        if ($apiKey === '') {
+            return null;
+        }
+
+        // Street View Static API URL
+        return add_query_arg([
+            'location' => $lat . ',' . $lng,
+            'size' => '640x480',
+            'fov' => '90',
+            'heading' => '0',
+            'pitch' => '0',
+            'key' => $apiKey,
+        ], 'https://maps.googleapis.com/maps/api/streetview');
     }
 }

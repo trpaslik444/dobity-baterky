@@ -39,12 +39,21 @@ class Charging_Discovery_Admin {
         $notice = isset($_GET['db_notice']) ? sanitize_text_field((string) $_GET['db_notice']) : '';
         echo '<div class="wrap">';
         echo '<h1>Charging Discovery – fronta</h1>';
+        echo '<p>Správa fronty pro automatické přiřazení Google Places / OpenChargeMap ID.</p>';
         if ($message !== '') {
             echo '<div class="updated notice"><p>' . esc_html($message) . '</p></div>';
         }
         if ($notice !== '') {
             echo '<div class="notice notice-error"><p>' . esc_html($notice) . '</p></div>';
         }
+        
+        $tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'queue';
+        echo '<h2 class="nav-tab-wrapper">';
+        echo '<a href="?post_type=charging_location&page=db-charging-discovery-queue&tab=queue" class="nav-tab ' . ($tab==='queue'?'nav-tab-active':'') . '">Fronta</a>';
+        echo '<a href="?post_type=charging_location&page=db-charging-discovery-queue&tab=completed" class="nav-tab ' . ($tab==='completed'?'nav-tab-active':'') . '">Dokončené</a>';
+        echo '<a href="?post_type=charging_location&page=db-charging-discovery-queue&tab=failed" class="nav-tab ' . ($tab==='failed'?'nav-tab-active':'') . '">Chybné</a>';
+        echo '<a href="?post_type=charging_location&page=db-charging-discovery-queue&tab=review" class="nav-tab ' . ($tab==='review'?'nav-tab-active':'') . '">K potvrzení</a>';
+        echo '</h2>';
 
         echo '<h2>Kvóty</h2>';
         echo '<form method="post" action="' . esc_url(admin_url('admin-post.php')) . '">';
@@ -77,20 +86,47 @@ class Charging_Discovery_Admin {
         echo '<a class="button" href="' . esc_url(wp_nonce_url(admin_url('admin-post.php?action=db_charging_dispatch_worker'), 'db_charging_dispatch_worker')) . '">Spustit worker</a>';
         echo '</p>';
 
-        echo '<h2>Fronta</h2>';
-        $pending = $queue->get_by_status('pending', 100, 0);
-        if (empty($pending)) {
-            echo '<p>Žádné čekající položky.</p>';
-        } else {
-            $this->render_table($pending);
-        }
-
-        echo '<h2>Chybné</h2>';
-        $failed = $queue->get_by_status('failed', 50, 0);
-        if (empty($failed)) {
-            echo '<p>Žádné chybné položky.</p>';
-        } else {
-            $this->render_table($failed);
+        // Obsah podle záložky
+        switch ($tab) {
+            case 'queue':
+                echo '<h2>Fronta</h2>';
+                $pending = $queue->get_by_status('pending', 100, 0);
+                if (empty($pending)) {
+                    echo '<p>Žádné čekající položky.</p>';
+                } else {
+                    $this->render_table($pending);
+                }
+                break;
+                
+            case 'completed':
+                echo '<h2>Dokončené</h2>';
+                $completed = $queue->get_by_status('completed', 100, 0);
+                if (empty($completed)) {
+                    echo '<p>Žádné dokončené položky.</p>';
+                } else {
+                    $this->render_table($completed);
+                }
+                break;
+                
+            case 'failed':
+                echo '<h2>Chybné</h2>';
+                $failed = $queue->get_by_status('failed', 50, 0);
+                if (empty($failed)) {
+                    echo '<p>Žádné chybné položky.</p>';
+                } else {
+                    $this->render_table($failed);
+                }
+                break;
+                
+            case 'review':
+                echo '<h2>K potvrzení</h2>';
+                $review = $queue->get_by_status('review', 50, 0);
+                if (empty($review)) {
+                    echo '<p>Žádné položky k potvrzení.</p>';
+                } else {
+                    $this->render_table($review);
+                }
+                break;
         }
 
         echo '</div>';
