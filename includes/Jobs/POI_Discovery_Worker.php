@@ -34,12 +34,20 @@ class POI_Discovery_Worker {
 	public static function run(int $delay_seconds = 0): array {
 		if (get_transient(self::RUN_LOCK)) return array('status' => 'locked');
 		set_transient(self::RUN_LOCK, 1, 60);
+		$res = array('processed' => 0, 'errors' => 0, 'usedGoogle' => 0, 'usedTripadvisor' => 0, 'attempted' => 0);
 		try {
 			if ($delay_seconds > 0) sleep(min(60, $delay_seconds));
 			@set_time_limit(0);
 			$batch = new POI_Discovery_Batch_Processor();
 			$res = $batch->process_batch(10);
 			// Ulož poslední výsledek pro admin UI
+			update_option('db_poi_last_batch', array_merge($res, ['ts' => current_time('mysql')]), false);
+			return $res;
+		} catch (\Throwable $e) {
+			// Log error and ensure worker continues
+			error_log('POI Discovery Worker error: ' . $e->getMessage());
+			$res['errors'] = 1;
+			$res['error_message'] = $e->getMessage();
 			update_option('db_poi_last_batch', array_merge($res, ['ts' => current_time('mysql')]), false);
 			return $res;
 		} finally {

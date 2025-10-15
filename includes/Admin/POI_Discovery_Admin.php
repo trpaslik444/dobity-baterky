@@ -122,9 +122,14 @@ class POI_Discovery_Admin {
                 return fetch(ajaxurl, { method: "POST", headers: {"Content-Type": "application/x-www-form-urlencoded"}, body: toForm({ action, _wpnonce: "' . wp_create_nonce('db_poi_discovery') . '" }) })
                     .then(async r => { const text = await r.text(); try { return JSON.parse(text); } catch(e){ return { error: "non_json", raw: text }; } });
             }
-            document.getElementById("db-poi-enqueue-all").addEventListener("click", function(){ log("Pracuji..."); post("db_poi_enqueue_all").then(j=>{ log(JSON.stringify(j,null,2)); }); });
-            document.getElementById("db-poi-dispatch").addEventListener("click", function(){ log("Spouštím worker..."); post("db_poi_dispatch_worker").then(j=>{ log(JSON.stringify(j,null,2)); }); });
-            document.getElementById("db-poi-enqueue-ten").addEventListener("click", function(){ log("Pracuji (10)..."); post("db_poi_enqueue_ten").then(j=>{ log(JSON.stringify(j,null,2)); }); });
+var enqueueAllBtn = document.getElementById("db-poi-enqueue-all");
+if (enqueueAllBtn) enqueueAllBtn.addEventListener("click", function(){ log("Pracuji..."); post("db_poi_enqueue_all").then(j=>{ log(JSON.stringify(j,null,2)); }); });
+
+var dispatchBtn = document.getElementById("db-poi-dispatch");
+if (dispatchBtn) dispatchBtn.addEventListener("click", function(){ log("Spouštím worker..."); post("db_poi_dispatch_worker").then(j=>{ log(JSON.stringify(j,null,2)); }); });
+
+var enqueueTenBtn = document.getElementById("db-poi-enqueue-ten");
+if (enqueueTenBtn) enqueueTenBtn.addEventListener("click", function(){ log("Pracuji (10)..."); post("db_poi_enqueue_ten").then(j=>{ log(JSON.stringify(j,null,2)); }); });
             document.getElementById("db-poi-refresh-quotas").addEventListener("click", function(){ log("Načítám kvóty..."); fetch(ajaxurl+"?action=db_poi_refresh_quotas", {credentials:"include"}).then(r=>r.json()).then(j=>{ location.reload(); }).catch(()=>location.reload()); });
         })(); </script>';
         echo '</div>';
