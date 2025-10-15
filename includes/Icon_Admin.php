@@ -317,6 +317,13 @@ class Icon_Admin {
                 echo '<div class="notice notice-success"><p>OpenChargeMap API nastavení bylo uloženo.</p></div>';
             }
         }
+
+        if (isset($_POST['save_tripadvisor_api_settings'])) {
+            if (wp_verify_nonce($_POST['api_nonce'], 'save_api_settings')) {
+                update_option('db_tripadvisor_api_key', sanitize_text_field($_POST['tripadvisor_api_key']));
+                echo '<div class="notice notice-success"><p>Tripadvisor API nastavení bylo uloženo.</p></div>';
+            }
+        }
         
         if (isset($_POST['save_ors_api_settings'])) {
             if (wp_verify_nonce($_POST['api_nonce'], 'save_api_settings')) {
@@ -329,11 +336,13 @@ class Icon_Admin {
         }
         
         $google_api_key = get_option('db_google_api_key', '');
+        $tripadvisor_api_key = get_option('db_tripadvisor_api_key', '');
         $tomtom_api_key = get_option('db_tomtom_api_key', '');
         $openchargemap_api_key = get_option('db_openchargemap_api_key', '');
         $config = get_option('db_nearby_config', array());
         $ors_api_key = $config['ors_api_key'] ?? '';
         $google_masked_key = $google_api_key ? str_repeat('•', min(strlen($google_api_key), 20)) : '';
+        $ta_masked_key = $tripadvisor_api_key ? str_repeat('•', min(strlen($tripadvisor_api_key), 20)) : '';
         $tomtom_masked_key = $tomtom_api_key ? str_repeat('•', min(strlen($tomtom_api_key), 20)) : '';
         $openchargemap_masked_key = $openchargemap_api_key ? str_repeat('•', min(strlen($openchargemap_api_key), 20)) : '';
         $ors_masked_key = $ors_api_key ? str_repeat('•', min(strlen($ors_api_key), 20)) : '';
@@ -359,6 +368,23 @@ class Icon_Admin {
         </div>
 
         <div class="card">
+            <h2>Tripadvisor API nastavení</h2>
+            <p>API klíč pro Tripadvisor Content API (vyhledávání a detaily míst).</p>
+            <table class="form-table">
+                <tr>
+                    <th scope="row"><label>Tripadvisor API klíč</label></th>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="text" id="ta_api_key_display" value="<?php echo esc_attr($ta_masked_key); ?>" class="regular-text" readonly style="background-color: #f0f0f0;" />
+                            <button type="button" class="button" onclick="document.getElementById('ta_api_key_modal').style.display='block'">Upravit</button>
+                        </div>
+                        <p class="description">Získejte klíč na <a href="https://developer-tripadvisor.com/" target="_blank">Tripadvisor Developer Portal</a>.</p>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="card">
             <h2>TomTom API nastavení</h2>
             <p>API klíč pro TomTom EV Search API. Potřebný pro načítání dat o nabíjecích stanicích.</p>
             
@@ -378,6 +404,27 @@ class Icon_Admin {
             </table>
         </div>
 
+        <div id="ta_api_key_modal" style="display: none; position: fixed; z-index: 100000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+            <div style="background-color: white; margin: 15% auto; padding: 20px; border-radius: 5px; width: 500px; max-width: 90%;">
+                <h3>Upravit Tripadvisor API klíč</h3>
+                <form method="post" action="">
+                    <?php wp_nonce_field('save_api_settings', 'api_nonce'); ?>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="tripadvisor_api_key">Tripadvisor API klíč</label></th>
+                            <td>
+                                <input type="text" id="tripadvisor_api_key" name="tripadvisor_api_key" value="<?php echo esc_attr($tripadvisor_api_key); ?>" class="regular-text" style="width: 100%;" />
+                                <p class="description">Vložte TA API klíč</p>
+                            </td>
+                        </tr>
+                    </table>
+                    <div style="text-align: right; margin-top: 20px;">
+                        <button type="button" class="button" onclick="document.getElementById('ta_api_key_modal').style.display='none'">Zrušit</button>
+                        <input type="submit" name="save_tripadvisor_api_settings" class="button-primary" value="Uložit" style="margin-left: 10px;" />
+                    </div>
+                </form>
+            </div>
+        </div>
         <div class="card">
             <h2>OpenChargeMap API nastavení</h2>
             <p>API klíč pro OpenChargeMap API. Potřebný pro vyhledávání nabíjecích stanic.</p>
