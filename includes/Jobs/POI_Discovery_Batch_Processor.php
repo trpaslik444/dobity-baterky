@@ -30,7 +30,14 @@ class POI_Discovery_Batch_Processor {
 			
 			// If both quotas are exhausted, skip this item without consuming attempts
 			if (!$useGoogle && !$useTA) {
-				$this->queue->mark_processing($id); // Reset to pending without incrementing attempts
+				// Reset to pending status without incrementing attempts
+				global $wpdb;
+				$wpdb->update($wpdb->prefix . 'db_poi_discovery_queue', 
+					array('status' => 'pending'), 
+					array('id' => $id), 
+					array('%s'), 
+					array('%d')
+				);
 				continue;
 			}
 			
