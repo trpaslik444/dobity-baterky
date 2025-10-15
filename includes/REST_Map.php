@@ -93,13 +93,7 @@ class REST_Map {
         register_rest_route( 'db/v1', '/poi-external/(?P<id>\d+)', array(
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_poi_external' ),
-            'permission_callback' => function ( $request ) {
-                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
-                    return false;
-                }
-
-                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
-            },
+            'permission_callback' => '__return_true', // Veřejný endpoint pro frontend
         ) );
 
         // Internal database search endpoint
