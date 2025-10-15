@@ -217,7 +217,8 @@ class Charging_Discovery {
                 $ilat = (float) ($item['geometry']['location']['lat'] ?? 0.0);
                 $ilng = (float) ($item['geometry']['location']['lng'] ?? 0.0);
                 $dist = $this->haversineM($lat, $lng, $ilat, $ilng);
-                $candidateScore += max(0.0, 2000.0 - min(2000.0, $dist)) / 100.0;
+                // Preferovat nejbližší nabíječky - vzdálenost má větší váhu
+                $candidateScore += max(0.0, 1000.0 - min(1000.0, $dist)) / 10.0;
             }
             if ($candidateScore > $score) {
                 $score = $candidateScore;
@@ -285,7 +286,8 @@ class Charging_Discovery {
                 $ilat = (float) $poi['AddressInfo']['Latitude'];
                 $ilng = (float) $poi['AddressInfo']['Longitude'];
                 $dist = $this->haversineM($lat, $lng, $ilat, $ilng);
-                $candidateScore += max(0.0, 2000.0 - min(2000.0, $dist)) / 100.0;
+                // Preferovat nejbližší nabíječky - vzdálenost má větší váhu
+                $candidateScore += max(0.0, 1000.0 - min(1000.0, $dist)) / 10.0;
             }
             if ($candidateScore > $score) {
                 $score = $candidateScore;
