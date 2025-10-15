@@ -168,6 +168,32 @@ class Charging_Discovery {
         if ($details) {
             update_post_meta($postId, self::META_GOOGLE_CACHE, $details);
             update_post_meta($postId, self::META_GOOGLE_CACHE_EXP, time() + self::METADATA_TTL);
+            
+            // Uložit stav a dostupnost do samostatných meta
+            if (!empty($details['business_status'])) {
+                update_post_meta($postId, '_charging_business_status', $details['business_status']);
+            }
+            
+            // Uložit informace o konektorech a jejich dostupnosti
+            if (!empty($details['connectors']) && is_array($details['connectors'])) {
+                $totalConnectors = 0;
+                $availableConnectors = 0;
+                
+                foreach ($details['connectors'] as $connector) {
+                    $count = (int) ($connector['count'] ?? 0);
+                    $availableCount = (int) ($connector['availableCount'] ?? 0);
+                    
+                    $totalConnectors += $count;
+                    $availableConnectors += $availableCount;
+                }
+                
+                if ($totalConnectors > 0) {
+                    update_post_meta($postId, '_charging_live_available', $availableConnectors);
+                    update_post_meta($postId, '_charging_live_total', $totalConnectors);
+                    update_post_meta($postId, '_charging_live_source', 'google_places');
+                    update_post_meta($postId, '_charging_live_updated', current_time('mysql'));
+                }
+            }
         }
         return $details;
     }

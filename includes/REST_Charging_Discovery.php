@@ -160,6 +160,24 @@ class REST_Charging_Discovery {
             }
         }
         
+        // Přidat informace o stavu a dostupnosti
+        if (!empty($meta['google']['business_status'])) {
+            $data['business_status'] = $meta['google']['business_status'];
+        }
+        
+        // Přidat informace o dostupnosti konektorů
+        if ($live && isset($live['available']) && isset($live['total'])) {
+            $data['charging_live_available'] = (int) $live['available'];
+            $data['charging_live_total'] = (int) $live['total'];
+            $data['charging_live_source'] = $live['source'] ?? 'unknown';
+            $data['charging_live_updated'] = $live['updated_at'] ?? null;
+        }
+        
+        // Přidat data o konektorech z Google API
+        if (!empty($meta['google']['connectors']) && is_array($meta['google']['connectors'])) {
+            $data['google_connectors'] = $meta['google']['connectors'];
+        }
+        
         $response['data'] = $data;
         
         return rest_ensure_response($response);

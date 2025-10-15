@@ -2135,6 +2135,92 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
   
+  // Generování sekce konektorů pro mobile sheet
+  function generateMobileConnectorsSection(p) {
+    const connectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+    if (!connectors || connectors.length === 0) {
+      return '';
+    }
+    
+    // Seskupit konektory podle typu a spočítat
+    const connectorCounts = {};
+    connectors.forEach(c => {
+      const typeKey = getConnectorTypeKey(c);
+      if (typeKey) {
+        const power = c.connector_power_kw || c.power_kw || c.power || c.vykon || '';
+        const quantity = parseInt(c.quantity || c.count || c.connector_count || 1);
+        
+        if (!connectorCounts[typeKey]) {
+          connectorCounts[typeKey] = { count: 0, power: power };
+        }
+        connectorCounts[typeKey].count += quantity;
+      }
+    });
+    
+    // Vytvořit kompaktní HTML pro mobile sheet
+    const connectorItems = Object.entries(connectorCounts).map(([typeKey, info]) => {
+      const connector = connectors.find(c => {
+        const cType = getConnectorTypeKey(c);
+        return cType === typeKey;
+      });
+      
+      const iconUrl = getConnectorIconUrl(connector);
+      const powerText = info.power ? ` (${info.power} kW)` : '';
+      
+      // Zkontrolovat live dostupnost z API
+      let availabilityText = info.count;
+      let isOutOfService = false;
+      
+      // Zkontrolovat stav "mimo provoz" z Google API
+      if (p.business_status === 'CLOSED_TEMPORARILY' || p.business_status === 'CLOSED_PERMANENTLY') {
+        isOutOfService = true;
+      }
+      
+      // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz)
+      if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+        const available = p.charging_live_available;
+        const total = p.charging_live_total;
+        availabilityText = `${available}/${total}`;
+      } else if (isOutOfService) {
+        availabilityText = 'MIMO PROVOZ';
+      }
+      
+      // Kompaktní styl pro mobile sheet
+      const containerStyle = isOutOfService 
+        ? 'display: inline-flex; align-items: center; gap: 4px; margin: 2px 4px 2px 0; padding: 4px 8px; background: #fee; border-radius: 4px; border: 1px solid #fcc; opacity: 0.7;'
+        : 'display: inline-flex; align-items: center; gap: 4px; margin: 2px 4px 2px 0; padding: 4px 8px; background: #f8f9fa; border-radius: 4px; border: 1px solid #e9ecef;';
+      
+      const textStyle = isOutOfService 
+        ? 'font-weight: 600; color: #c33; font-size: 0.8em;'
+        : 'font-weight: 600; color: #333; font-size: 0.8em;';
+      
+      if (iconUrl) {
+        return `<div style="${containerStyle}">
+          <img src="${iconUrl}" style="width: 16px; height: 16px; object-fit: contain;" alt="${typeKey}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'">
+          <span style="display: none;">${typeKey.toUpperCase()}</span>
+          <span style="${textStyle}">${availabilityText}</span>
+        </div>`;
+      } else {
+        return `<div style="${containerStyle}">
+          <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
+        </div>`;
+      }
+    }).join('');
+    
+    if (connectorItems) {
+      return `
+        <div class="sheet-connectors" style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 8px;">
+          <div style="font-weight: 600; color: #049FE8; margin-bottom: 6px; font-size: 0.9em;">Konektory</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 2px;">
+            ${connectorItems}
+          </div>
+        </div>
+      `;
+    }
+    
+    return '';
+  }
+
   function openMobileSheet(feature) {
     if (window.innerWidth > 900) return;
     
@@ -2229,6 +2315,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             <line x1="12" y1="8" x2="12" y2="8"/>
           </svg>
         </button>
+        
+        ${p.post_type === 'charging_location' ? generateMobileConnectorsSection(p) : ''}
         
         <div class="sheet-nearby">
           <div class="sheet-nearby-list" data-feature-id="${p.id}">
@@ -3480,7 +3568,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         });
         
-        // Vytvořit detailní HTML pro konektory s ikonami
+        // Vytvořit HTML pro konektory jako ikony s čísly na jednom řádku
         const connectorItems = Object.entries(connectorCounts).map(([typeKey, info]) => {
           const connector = connectors.find(c => {
             const cType = getConnectorTypeKey(c);
@@ -3490,17 +3578,46 @@ document.addEventListener('DOMContentLoaded', async function() {
           const iconUrl = getConnectorIconUrl(connector);
           const powerText = info.power ? ` (${info.power} kW)` : '';
           
+          // Zkontrolovat live dostupnost z API
+          let availabilityText = info.count;
+          let isOutOfService = false;
+          
+          // Zkontrolovat stav "mimo provoz" z Google API
+          if (p.business_status === 'CLOSED_TEMPORARILY' || p.business_status === 'CLOSED_PERMANENTLY') {
+            isOutOfService = true;
+          }
+          
+          // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz)
+          if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+            const available = p.charging_live_available;
+            const total = p.charging_live_total;
+            availabilityText = `${available}/${total}`;
+          } else if (isOutOfService) {
+            availabilityText = 'MIMO PROVOZ';
+          }
+          
+          // Určit styly podle stavu
+          const containerStyle = isOutOfService 
+            ? 'display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #fee; border-radius: 6px; border: 1px solid #fcc; opacity: 0.7;'
+            : 'display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;';
+          
+          const textStyle = isOutOfService 
+            ? 'font-weight: 600; color: #c33; font-size: 0.9em;'
+            : 'font-weight: 600; color: #333; font-size: 0.9em;';
+          
           if (iconUrl) {
-            // Zobraz s ikonou a počtem (bez textového popisu)
-            return `<div style="margin: 8px 0; padding: 12px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #049FE8; display: flex; align-items: center; gap: 12px;">
-              <img src="${iconUrl}" style="width: 24px; height: 24px; object-fit: contain;" alt="${typeKey}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'">
-              <span style="display: none;">${typeKey.toUpperCase()}: ${info.count}x${powerText}</span>
-              <div style="color: #666; font-size: 0.9em;">${info.count}x${powerText}</div>
+            // Zobraz jako ikonu s číslem
+            return `<div style="${containerStyle}">
+              <img src="${iconUrl}" style="width: 20px; height: 20px; object-fit: contain;" alt="${typeKey}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'">
+              <span style="display: none;">${typeKey.toUpperCase()}</span>
+              <span style="${textStyle}">${availabilityText}</span>
+              <span style="color: #666; font-size: 0.8em;">${powerText}</span>
             </div>`;
           } else {
             // Fallback - pouze text
-            return `<div style="margin: 8px 0; padding: 12px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #049FE8;">
-              <div style="color: #666; font-size: 0.9em;">${typeKey.toUpperCase()}: ${info.count}x${powerText}</div>
+            return `<div style="${containerStyle}">
+              <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
+              <span style="color: #666; font-size: 0.8em;">${powerText}</span>
             </div>`;
           }
         }).join('');
@@ -3508,7 +3625,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         connectorsDetail = `
           <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
             <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">Nabíjecí konektory</div>
-            ${connectorItems}
+            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+              ${connectorItems}
+            </div>
           </div>
         `;
       }
@@ -3758,6 +3877,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Základní info blok
     const infoRows = [];
     if (ratingInfo) infoRows.push(ratingInfo);
+    if (connectorsDetail) infoRows.push(connectorsDetail);
     if (openingHoursSection) infoRows.push(openingHoursSection);
     if (contactSection) infoRows.push(contactSection);
 

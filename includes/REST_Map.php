@@ -434,6 +434,12 @@ class REST_Map {
                     'connectors' => get_post_meta($post->ID, '_db_connectors', true),
                     'konektory' => get_post_meta($post->ID, '_db_konektory', true),
                     'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
+                    // Metadata o stavu a dostupnosti z externích API
+                    'business_status' => get_post_meta($post->ID, '_charging_business_status', true),
+                    'charging_live_available' => get_post_meta($post->ID, '_charging_live_available', true),
+                    'charging_live_total' => get_post_meta($post->ID, '_charging_live_total', true),
+                    'charging_live_source' => get_post_meta($post->ID, '_charging_live_source', true),
+                    'charging_live_updated' => get_post_meta($post->ID, '_charging_live_updated', true),
                     'image' => get_post_meta($post->ID, '_db_image', true),
                     'address' => get_post_meta($post->ID, '_db_address', true),
                     'phone' => get_post_meta($post->ID, '_db_phone', true),
