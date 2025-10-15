@@ -2112,7 +2112,8 @@ class REST_Map {
                 if (class_exists('DB\\POI_Discovery')) {
                     $svc = new \DB\POI_Discovery();
                     $res = $svc->discoverForPoi($post_id, true, false, true);
-                    if (!empty($res['google_place_id'])) { $quota->record_google(1); $google_id = $res['google_place_id']; }
+                    $quota->record_google(1); // Record quota usage for all API calls
+                    if (!empty($res['google_place_id'])) { $google_id = $res['google_place_id']; }
                 }
             }
             // Try Tripadvisor if still missing and quota allows
@@ -2120,7 +2121,8 @@ class REST_Map {
                 if (class_exists('DB\\POI_Discovery')) {
                     $svc = new \DB\POI_Discovery();
                     $res = $svc->discoverForPoi($post_id, true, true, false);
-                    if (!empty($res['tripadvisor_location_id'])) { $quota->record_tripadvisor(1); $ta_id = $res['tripadvisor_location_id']; }
+                    $quota->record_tripadvisor(1); // Record quota usage for all API calls
+                    if (!empty($res['tripadvisor_location_id'])) { $ta_id = $res['tripadvisor_location_id']; }
                 }
             }
             // Recompute available services list
