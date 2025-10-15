@@ -97,12 +97,40 @@ class REST_Charging_Discovery {
             $meta['open_charge_map'] = $svc->refreshOcmMetadata($postId, $ocmId, false);
         }
         $live = $svc->refreshLiveStatus($postId, false);
-        return rest_ensure_response([
+        
+        // Vytvořit odpověď ve stejném formátu jako poi-external endpoint
+        $response = [
             'post_id' => $postId,
             'google_place_id' => $googleId ?: null,
             'open_charge_map_id' => $ocmId ?: null,
             'metadata' => $meta,
             'live_status' => $live,
-        ]);
+        ];
+        
+        // Přidat data pro frontend kompatibilitu
+        $data = [];
+        
+        // Zpracovat Google fotky
+        if (!empty($meta['google']['photos']) && is_array($meta['google']['photos'])) {
+            $photos = $meta['google']['photos'];
+            $data['photos'] = $photos;
+            
+            // Vytvořit přímou URL pro první fotku
+            $api_key = get_option('db_google_api_key');
+            if (!empty($api_key) && !empty($photos)) {
+                $ref = $photos[0]['photo_reference'] ?? '';
+                if ($ref !== '') {
+                    $data['photoUrl'] = add_query_arg([
+                        'maxwidth' => 1200,
+                        'photo_reference' => $ref,
+                        'key' => $api_key,
+                    ], 'https://maps.googleapis.com/maps/api/place/photo');
+                }
+            }
+        }
+        
+        $response['data'] = $data;
+        
+        return rest_ensure_response($response);
     }
 }
