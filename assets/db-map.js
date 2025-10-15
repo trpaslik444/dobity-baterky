@@ -3760,9 +3760,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         if (!url && p.poi_photo_url) url = p.poi_photo_url;
 
-        // Pokud pořád nic, vytáhni z poi-external
+        // Pokud pořád nic, vytáhni z externího endpointu podle typu
         if (!url) {
-          const restBase = (window.dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external').replace(/\/$/, '');
+          const restBase = (p.post_type === 'charging_location' 
+            ? (window.dbMapData?.chargingExternalUrl || '/wp-json/db/v1/charging-external')
+            : (window.dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external')
+          ).replace(/\/$/, '');
           const nonce = window.dbMapData?.restNonce || '';
           const r = await fetch(`${restBase}/${p.id}`, { headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' } });
           if (r.ok) {
@@ -3802,11 +3805,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       };
       bindThumbClicks();
-      // Pokud nejsou k dispozici žádné náhledy, zkus je získat z poi-external a doplnit
+      // Pokud nejsou k dispozici žádné náhledy, zkus je získat z externího endpointu podle typu a doplnit
       if (!detailModal.querySelector('.hero-thumbs') || !detailModal.querySelector('.hero-thumbs .hero-thumb')) {
         (async () => {
           try {
-            const restBase = (window.dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external').replace(/\/$/, '');
+            const restBase = (p.post_type === 'charging_location' 
+              ? (window.dbMapData?.chargingExternalUrl || '/wp-json/db/v1/charging-external')
+              : (window.dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external')
+            ).replace(/\/$/, '');
             const nonce = window.dbMapData?.restNonce || '';
             const r = await fetch(`${restBase}/${p.id}`, { headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' } });
             if (!r.ok) return;
