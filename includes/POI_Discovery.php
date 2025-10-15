@@ -23,9 +23,10 @@ class POI_Discovery {
 	 * @param int  $postId ID POI
 	 * @param bool $save   Pokud true, uloží ID do post meta
 	 * @param bool $withTripadvisor Zkusit i Tripadvisor (pokud je API klíč)
+	 * @param bool $useGoogle Použít Google API (pokud je false, přeskočí Google search)
 	 * @return array{google_place_id: string|null, tripadvisor_location_id: string|null, debug: array}
 	 */
-	public function discoverForPoi(int $postId, bool $save = false, bool $withTripadvisor = false): array {
+	public function discoverForPoi(int $postId, bool $save = false, bool $withTripadvisor = false, bool $useGoogle = true): array {
 		$post = get_post($postId);
 		if (!$post || $post->post_type !== 'poi') {
 			return ['google_place_id' => null, 'tripadvisor_location_id' => null, 'debug' => ['error' => 'invalid_post']];
@@ -36,7 +37,11 @@ class POI_Discovery {
 		$lng = (float) get_post_meta($postId, '_poi_lng', true);
 		$hasCoords = ($lat !== 0.0 || $lng !== 0.0);
 
-		$googlePlaceId = $this->discoverGooglePlaceId($title, $hasCoords ? $lat : null, $hasCoords ? $lng : null);
+		$googlePlaceId = null;
+		if ($useGoogle) {
+			$googlePlaceId = $this->discoverGooglePlaceId($title, $hasCoords ? $lat : null, $hasCoords ? $lng : null);
+		}
+		
 		$tripadvisorId = null;
 		if ($withTripadvisor) {
 			$tripadvisorId = $this->discoverTripadvisorLocationId($title, $hasCoords ? $lat : null, $hasCoords ? $lng : null);
@@ -116,7 +121,7 @@ class POI_Discovery {
 		$updated = 0;
 		foreach ($ids as $poiId) {
 			$processed++;
-			$result = $this->discoverForPoi((int)$poiId, $save, $withTripadvisor);
+			$result = $this->discoverForPoi((int)$poiId, $save, $withTripadvisor, true);
 			if (($result['google_place_id'] ?? null) || ($result['tripadvisor_location_id'] ?? null)) {
 				$updated++;
 			}

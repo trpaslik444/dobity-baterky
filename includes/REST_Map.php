@@ -2111,7 +2111,7 @@ class REST_Map {
                 // Reuse POI_Discovery service to find IDs
                 if (class_exists('DB\\POI_Discovery')) {
                     $svc = new \DB\POI_Discovery();
-                    $res = $svc->discoverForPoi($post_id, true, false);
+                    $res = $svc->discoverForPoi($post_id, true, false, true);
                     if (!empty($res['google_place_id'])) { $quota->record_google(1); $google_id = $res['google_place_id']; }
                 }
             }
@@ -2119,7 +2119,7 @@ class REST_Map {
             if (!$ta_id && $quota->can_use_tripadvisor()) {
                 if (class_exists('DB\\POI_Discovery')) {
                     $svc = new \DB\POI_Discovery();
-                    $res = $svc->discoverForPoi($post_id, true, true);
+                    $res = $svc->discoverForPoi($post_id, true, true, false);
                     if (!empty($res['tripadvisor_location_id'])) { $quota->record_tripadvisor(1); $ta_id = $res['tripadvisor_location_id']; }
                 }
             }

@@ -35,7 +35,7 @@ class REST_POI_Discovery {
 		if (!$post_id) return new \WP_Error('bad_request', 'Missing id', ['status' => 400]);
 
 		$svc = new POI_Discovery();
-		$res = $svc->discoverForPoi($post_id, $save, $with_ta);
+		$res = $svc->discoverForPoi($post_id, $save, $with_ta, true);
 		return rest_ensure_response($res);
 	}
 

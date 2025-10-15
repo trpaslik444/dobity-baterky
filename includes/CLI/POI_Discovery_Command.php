@@ -39,7 +39,7 @@ class POI_Discovery_Command {
 			return;
 		}
 		$svc = new POI_Discovery();
-		$res = $svc->discoverForPoi($poiId, $save, $withTA);
+		$res = $svc->discoverForPoi($poiId, $save, $withTA, true);
 		\WP_CLI::log(json_encode($res, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 		\WP_CLI::success('Done');
 	}

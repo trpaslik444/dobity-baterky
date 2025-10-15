@@ -25,10 +25,10 @@ class POI_Discovery_Batch_Processor {
 			$id = (int)$row->id; $poi_id = (int)$row->poi_id;
 			$this->queue->mark_processing($id);
 			try {
-				$useGoogle = $this->quota->can_use_google();
-				$useTA = $this->quota->can_use_tripadvisor();
-				$withTA = !$useGoogle || $useTA;
-				$res = $svc->discoverForPoi($poi_id, false, $withTA);
+			$useGoogle = $this->quota->can_use_google();
+			$useTA = $this->quota->can_use_tripadvisor();
+			$withTA = !$useGoogle || $useTA;
+			$res = $svc->discoverForPoi($poi_id, false, $withTA, $useGoogle);
                 if (!empty($res['google_place_id'])) { $this->quota->record_google(1); $usedG++; }
                 if (!empty($res['tripadvisor_location_id'])) { $this->quota->record_tripadvisor(1); $usedTA++; }
 
@@ -37,7 +37,7 @@ class POI_Discovery_Batch_Processor {
 					// heuristika skóre (zatím jednoduchá: pokud máme ID, považuj za confident)
 					$score = 1.0;
 					// Auto save
-					$svc->discoverForPoi($poi_id, true, $withTA);
+					$svc->discoverForPoi($poi_id, true, $withTA, $useGoogle);
 					$this->queue->mark_completed($id);
 					$processed++;
 				} else {
