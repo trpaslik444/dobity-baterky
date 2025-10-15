@@ -78,15 +78,7 @@ class REST_Map {
         register_rest_route( 'db/v1', '/map', array(
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_map' ),
-            'permission_callback' => function ( $request ) {
-                // Zkontroluj nonce autentizaci
-                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
-                    return false;
-                }
-
-                // Jednoduchá kontrola - necháme Members plugin, aby měl kontrolu
-                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
-            },
+            'permission_callback' => '__return_true', // Veřejný endpoint pro frontend
         ) );
 
         // Externí detaily POI (Google Places / Tripadvisor)
@@ -100,13 +92,7 @@ class REST_Map {
         register_rest_route( 'db/v1', '/map-search', array(
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_map_search' ),
-            'permission_callback' => function ( $request ) {
-                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
-                    return false;
-                }
-
-                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
-            },
+            'permission_callback' => '__return_true', // Veřejný endpoint pro frontend
             'args' => array(
                 'query' => array(
                     'required' => true,
