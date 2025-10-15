@@ -29,8 +29,9 @@ class POI_Discovery_Batch_Processor {
 			$useTA = $this->quota->can_use_tripadvisor();
 			$withTA = !$useGoogle || $useTA;
 			$res = $svc->discoverForPoi($poi_id, false, $withTA, $useGoogle);
-                if (!empty($res['google_place_id'])) { $this->quota->record_google(1); $usedG++; }
-                if (!empty($res['tripadvisor_location_id'])) { $this->quota->record_tripadvisor(1); $usedTA++; }
+                // Record quota usage for all API calls, not just successful matches
+                if ($useGoogle) { $this->quota->record_google(1); $usedG++; }
+                if ($withTA) { $this->quota->record_tripadvisor(1); $usedTA++; }
 
 				$matched = $res['google_place_id'] ?? ($res['tripadvisor_location_id'] ?? null);
 				if ($matched) {

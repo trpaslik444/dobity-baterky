@@ -41,12 +41,13 @@ class POI_Discovery_Worker {
 			$res = $batch->process_batch(10);
 			// Ulož poslední výsledek pro admin UI
 			update_option('db_poi_last_batch', array_merge($res, ['ts' => current_time('mysql')]), false);
-            if ((int)($res['processed'] ?? 0) > 0) {
-				self::dispatch(5);
-			}
 			return $res;
 		} finally {
 			delete_transient(self::RUN_LOCK);
+			// Schedule next batch after clearing the lock
+			if ((int)($res['processed'] ?? 0) > 0) {
+				self::dispatch(5);
+			}
 		}
 	}
 }
