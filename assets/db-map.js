@@ -2532,7 +2532,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     const props = feature.properties;
-    try { console.debug('[DB Map][Charging enrich] start', { id: props.id, title: props.title }); } catch (_) {}
+    try { console.debug('[DB Map][Charging enrich] start', { id: props.id, title: props.title, hasGoogleDetails: !!props.charging_google_details, hasOcmDetails: !!props.charging_ocm_details }); } catch (_) {}
 
     const hasFreshLive = props.charging_live_expires_at && Date.parse(props.charging_live_expires_at) > Date.now();
     const hasMeta = !!(props.charging_google_details || props.charging_ocm_details);
@@ -2622,7 +2622,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     const needLive = !(typeof props.charging_live_available === 'number' && typeof props.charging_live_total === 'number');
     const needMeta = !(props.charging_google_details || props.charging_ocm_details);
     const liveFresh = liveExpire && Date.now() < (liveExpire - 1000);
-    return needMeta || needLive || !liveFresh;
+    const shouldFetch = needMeta || needLive || !liveFresh;
+    
+    // Debug výpis
+    try { 
+      console.debug('[DB Map][Charging] shouldFetchChargingDetails', {
+        id: props.id,
+        needMeta,
+        needLive,
+        liveFresh,
+        shouldFetch,
+        hasGoogleDetails: !!props.charging_google_details,
+        hasOcmDetails: !!props.charging_ocm_details
+      }); 
+    } catch(_) {}
+    
+    return shouldFetch;
   }
 
   function formatRelativeLiveTime(dateString) {
@@ -3334,6 +3349,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     if (feature && feature.properties && feature.properties.post_type === 'charging_location') {
       const needsChargingEnrich = shouldFetchChargingDetails(feature.properties);
+      try { console.debug('[DB Map][Detail] charging_location detected', { id: feature.properties.id, needsChargingEnrich }); } catch(_) {}
       if (needsChargingEnrich) {
         try { console.debug('[DB Map][Detail] enriching charging now', { id: feature.properties.id }); } catch(_) {}
         try {
@@ -3346,6 +3362,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         } catch (err) {
           try { console.warn('[DB Map][Detail] charging enrich failed', err); } catch(_) {}
         }
+      } else {
+        try { console.debug('[DB Map][Detail] charging enrich skipped', { id: feature.properties.id, reason: 'has fresh data' }); } catch(_) {}
       }
     }
 
