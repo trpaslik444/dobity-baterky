@@ -19,11 +19,12 @@ class POI_Discovery_Batch_Processor {
 	 */
     public function process_batch(int $limit = 10): array {
 		$items = $this->queue->get_pending($limit);
-        $processed = 0; $errors = 0; $usedG = 0; $usedTA = 0;
+        $processed = 0; $errors = 0; $usedG = 0; $usedTA = 0; $attempted = 0;
 		$svc = new POI_Discovery();
 		foreach ($items as $row) {
 			$id = (int)$row->id; $poi_id = (int)$row->poi_id;
 			$this->queue->mark_processing($id);
+			$attempted++; // Count all attempted items
 			try {
 			$useGoogle = $this->quota->can_use_google();
 			$useTA = $this->quota->can_use_tripadvisor();
@@ -72,7 +73,7 @@ class POI_Discovery_Batch_Processor {
 				$errors++;
 			}
 		}
-        return array('processed' => $processed, 'errors' => $errors, 'usedGoogle' => $usedG, 'usedTripadvisor' => $usedTA);
+        return array('processed' => $processed, 'errors' => $errors, 'usedGoogle' => $usedG, 'usedTripadvisor' => $usedTA, 'attempted' => $attempted);
 	}
 }
 

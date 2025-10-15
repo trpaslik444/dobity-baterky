@@ -2109,7 +2109,7 @@ class REST_Map {
             // Try Google discovery first if quota allows and no existing ID
             if (!$google_id && $quota->can_use_google()) {
                 // Reuse POI_Discovery service to find IDs
-                if (class_exists('DB\\POI_Discovery')) {
+                if (class_exists('DB\POI_Discovery')) {
                     $svc = new \DB\POI_Discovery();
                     $res = $svc->discoverForPoi($post_id, true, false, true);
                     $quota->record_google(1); // Record quota usage for all API calls
@@ -2118,7 +2118,7 @@ class REST_Map {
             }
             // Try Tripadvisor if still missing and quota allows
             if (!$ta_id && $quota->can_use_tripadvisor()) {
-                if (class_exists('DB\\POI_Discovery')) {
+                if (class_exists('DB\POI_Discovery')) {
                     $svc = new \DB\POI_Discovery();
                     $res = $svc->discoverForPoi($post_id, true, true, false);
                     $quota->record_tripadvisor(1); // Record quota usage for all API calls

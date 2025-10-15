@@ -45,7 +45,7 @@ class POI_Discovery_Worker {
 		} finally {
 			delete_transient(self::RUN_LOCK);
 			// Schedule next batch after clearing the lock
-			if ((int)($res['processed'] ?? 0) > 0) {
+			if ((int)($res['attempted'] ?? 0) > 0) {
 				self::dispatch(5);
 			}
 		}
