@@ -36,8 +36,17 @@ class POI_Discovery_Batch_Processor {
 				if ($matched) {
 					// heuristika skóre (zatím jednoduchá: pokud máme ID, považuj za confident)
 					$score = 1.0;
-					// Auto save
-					$svc->discoverForPoi($poi_id, true, $withTA, $useGoogle);
+					// Save discovered IDs using the same result (avoid double API calls)
+					if (!empty($res['google_place_id'])) {
+						update_post_meta($poi_id, '_poi_google_place_id', $res['google_place_id']);
+						delete_post_meta($poi_id, '_poi_google_cache');
+						delete_post_meta($poi_id, '_poi_google_cache_expires');
+					}
+					if (!empty($res['tripadvisor_location_id'])) {
+						update_post_meta($poi_id, '_poi_tripadvisor_location_id', $res['tripadvisor_location_id']);
+						delete_post_meta($poi_id, '_poi_tripadvisor_cache');
+						delete_post_meta($poi_id, '_poi_tripadvisor_cache_expires');
+					}
 					$this->queue->mark_completed($id);
 					$processed++;
 				} else {

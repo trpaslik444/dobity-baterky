@@ -48,6 +48,7 @@ class POI_Discovery_Admin {
 
         echo '<h2>Kvóty</h2>';
         echo '<form method="post" style="margin-bottom:10px">';
+        wp_nonce_field('db_poi_quota_update', '_wpnonce_quota');
         echo '<input type="hidden" name="db_poi_quota_update" value="1" />';
         echo '<table class="form-table"><tbody>';
         echo '<tr><th>Google použito</th><td><input type="number" name="g_used" value="' . intval($status['google']['used']) . '" /></td></tr>';
@@ -59,8 +60,8 @@ class POI_Discovery_Admin {
         submit_button('Uložit kvóty');
         echo '</form>';
 
-        if (!empty($_POST['db_poi_quota_update']) && current_user_can('manage_options')) {
-            check_admin_referer(); // best-effort, vyhneme se fatálnímu pádu, nonce tu není povinná
+		if (!empty($_POST['db_poi_quota_update']) && current_user_can('manage_options')) {
+			check_admin_referer('db_poi_quota_update', '_wpnonce_quota');
             $g_used = intval($_POST['g_used'] ?? 0);
             $g_total = intval($_POST['g_total'] ?? 0);
             $ta_used = intval($_POST['ta_used'] ?? 0);
