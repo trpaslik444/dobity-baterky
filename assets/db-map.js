@@ -2175,15 +2175,18 @@ document.addEventListener('DOMContentLoaded', async function() {
             isOutOfService = true;
           }
           
-          // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz)
-          if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+          // Vždy zobrazit počet konektorů z databáze jako hlavní
+          if (isOutOfService) {
+            availabilityText = 'MIMO PROVOZ';
+          } else if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+            // Pouze pokud máme live data, zobrazit "dostupné/celkem"
             const available = p.charging_live_available;
             const total = p.charging_live_total;
             availabilityText = `${available}/${total}`;
-          } else if (isOutOfService) {
-            availabilityText = 'MIMO PROVOZ';
+          } else {
+            // Pokud nemáme live data, zobrazit pouze celkový počet z databáze
+            availabilityText = info.count.toString();
           }
-          // Pokud nemáme data o dostupnosti, zobrazíme pouze celkový počet
           
           // Zjednodušený styl bez pozadí
           const textStyle = isOutOfService 
@@ -3583,15 +3586,18 @@ document.addEventListener('DOMContentLoaded', async function() {
             isOutOfService = true;
           }
           
-          // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz)
-          if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+          // Vždy zobrazit počet konektorů z databáze jako hlavní
+          if (isOutOfService) {
+            availabilityText = 'MIMO PROVOZ';
+          } else if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+            // Pouze pokud máme live data, zobrazit "dostupné/celkem"
             const available = p.charging_live_available;
             const total = p.charging_live_total;
             availabilityText = `${available}/${total}`;
-          } else if (isOutOfService) {
-            availabilityText = 'MIMO PROVOZ';
+          } else {
+            // Pokud nemáme live data, zobrazit pouze celkový počet z databáze
+            availabilityText = info.count.toString();
           }
-          // Pokud nemáme data o dostupnosti, zobrazíme pouze celkový počet
           
           // Určit styly podle stavu
           const containerStyle = isOutOfService 

@@ -82,12 +82,14 @@ class Charging_Discovery {
                     if ($googleLat !== null && $googleLng !== null) {
                         $distance = $this->haversineM($lat, $lng, $googleLat, $googleLng);
                         if ($distance > 100) {
-                            // Příliš daleko - neukládat ID
+                            // Příliš daleko - neukládat ID, přidat do review fronty
                             $discoveredGoogle = null;
                             error_log("Charging Discovery: Google ID příliš daleko ({$distance}m) pro objekt $postId");
+                            $this->addToReviewQueue($postId, "Google ID příliš daleko ({$distance}m)");
                         } elseif ($distance > 50) {
-                            // Podezřelé - ale uložit s varováním
+                            // Podezřelé - uložit s varováním a přidat do review
                             error_log("Charging Discovery: Google ID podezřele daleko ({$distance}m) pro objekt $postId");
+                            $this->addToReviewQueue($postId, "Google ID podezřele daleko ({$distance}m)");
                         }
                     }
                 }
@@ -110,12 +112,14 @@ class Charging_Discovery {
                     if ($ocmLat !== null && $ocmLng !== null) {
                         $distance = $this->haversineM($lat, $lng, $ocmLat, $ocmLng);
                         if ($distance > 100) {
-                            // Příliš daleko - neukládat ID
+                            // Příliš daleko - neukládat ID, přidat do review fronty
                             $discoveredOcm = null;
                             error_log("Charging Discovery: OCM ID příliš daleko ({$distance}m) pro objekt $postId");
+                            $this->addToReviewQueue($postId, "OCM ID příliš daleko ({$distance}m)");
                         } elseif ($distance > 50) {
-                            // Podezřelé - ale uložit s varováním
+                            // Podezřelé - uložit s varováním a přidat do review
                             error_log("Charging Discovery: OCM ID podezřele daleko ({$distance}m) pro objekt $postId");
+                            $this->addToReviewQueue($postId, "OCM ID podezřele daleko ({$distance}m)");
                         }
                     }
                 }
@@ -131,6 +135,11 @@ class Charging_Discovery {
             }
         }
 
+        // Pokud se nenašlo žádné ID, přidat do review fronty
+        if (!$discoveredGoogle && !$discoveredOcm) {
+            $this->addToReviewQueue($postId, "Nebylo nalezeno žádné ID (Google ani OCM)");
+        }
+        
         return [
             'google' => $discoveredGoogle,
             'open_charge_map' => $discoveredOcm,
@@ -361,6 +370,49 @@ class Charging_Discovery {
         }
         
         return false;
+    }
+    
+    /**
+     * Přidá nabíječku do fronty pro manuální review
+     */
+    private function addToReviewQueue(int $postId, string $reason = ''): void {
+        global $wpdb;
+        
+        $tableName = $wpdb->prefix . 'db_charging_discovery_queue';
+        
+        // Zkontrolovat, zda už není ve frontě
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $tableName WHERE station_id = %d AND status IN ('pending', 'review')",
+            $postId
+        ));
+        
+        if ($existing) {
+            // Aktualizovat existující záznam na review
+            $wpdb->update(
+                $tableName,
+                [
+                    'status' => 'review',
+                    'matched_score' => $reason,
+                    'updated_at' => current_time('mysql')
+                ],
+                ['id' => $existing],
+                ['%s', '%s', '%s'],
+                ['%d']
+            );
+        } else {
+            // Přidat nový záznam
+            $wpdb->insert(
+                $tableName,
+                [
+                    'station_id' => $postId,
+                    'status' => 'review',
+                    'matched_score' => $reason,
+                    'created_at' => current_time('mysql'),
+                    'updated_at' => current_time('mysql')
+                ],
+                ['%d', '%s', '%s', '%s', '%s']
+            );
+        }
     }
 
     private function discoverGooglePlaceId(string $title, ?float $lat, ?float $lng): ?string {
