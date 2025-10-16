@@ -2176,14 +2176,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         isOutOfService = true;
       }
       
-      // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz)
-      if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+      // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz a máme skutečná data)
+      if (!isOutOfService && p.charging_live_data_available === true && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
         const available = p.charging_live_available;
         const total = p.charging_live_total;
         availabilityText = `${available}/${total}`;
       } else if (isOutOfService) {
         availabilityText = 'MIMO PROVOZ';
       }
+      // Pokud nemáme data o dostupnosti, zobrazíme pouze celkový počet
       
       // Kompaktní styl pro mobile sheet
       const containerStyle = isOutOfService 
@@ -3587,14 +3588,15 @@ document.addEventListener('DOMContentLoaded', async function() {
             isOutOfService = true;
           }
           
-          // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz)
-          if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+          // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz a máme skutečná data)
+          if (!isOutOfService && p.charging_live_data_available === true && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
             const available = p.charging_live_available;
             const total = p.charging_live_total;
             availabilityText = `${available}/${total}`;
           } else if (isOutOfService) {
             availabilityText = 'MIMO PROVOZ';
           }
+          // Pokud nemáme data o dostupnosti, zobrazíme pouze celkový počet
           
           // Určit styly podle stavu
           const containerStyle = isOutOfService 

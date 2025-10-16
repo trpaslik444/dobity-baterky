@@ -165,13 +165,18 @@ class REST_Charging_Discovery {
             $data['business_status'] = $meta['google']['business_status'];
         }
         
-        // Přidat informace o dostupnosti konektorů
-        if ($live && isset($live['available']) && isset($live['total'])) {
+        // Přidat informace o dostupnosti konektorů (pouze pokud máme skutečná data)
+        $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
+        if ($liveDataAvailable === '1' && $live && isset($live['available']) && isset($live['total'])) {
             $data['charging_live_available'] = (int) $live['available'];
             $data['charging_live_total'] = (int) $live['total'];
             $data['charging_live_source'] = $live['source'] ?? 'unknown';
             $data['charging_live_updated'] = $live['updated_at'] ?? null;
         }
+        
+        // Přidat flag o dostupnosti dat o dostupnosti
+        $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
+        $data['charging_live_data_available'] = $liveDataAvailable === '1';
         
         // Přidat data o konektorech z Google API
         if (!empty($meta['google']['connectors']) && is_array($meta['google']['connectors'])) {

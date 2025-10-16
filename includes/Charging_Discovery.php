@@ -159,9 +159,14 @@ class Charging_Discovery {
             return null;
         }
         if (!$force) {
-            $cached = $this->maybeGetPostCache($postId, self::META_GOOGLE_CACHE, self::META_GOOGLE_CACHE_EXP);
-            if ($cached !== null) {
-                return $cached;
+            // Pro data o dostupnosti použijeme speciální logiku
+            if ($this->shouldRefreshLiveData($postId)) {
+                // Aktualizovat data
+            } else {
+                $cached = $this->maybeGetPostCache($postId, self::META_GOOGLE_CACHE, self::META_GOOGLE_CACHE_EXP);
+                if ($cached !== null) {
+                    return $cached;
+                }
             }
         }
         $details = $this->fetchGooglePlaceDetails($placeId);
@@ -178,20 +183,49 @@ class Charging_Discovery {
             if (!empty($details['connectors']) && is_array($details['connectors'])) {
                 $totalConnectors = 0;
                 $availableConnectors = 0;
+                $hasAvailabilityData = false;
                 
                 foreach ($details['connectors'] as $connector) {
                     $count = (int) ($connector['count'] ?? 0);
-                    $availableCount = (int) ($connector['availableCount'] ?? 0);
+                    $availableCount = $connector['availableCount'] ?? null;
                     
                     $totalConnectors += $count;
-                    $availableConnectors += $availableCount;
+                    
+                    // availableCount může být null (neznámá dostupnost) nebo číslo (známá dostupnost)
+                    // Pokud je availableCount přítomné, zkontrolujeme logiku
+                    if (isset($connector['availableCount'])) {
+                        $available = (int) $availableCount;
+                        $outOfService = (int) ($connector['outOfServiceCount'] ?? 0);
+                        $total = (int) $count;
+                        
+                        // Podezřelý stav: 0 dostupných + 0 mimo provoz = neznámá dostupnost
+                        if ($available === 0 && $outOfService === 0 && $total > 0) {
+                            // Není to skutečná dostupnost, ale neznámá
+                            $hasAvailabilityData = false;
+                        } else {
+                            // Platná data o dostupnosti
+                            $availableConnectors += $available;
+                            $hasAvailabilityData = true;
+                        }
+                    }
                 }
                 
                 if ($totalConnectors > 0) {
-                    update_post_meta($postId, '_charging_live_available', $availableConnectors);
-                    update_post_meta($postId, '_charging_live_total', $totalConnectors);
-                    update_post_meta($postId, '_charging_live_source', 'google_places');
-                    update_post_meta($postId, '_charging_live_updated', current_time('mysql'));
+                    // Uložit dostupnost pouze pokud máme skutečná data o dostupnosti
+                    if ($hasAvailabilityData) {
+                        update_post_meta($postId, '_charging_live_available', $availableConnectors);
+                        update_post_meta($postId, '_charging_live_total', $totalConnectors);
+                        update_post_meta($postId, '_charging_live_source', 'google_places');
+                        update_post_meta($postId, '_charging_live_updated', current_time('mysql'));
+                        update_post_meta($postId, '_charging_live_data_available', '1');
+                    } else {
+                        // Pokud nemáme data o dostupnosti, uložit pouze celkový počet
+                        delete_post_meta($postId, '_charging_live_available');
+                        update_post_meta($postId, '_charging_live_total', $totalConnectors);
+                        delete_post_meta($postId, '_charging_live_source');
+                        delete_post_meta($postId, '_charging_live_updated');
+                        update_post_meta($postId, '_charging_live_data_available', '0');
+                    }
                 }
             }
         }
@@ -212,6 +246,16 @@ class Charging_Discovery {
         if ($details) {
             update_post_meta($postId, self::META_OCM_CACHE, $details);
             update_post_meta($postId, self::META_OCM_CACHE_EXP, time() + self::METADATA_TTL);
+            
+            // OCM obvykle neposkytuje data o aktuální dostupnosti, jen obecný stav
+            // Proto ukládáme pouze celkový počet konektorů
+            if (isset($details['status_summary']['total']) && $details['status_summary']['total'] > 0) {
+                delete_post_meta($postId, '_charging_live_available');
+                update_post_meta($postId, '_charging_live_total', $details['status_summary']['total']);
+                delete_post_meta($postId, '_charging_live_source');
+                delete_post_meta($postId, '_charging_live_updated');
+                update_post_meta($postId, '_charging_live_data_available', '0');
+            }
         }
         return $details;
     }
@@ -240,6 +284,19 @@ class Charging_Discovery {
             return is_array($data) ? $data : null;
         }
         return null;
+    }
+    
+    private function shouldRefreshLiveData(int $postId): bool {
+        $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
+        
+        // Pokud nemáme data o dostupnosti, aktualizujeme při každém kliknutí
+        if ($liveDataAvailable !== '1') {
+            return true;
+        }
+        
+        // Pokud máme data o dostupnosti, respektujeme cache TTL (30 dní)
+        $expires = (int) get_post_meta($postId, self::META_GOOGLE_CACHE_EXP, true);
+        return $expires <= time();
     }
 
     private function discoverGooglePlaceId(string $title, ?float $lat, ?float $lng): ?string {

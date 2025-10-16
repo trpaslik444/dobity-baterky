@@ -440,6 +440,7 @@ class REST_Map {
                     'charging_live_total' => get_post_meta($post->ID, '_charging_live_total', true),
                     'charging_live_source' => get_post_meta($post->ID, '_charging_live_source', true),
                     'charging_live_updated' => get_post_meta($post->ID, '_charging_live_updated', true),
+                    'charging_live_data_available' => get_post_meta($post->ID, '_charging_live_data_available', true),
                     'image' => get_post_meta($post->ID, '_db_image', true),
                     'address' => get_post_meta($post->ID, '_db_address', true),
                     'phone' => get_post_meta($post->ID, '_db_phone', true),
