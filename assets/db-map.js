@@ -2585,7 +2585,13 @@ document.addEventListener('DOMContentLoaded', async function() {
               enrichedProps.image = firstPhoto.url;
             } else if ((firstPhoto.photo_reference || firstPhoto.photoReference) && dbMapData?.googleApiKey) {
               const ref = firstPhoto.photo_reference || firstPhoto.photoReference;
-              enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+              if (ref === 'streetview' && firstPhoto.street_view_url) {
+                // Street View obrázek
+                enrichedProps.image = firstPhoto.street_view_url;
+              } else if (ref !== 'streetview') {
+                // Google Places foto
+                enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+              }
             }
           } else if (typeof firstPhoto === 'string') {
             enrichedProps.image = firstPhoto;
@@ -2661,7 +2667,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (first.photo_reference.startsWith('places/')) {
             // Nové API v1 formát
             enrichedProps.image = `https://places.googleapis.com/v1/${first.photo_reference}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
-          } else {
+          } else if (first.photo_reference !== 'streetview') {
             // Staré API formát (fallback)
             enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${first.photo_reference}&key=${dbMapData.googleApiKey}`;
           }
@@ -2682,7 +2688,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (ref.startsWith('places/')) {
               // Nové API v1 formát
               url = `https://places.googleapis.com/v1/${ref}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
-            } else {
+            } else if (ref !== 'streetview') {
               // Staré API formát (fallback)
               url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
             }
@@ -3494,10 +3500,13 @@ document.addEventListener('DOMContentLoaded', async function() {
           heroImageUrl = firstPhoto.url;
         } else if ((firstPhoto.photo_reference || firstPhoto.photoReference) && dbMapData?.googleApiKey) {
           const ref = firstPhoto.photo_reference || firstPhoto.photoReference;
-          if (ref.startsWith('places/')) {
+          if (ref === 'streetview' && firstPhoto.street_view_url) {
+            // Street View obrázek
+            heroImageUrl = firstPhoto.street_view_url;
+          } else if (ref.startsWith('places/')) {
             // Nové API v1 formát
             heroImageUrl = `https://places.googleapis.com/v1/${ref}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
-          } else {
+          } else if (ref !== 'streetview') {
             // Staré API formát (fallback)
             heroImageUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
           }
@@ -3524,7 +3533,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (ph.url) u = ph.url;
           else if ((ph.photo_reference || ph.photoReference) && dbMapData?.googleApiKey) {
             const ref = ph.photo_reference || ph.photoReference;
-            u = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+            if (ref === 'streetview' && ph.street_view_url) {
+              u = ph.street_view_url;
+            } else if (ref !== 'streetview') {
+              u = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+            }
           }
         } else if (typeof ph === 'string') {
           u = ph;
@@ -3701,7 +3714,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             photoUrl = photo.url;
           } else if ((photo.photo_reference || photo.photoReference) && dbMapData?.googleApiKey) {
             const ref = photo.photo_reference || photo.photoReference;
-            photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${dbMapData?.googleApiKey || ''}`;
+            if (ref === 'streetview' && photo.street_view_url) {
+              photoUrl = photo.street_view_url;
+            } else if (ref !== 'streetview') {
+              photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${dbMapData?.googleApiKey || ''}`;
+            }
           }
         } else if (typeof photo === 'string') {
           photoUrl = photo;
@@ -3926,7 +3943,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               if (ref.startsWith('places/')) {
                 // Nové API v1 formát
                 url = `https://places.googleapis.com/v1/${ref}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
-              } else {
+              } else if (ref !== 'streetview') {
                 // Staré API formát (fallback)
                 url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
               }
@@ -4001,7 +4018,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 if (ph.url) urls.push(ph.url);
                 else if ((ph.photo_reference || ph.photoReference) && dbMapData?.googleApiKey) {
                   const ref = ph.photo_reference || ph.photoReference;
-                  urls.push(`https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`);
+                  if (ref === 'streetview' && ph.street_view_url) {
+                    urls.push(ph.street_view_url);
+                  } else if (ref !== 'streetview') {
+                    urls.push(`https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`);
+                  }
                 }
               }
               if (urls.length >= 3) break;
@@ -4039,7 +4060,11 @@ document.addEventListener('DOMContentLoaded', async function() {
               if (fp.url) url = fp.url;
               else if ((fp.photo_reference || fp.photoReference) && dbMapData?.googleApiKey) {
                 const ref = fp.photo_reference || fp.photoReference;
-                url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+                if (ref === 'streetview' && fp.street_view_url) {
+                  url = fp.street_view_url;
+                } else if (ref !== 'streetview') {
+                  url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+                }
               }
             } else if (typeof fp === 'string') {
               url = fp;
