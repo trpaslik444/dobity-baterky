@@ -98,20 +98,22 @@ class REST_Charging_Discovery {
                 // Označit discovery jako v procesu
                 update_post_meta($postId, '_charging_discovery_in_progress', '1');
                 
-                $discoveryResult = $svc->discoverForCharging($postId, true, false, true, true);
-                $googleId = $discoveryResult['google'] ?? '';
-                $ocmId = $discoveryResult['open_charge_map'] ?? '';
-                
-                // Aktualizovat metadata po discovery
-                if ($googleId !== '') {
-                    update_post_meta($postId, '_charging_google_place_id', $googleId);
+                try {
+                    $discoveryResult = $svc->discoverForCharging($postId, true, false, true, true);
+                    $googleId = $discoveryResult['google'] ?? '';
+                    $ocmId = $discoveryResult['open_charge_map'] ?? '';
+                    
+                    // Aktualizovat metadata po discovery
+                    if ($googleId !== '') {
+                        update_post_meta($postId, '_charging_google_place_id', $googleId);
+                    }
+                    if ($ocmId !== '') {
+                        update_post_meta($postId, '_openchargemap_id', $ocmId);
+                    }
+                } finally {
+                    // Odstranit flag "v procesu" i při chybě
+                    delete_post_meta($postId, '_charging_discovery_in_progress');
                 }
-                if ($ocmId !== '') {
-                    update_post_meta($postId, '_openchargemap_id', $ocmId);
-                }
-                
-                // Odstranit flag "v procesu"
-                delete_post_meta($postId, '_charging_discovery_in_progress');
             } else {
                 // Discovery už běží, načíst stávající data
                 $googleId = get_post_meta($postId, '_charging_google_place_id', true);

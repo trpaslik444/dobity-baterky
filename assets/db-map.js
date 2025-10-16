@@ -2386,7 +2386,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     const p = feature.properties || {};
-    const type = (p.post_type === 'charging_location') ? 'poi' : 'charging_location';
+    const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
     
     // Zkontrolovat, zda má bod nearby data
     const hasNearbyData = await checkNearbyDataAvailable(centerId, type);
@@ -2581,18 +2581,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (typeof data.servesDinner !== 'undefined') enrichedProps.poi_serves_dinner = !!data.servesDinner;
       if (typeof data.wheelchairAccessibleEntrance !== 'undefined') enrichedProps.poi_wheelchair = !!data.wheelchairAccessibleEntrance;
       // Preferovat fallback metadata, pak standardní fotky
-      if (data.fallback_metadata && data.fallback_metadata.photos) {
-        enrichedProps.poi_photos = data.fallback_metadata.photos;
-        if (!enrichedProps.image && data.fallback_metadata.photos[0]) {
-          const firstPhoto = data.fallback_metadata.photos[0];
+      if (payload.data?.fallback_metadata && payload.data.fallback_metadata.photos) {
+        enrichedProps.poi_photos = payload.data.fallback_metadata.photos;
+        if (!enrichedProps.image && payload.data.fallback_metadata.photos[0]) {
+          const firstPhoto = payload.data.fallback_metadata.photos[0];
           if (firstPhoto.street_view_url) {
             enrichedProps.image = firstPhoto.street_view_url;
           }
         }
-      } else if (Array.isArray(data.photos) && data.photos.length) {
-        enrichedProps.poi_photos = data.photos;
+      } else if (Array.isArray(payload.data?.photos) && payload.data.photos.length) {
+        enrichedProps.poi_photos = payload.data.photos;
         if (!enrichedProps.image) {
-          const firstPhoto = data.photos[0];
+          const firstPhoto = payload.data.photos[0];
           if (firstPhoto && typeof firstPhoto === 'object') {
             if (firstPhoto.url) {
               enrichedProps.image = firstPhoto.url;
@@ -2687,10 +2687,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
       // Přidat fallback metadata (Street View pro nabíječky ve frontě)
-      if (data.fallback_metadata && data.fallback_metadata.photos) {
-        enrichedProps.poi_photos = data.fallback_metadata.photos;
-        if (!enrichedProps.image && data.fallback_metadata.photos[0]) {
-          const firstPhoto = data.fallback_metadata.photos[0];
+      if (payload.data?.fallback_metadata && payload.data.fallback_metadata.photos) {
+        enrichedProps.poi_photos = payload.data.fallback_metadata.photos;
+        if (!enrichedProps.image && payload.data.fallback_metadata.photos[0]) {
+          const firstPhoto = payload.data.fallback_metadata.photos[0];
           if (firstPhoto.street_view_url) {
             enrichedProps.image = firstPhoto.street_view_url;
           }
@@ -2748,6 +2748,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (live.source) enrichedProps.charging_live_source = live.source;
       if (live.updated_at) enrichedProps.charging_live_updated_at = live.updated_at;
       enrichedProps.charging_live_expires_at = new Date(Date.now() + 90 * 1000).toISOString();
+    }
+    
+    // Přidat konektory z databáze
+    if (payload?.data?.db_connectors) {
+      enrichedProps.db_connectors = payload.data.db_connectors;
+    }
+    
+    // Přidat flag o dostupnosti live dat
+    if (payload?.data?.charging_live_data_available !== undefined) {
+      enrichedProps.charging_live_data_available = payload.data.charging_live_data_available;
     }
 
     enrichedProps.charging_external_expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -3079,7 +3089,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     const p = feature.properties || {};
-    const type = (p.post_type === 'charging_location') ? 'poi' : 'charging_location';
+    const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
     
     // Pokus o načtení s retry logikou
     let attempts = 0;
@@ -3178,7 +3188,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const requestId = currentIsochronesRequestId;
     clearIsochrones();
     const p = centerFeature.properties;
-    const type = (p.post_type === 'charging_location') ? 'poi' : 'charging_location';
+    const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
     
     // Zkontrolovat, zda má bod nearby data
     const hasNearbyData = await checkNearbyDataAvailable(p.id, type);
