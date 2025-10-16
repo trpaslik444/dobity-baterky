@@ -2137,7 +2137,11 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Generování sekce konektorů pro mobile sheet
   function generateMobileConnectorsSection(p) {
-    const connectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+    // Preferovat konektory z databáze, pak z API
+    const dbConnectors = Array.isArray(p.db_connectors) ? p.db_connectors : [];
+    const apiConnectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+    const connectors = dbConnectors.length > 0 ? dbConnectors : apiConnectors;
+    
     if (!connectors || connectors.length === 0) {
       return '';
     }
@@ -2178,8 +2182,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           // Vždy zobrazit počet konektorů z databáze jako hlavní
           if (isOutOfService) {
             availabilityText = 'MIMO PROVOZ';
-          } else if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
-            // Pouze pokud máme live data, zobrazit "dostupné/celkem"
+          } else if (!isOutOfService && p.charging_live_data_available === true && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+            // Pouze pokud máme skutečná live data, zobrazit "dostupné/celkem"
             const available = p.charging_live_available;
             const total = p.charging_live_total;
             availabilityText = `${available}/${total}`;
@@ -2576,7 +2580,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (typeof data.servesLunch !== 'undefined') enrichedProps.poi_serves_lunch = !!data.servesLunch;
       if (typeof data.servesDinner !== 'undefined') enrichedProps.poi_serves_dinner = !!data.servesDinner;
       if (typeof data.wheelchairAccessibleEntrance !== 'undefined') enrichedProps.poi_wheelchair = !!data.wheelchairAccessibleEntrance;
-      if (Array.isArray(data.photos) && data.photos.length) {
+      // Preferovat fallback metadata, pak standardní fotky
+      if (data.fallback_metadata && data.fallback_metadata.photos) {
+        enrichedProps.poi_photos = data.fallback_metadata.photos;
+        if (!enrichedProps.image && data.fallback_metadata.photos[0]) {
+          const firstPhoto = data.fallback_metadata.photos[0];
+          if (firstPhoto.street_view_url) {
+            enrichedProps.image = firstPhoto.street_view_url;
+          }
+        }
+      } else if (Array.isArray(data.photos) && data.photos.length) {
         enrichedProps.poi_photos = data.photos;
         if (!enrichedProps.image) {
           const firstPhoto = data.photos[0];
@@ -2673,7 +2686,16 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         }
       }
-      if (metadata.google.photos) {
+      // Přidat fallback metadata (Street View pro nabíječky ve frontě)
+      if (data.fallback_metadata && data.fallback_metadata.photos) {
+        enrichedProps.poi_photos = data.fallback_metadata.photos;
+        if (!enrichedProps.image && data.fallback_metadata.photos[0]) {
+          const firstPhoto = data.fallback_metadata.photos[0];
+          if (firstPhoto.street_view_url) {
+            enrichedProps.image = firstPhoto.street_view_url;
+          }
+        }
+      } else if (metadata.google.photos) {
         enrichedProps.poi_photos = (metadata.google.photos || []).map((photo) => {
           if (photo.url) return photo;
           if (photo.photo_reference === 'streetview' && photo.street_view_url) {
@@ -3602,8 +3624,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           // Vždy zobrazit počet konektorů z databáze jako hlavní
           if (isOutOfService) {
             availabilityText = 'MIMO PROVOZ';
-          } else if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
-            // Pouze pokud máme live data, zobrazit "dostupné/celkem"
+          } else if (!isOutOfService && p.charging_live_data_available === true && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+            // Pouze pokud máme skutečná live data, zobrazit "dostupné/celkem"
             const available = p.charging_live_available;
             const total = p.charging_live_total;
             availabilityText = `${available}/${total}`;

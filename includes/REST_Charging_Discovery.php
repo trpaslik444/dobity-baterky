@@ -90,18 +90,32 @@ class REST_Charging_Discovery {
         $googleId = (string) get_post_meta($postId, '_charging_google_place_id', true);
         $ocmId = (string) get_post_meta($postId, '_openchargemap_id', true);
         
-        // Pokud nemáme externí ID, spustit discovery
+        // Pokud nemáme externí ID, spustit discovery (s cache kontrolou)
         if ($googleId === '' && $ocmId === '') {
-            $discoveryResult = $svc->discoverForCharging($postId, true, false, true, true);
-            $googleId = $discoveryResult['google'] ?? '';
-            $ocmId = $discoveryResult['open_charge_map'] ?? '';
-            
-            // Aktualizovat metadata po discovery
-            if ($googleId !== '') {
-                update_post_meta($postId, '_charging_google_place_id', $googleId);
-            }
-            if ($ocmId !== '') {
-                update_post_meta($postId, '_openchargemap_id', $ocmId);
+            // Zkontrolovat, zda už není discovery v procesu (cache mechanismus)
+            $discoveryInProgress = get_post_meta($postId, '_charging_discovery_in_progress', true);
+            if ($discoveryInProgress !== '1') {
+                // Označit discovery jako v procesu
+                update_post_meta($postId, '_charging_discovery_in_progress', '1');
+                
+                $discoveryResult = $svc->discoverForCharging($postId, true, false, true, true);
+                $googleId = $discoveryResult['google'] ?? '';
+                $ocmId = $discoveryResult['open_charge_map'] ?? '';
+                
+                // Aktualizovat metadata po discovery
+                if ($googleId !== '') {
+                    update_post_meta($postId, '_charging_google_place_id', $googleId);
+                }
+                if ($ocmId !== '') {
+                    update_post_meta($postId, '_openchargemap_id', $ocmId);
+                }
+                
+                // Odstranit flag "v procesu"
+                delete_post_meta($postId, '_charging_discovery_in_progress');
+            } else {
+                // Discovery už běží, načíst stávající data
+                $googleId = get_post_meta($postId, '_charging_google_place_id', true);
+                $ocmId = get_post_meta($postId, '_openchargemap_id', true);
             }
         } else {
             // Pokud máme externí ID, zkusit rychlou aktualizaci dostupnosti
@@ -188,8 +202,64 @@ class REST_Charging_Discovery {
             $data['google_connectors'] = $meta['google']['connectors'];
         }
         
+        // Vždy přidat konektory z databáze (hlavní zdroj)
+        $data['db_connectors'] = $this->getDbConnectors($postId);
+        
+        // Přidat fallback metadata (Street View pro nabíječky ve frontě)
+        $fallbackMeta = get_post_meta($postId, '_charging_fallback_metadata', true);
+        if ($fallbackMeta && is_array($fallbackMeta)) {
+            $data['fallback_metadata'] = $fallbackMeta;
+        }
+        
         $response['data'] = $data;
         
         return rest_ensure_response($response);
+    }
+    
+    /**
+     * Získá konektory z databáze pro nabíječku
+     */
+    private function getDbConnectors(int $postId): array {
+        $connectors = [];
+        
+        // Získat typy konektorů z taxonomie
+        $connector_types = get_the_terms($postId, 'charger_type');
+        if ($connector_types && !is_wp_error($connector_types)) {
+            foreach ($connector_types as $type) {
+                $count = get_post_meta($postId, '_db_charger_counts_' . $type->term_id, true);
+                if ($count && $count > 0) {
+                    $connectors[] = [
+                        'type' => $type->name,
+                        'type_key' => $type->slug,
+                        'count' => (int) $count,
+                        'power' => get_post_meta($postId, '_db_charger_power_' . $type->term_id, true) ?: null,
+                        'source' => 'database'
+                    ];
+                }
+            }
+        }
+        
+        // Pokud nemáme typy z taxonomie, zkusit celkové počty
+        if (empty($connectors)) {
+            $total_counts = get_post_meta($postId, '_db_charger_counts', true);
+            if ($total_counts && is_array($total_counts)) {
+                foreach ($total_counts as $typeId => $count) {
+                    if ($count > 0) {
+                        $type = get_term($typeId, 'charger_type');
+                        if ($type && !is_wp_error($type)) {
+                            $connectors[] = [
+                                'type' => $type->name,
+                                'type_key' => $type->slug,
+                                'count' => (int) $count,
+                                'power' => get_post_meta($postId, '_db_charger_power_' . $typeId, true) ?: null,
+                                'source' => 'database'
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+        
+        return $connectors;
     }
 }

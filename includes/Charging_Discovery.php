@@ -135,9 +135,11 @@ class Charging_Discovery {
             }
         }
 
-        // Pokud se nenašlo žádné ID, přidat do review fronty
+        // Pokud se nenašlo žádné ID, přidat do review fronty a přidat Street View fallback
         if (!$discoveredGoogle && !$discoveredOcm) {
             $this->addToReviewQueue($postId, "Nebylo nalezeno žádné ID (Google ani OCM)");
+            // Přidat Street View jako fallback pro nabíječky ve frontě
+            $this->addStreetViewFallback($postId, $lat, $lng);
         }
         
         return [
@@ -412,6 +414,34 @@ class Charging_Discovery {
                 ],
                 ['%d', '%s', '%s', '%s', '%s']
             );
+        }
+    }
+    
+    /**
+     * Přidá Street View jako fallback pro nabíječky ve frontě
+     */
+    private function addStreetViewFallback(int $postId, ?float $lat, ?float $lng): void {
+        if ($lat === null || $lng === null) {
+            return;
+        }
+        
+        $streetViewUrl = $this->generateStreetViewUrl($lat, $lng);
+        if ($streetViewUrl) {
+            // Uložit Street View jako fallback metadata
+            $fallbackData = [
+                'photos' => [
+                    [
+                        'photo_reference' => 'streetview',
+                        'street_view_url' => $streetViewUrl,
+                        'width' => 640,
+                        'height' => 480,
+                    ]
+                ],
+                'source' => 'street_view_fallback',
+                'created_at' => current_time('mysql')
+            ];
+            
+            update_post_meta($postId, '_charging_fallback_metadata', $fallbackData);
         }
     }
 
