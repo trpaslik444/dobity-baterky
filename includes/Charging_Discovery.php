@@ -674,10 +674,23 @@ class Charging_Discovery {
                 if (!isset($photo['name'])) {
                     continue;
                 }
+                
+                // Filtrovat fotky, které nesouvisí s nabíječkou
+                $width = isset($photo['widthPx']) ? (int) $photo['widthPx'] : 0;
+                $height = isset($photo['heightPx']) ? (int) $photo['heightPx'] : 0;
+                
+                // Přeskočit fotky s podezřelými rozměry (např. velmi úzké nebo velmi široké)
+                if ($width > 0 && $height > 0) {
+                    $ratio = $width / $height;
+                    if ($ratio < 0.5 || $ratio > 3.0) {
+                        continue; // Přeskočit podezřelé poměry stran
+                    }
+                }
+                
                 $photos[] = [
                     'photo_reference' => (string) $photo['name'], // Nové API používá 'name' místo 'photo_reference'
-                    'width' => isset($photo['widthPx']) ? (int) $photo['widthPx'] : null,
-                    'height' => isset($photo['heightPx']) ? (int) $photo['heightPx'] : null,
+                    'width' => $width,
+                    'height' => $height,
                 ];
             }
         }

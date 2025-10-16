@@ -2137,10 +2137,17 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Generování sekce konektorů pro mobile sheet
   function generateMobileConnectorsSection(p) {
-    // Preferovat konektory z databáze, pak z API
+    // Vždy preferovat konektory z databáze, API jen jako fallback
     const dbConnectors = Array.isArray(p.db_connectors) ? p.db_connectors : [];
     const apiConnectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
-    const connectors = dbConnectors.length > 0 ? dbConnectors : apiConnectors;
+    
+    // Pokud máme konektory z databáze, použít pouze je
+    let connectors = [];
+    if (dbConnectors.length > 0) {
+      connectors = dbConnectors;
+    } else if (apiConnectors.length > 0) {
+      connectors = apiConnectors;
+    }
     
     if (!connectors || connectors.length === 0) {
       return '';

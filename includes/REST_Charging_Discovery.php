@@ -91,7 +91,9 @@ class REST_Charging_Discovery {
         $ocmId = (string) get_post_meta($postId, '_openchargemap_id', true);
         
         // Pokud nemáme externí ID, spustit discovery (s cache kontrolou)
-        if ($googleId === '' && $ocmId === '') {
+        // Ale ne pokud už máme fallback metadata
+        $hasFallback = get_post_meta($postId, '_charging_fallback_metadata', true);
+        if ($googleId === '' && $ocmId === '' && !$hasFallback) {
             // Zkontrolovat, zda už není discovery v procesu (cache mechanismus)
             $discoveryInProgress = get_post_meta($postId, '_charging_discovery_in_progress', true);
             if ($discoveryInProgress !== '1') {
@@ -229,6 +231,13 @@ class REST_Charging_Discovery {
         if ($connector_types && !is_wp_error($connector_types)) {
             foreach ($connector_types as $type) {
                 $count = get_post_meta($postId, '_db_charger_counts_' . $type->term_id, true);
+                // Pokud není count v jednotlivém meta, zkusit z celkových počtů
+                if (!$count || $count <= 0) {
+                    $total_counts = get_post_meta($postId, '_db_charger_counts', true);
+                    if (is_array($total_counts) && isset($total_counts[$type->term_id])) {
+                        $count = $total_counts[$type->term_id];
+                    }
+                }
                 if ($count && $count > 0) {
                     $connectors[] = [
                         'type' => $type->name,
