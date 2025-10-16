@@ -103,6 +103,12 @@ class REST_Charging_Discovery {
             if ($ocmId !== '') {
                 update_post_meta($postId, '_openchargemap_id', $ocmId);
             }
+        } else {
+            // Pokud máme externí ID, zkusit rychlou aktualizaci dostupnosti
+            $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
+            if ($liveDataAvailable === '1') {
+                $svc->refreshLiveAvailabilityOnly($postId);
+            }
         }
         
         $meta = $svc->getCachedMetadata($postId);
@@ -165,9 +171,8 @@ class REST_Charging_Discovery {
             $data['business_status'] = $meta['google']['business_status'];
         }
         
-        // Přidat informace o dostupnosti konektorů (pouze pokud máme skutečná data)
-        $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
-        if ($liveDataAvailable === '1' && $live && isset($live['available']) && isset($live['total'])) {
+        // Přidat informace o dostupnosti konektorů
+        if ($live && isset($live['available']) && isset($live['total'])) {
             $data['charging_live_available'] = (int) $live['available'];
             $data['charging_live_total'] = (int) $live['total'];
             $data['charging_live_source'] = $live['source'] ?? 'unknown';

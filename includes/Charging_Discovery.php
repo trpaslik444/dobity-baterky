@@ -192,21 +192,10 @@ class Charging_Discovery {
                     $totalConnectors += $count;
                     
                     // availableCount může být null (neznámá dostupnost) nebo číslo (známá dostupnost)
-                    // Pokud je availableCount přítomné, zkontrolujeme logiku
+                    // Pokud je availableCount přítomné (i když je 0), máme data o dostupnosti
                     if (isset($connector['availableCount'])) {
-                        $available = (int) $availableCount;
-                        $outOfService = (int) ($connector['outOfServiceCount'] ?? 0);
-                        $total = (int) $count;
-                        
-                        // Podezřelý stav: 0 dostupných + 0 mimo provoz = neznámá dostupnost
-                        if ($available === 0 && $outOfService === 0 && $total > 0) {
-                            // Není to skutečná dostupnost, ale neznámá
-                            $hasAvailabilityData = false;
-                        } else {
-                            // Platná data o dostupnosti
-                            $availableConnectors += $available;
-                            $hasAvailabilityData = true;
-                        }
+                        $availableConnectors += (int) $availableCount;
+                        $hasAvailabilityData = true;
                     }
                 }
                 
@@ -297,6 +286,81 @@ class Charging_Discovery {
         // Pokud máme data o dostupnosti, respektujeme cache TTL (30 dní)
         $expires = (int) get_post_meta($postId, self::META_GOOGLE_CACHE_EXP, true);
         return $expires <= time();
+    }
+    
+    /**
+     * Aktualizuje pouze live data o dostupnosti konektorů (rychlejší než celý cache refresh)
+     */
+    public function refreshLiveAvailabilityOnly(int $postId): bool {
+        $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
+        
+        // Pokud nemáme data o dostupnosti, není co aktualizovat
+        if ($liveDataAvailable !== '1') {
+            return false;
+        }
+        
+        $googleId = get_post_meta($postId, self::META_GOOGLE_ID, true);
+        if (!$googleId) {
+            return false;
+        }
+        
+        // Získat pouze evChargeOptions z Google API
+        $apiKey = (string) get_option('db_google_api_key');
+        if ($apiKey === '') {
+            return false;
+        }
+        
+        $url = "https://places.googleapis.com/v1/places/$googleId";
+        $fields = ['evChargeOptions'];
+        $url .= '?fields=' . implode(',', $fields) . '&key=' . $apiKey;
+        
+        $response = wp_remote_get($url, [
+            'timeout' => 8,
+            'user-agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
+            'headers' => [
+                'Content-Type' => 'application/json',
+            ],
+        ]);
+        
+        if (is_wp_error($response)) {
+            return false;
+        }
+        
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
+            return false;
+        }
+        
+        $data = json_decode((string) wp_remote_retrieve_body($response), true);
+        if (!is_array($data) || !isset($data['evChargeOptions'])) {
+            return false;
+        }
+        
+        // Aktualizovat pouze dostupnost
+        $totalConnectors = 0;
+        $availableConnectors = 0;
+        
+        if (isset($data['evChargeOptions']['connectorAggregation'])) {
+            foreach ($data['evChargeOptions']['connectorAggregation'] as $connector) {
+                $count = (int) ($connector['count'] ?? 0);
+                $availableCount = $connector['availableCount'] ?? null;
+                
+                $totalConnectors += $count;
+                
+                if (isset($connector['availableCount'])) {
+                    $availableConnectors += (int) $availableCount;
+                }
+            }
+        }
+        
+        if ($totalConnectors > 0) {
+            update_post_meta($postId, '_charging_live_available', $availableConnectors);
+            update_post_meta($postId, '_charging_live_total', $totalConnectors);
+            update_post_meta($postId, '_charging_live_updated', current_time('mysql'));
+            return true;
+        }
+        
+        return false;
     }
 
     private function discoverGooglePlaceId(string $title, ?float $lat, ?float $lng): ?string {
