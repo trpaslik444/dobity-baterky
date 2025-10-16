@@ -2157,67 +2157,61 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
     
-    // Vytvořit kompaktní HTML pro mobile sheet
-    const connectorItems = Object.entries(connectorCounts).map(([typeKey, info]) => {
-      const connector = connectors.find(c => {
-        const cType = getConnectorTypeKey(c);
-        return cType === typeKey;
-      });
-      
-      const iconUrl = getConnectorIconUrl(connector);
-      const powerText = info.power ? ` (${info.power} kW)` : '';
-      
-      // Zkontrolovat live dostupnost z API
-      let availabilityText = info.count;
-      let isOutOfService = false;
-      
-      // Zkontrolovat stav "mimo provoz" z Google API
-      if (p.business_status === 'CLOSED_TEMPORARILY' || p.business_status === 'CLOSED_PERMANENTLY') {
-        isOutOfService = true;
-      }
-      
-      // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz)
-      if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
-        const available = p.charging_live_available;
-        const total = p.charging_live_total;
-        availabilityText = `${available}/${total}`;
-      } else if (isOutOfService) {
-        availabilityText = 'MIMO PROVOZ';
-      }
-      // Pokud nemáme data o dostupnosti, zobrazíme pouze celkový počet
-      
-      // Kompaktní styl pro mobile sheet
-      const containerStyle = isOutOfService 
-        ? 'display: inline-flex; align-items: center; gap: 4px; margin: 2px 4px 2px 0; padding: 4px 8px; background: #fee; border-radius: 4px; border: 1px solid #fcc; opacity: 0.7;'
-        : 'display: inline-flex; align-items: center; gap: 4px; margin: 2px 4px 2px 0; padding: 4px 8px; background: #f8f9fa; border-radius: 4px; border: 1px solid #e9ecef;';
-      
-      const textStyle = isOutOfService 
-        ? 'font-weight: 600; color: #c33; font-size: 0.8em;'
-        : 'font-weight: 600; color: #333; font-size: 0.8em;';
-      
-      if (iconUrl) {
-        return `<div style="${containerStyle}">
-          <img src="${iconUrl}" style="width: 16px; height: 16px; object-fit: contain;" alt="${typeKey}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'">
-          <span style="display: none;">${typeKey.toUpperCase()}</span>
-          <span style="${textStyle}">${availabilityText}</span>
-        </div>`;
-      } else {
-        return `<div style="${containerStyle}">
-          <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
-        </div>`;
-      }
-    }).join('');
-    
-    if (connectorItems) {
-      return `
-        <div class="sheet-connectors" style="margin: 8px 0; padding: 8px; background: #f8f9fa; border-radius: 8px;">
-          <div style="font-weight: 600; color: #049FE8; margin-bottom: 6px; font-size: 0.9em;">Konektory</div>
-          <div style="display: flex; flex-wrap: wrap; gap: 2px;">
-            ${connectorItems}
-          </div>
-        </div>
-      `;
-    }
+        // Vytvořit zjednodušené HTML pro mobile sheet header
+        const connectorItems = Object.entries(connectorCounts).map(([typeKey, info]) => {
+          const connector = connectors.find(c => {
+            const cType = getConnectorTypeKey(c);
+            return cType === typeKey;
+          });
+          
+          const iconUrl = getConnectorIconUrl(connector);
+          
+          // Zkontrolovat live dostupnost z API
+          let availabilityText = info.count;
+          let isOutOfService = false;
+          
+          // Zkontrolovat stav "mimo provoz" z Google API
+          if (p.business_status === 'CLOSED_TEMPORARILY' || p.business_status === 'CLOSED_PERMANENTLY') {
+            isOutOfService = true;
+          }
+          
+          // Zkontrolovat live dostupnost z API (pouze pokud není mimo provoz)
+          if (!isOutOfService && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
+            const available = p.charging_live_available;
+            const total = p.charging_live_total;
+            availabilityText = `${available}/${total}`;
+          } else if (isOutOfService) {
+            availabilityText = 'MIMO PROVOZ';
+          }
+          // Pokud nemáme data o dostupnosti, zobrazíme pouze celkový počet
+          
+          // Zjednodušený styl bez pozadí
+          const textStyle = isOutOfService 
+            ? 'font-weight: 600; color: #c33; font-size: 0.75em;'
+            : 'font-weight: 600; color: #333; font-size: 0.75em;';
+          
+          if (iconUrl) {
+            return `<div style="display: inline-flex; align-items: center; gap: 3px; margin: 0 4px 0 0;">
+              <img src="${iconUrl}" style="width: 14px; height: 14px; object-fit: contain;" alt="${typeKey}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'">
+              <span style="display: none;">${typeKey.toUpperCase()}</span>
+              <span style="${textStyle}">${availabilityText}</span>
+            </div>`;
+          } else {
+            return `<div style="display: inline-flex; align-items: center; gap: 3px; margin: 0 4px 0 0;">
+              <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
+            </div>`;
+          }
+        }).join('');
+        
+        if (connectorItems) {
+          return `
+            <div class="sheet-connectors" style="margin-top: 4px;">
+              <div style="display: flex; flex-wrap: wrap; gap: 2px;">
+                ${connectorItems}
+              </div>
+            </div>
+          `;
+        }
     
     return '';
   }
@@ -2272,10 +2266,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Nový obsah s kompaktním designem
     const finalHTML = `
       <div class="sheet-header">
-        <div class="sheet-icon" style="background: ${getSquareColor(p)};">
+        <div class="sheet-icon" style="background: ${getSquareColor(p)}; width: 48px; height: 48px;">
           ${getTypeIcon(p)}
         </div>
-        <div class="sheet-title">${p.title || ''}</div>
+        <div class="sheet-content-wrapper">
+          <div class="sheet-title">${p.title || ''}</div>
+          ${p.post_type === 'charging_location' ? generateMobileConnectorsSection(p) : ''}
+        </div>
       </div>
       
       <div class="sheet-actions-row">
@@ -2316,8 +2313,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             <line x1="12" y1="8" x2="12" y2="8"/>
           </svg>
         </button>
-        
-        ${p.post_type === 'charging_location' ? generateMobileConnectorsSection(p) : ''}
         
         <div class="sheet-nearby">
           <div class="sheet-nearby-list" data-feature-id="${p.id}">
