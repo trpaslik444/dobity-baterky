@@ -590,10 +590,14 @@ class REST_Map {
                                 }
                             }
                             
+                            // SVG ikony dočasně zakázány - čekáme na správné ikony
+                            $svg_icon = null;
+                            
                             $connectors[] = [
                                 'name' => $charger_term->name,
                                 'slug' => $charger_term->slug,
                                 'icon' => get_term_meta($charger_term->term_id, 'charger_icon', true), // Správný meta klíč pro ikony
+                                'svg_icon' => $svg_icon, // Nový SVG systém
                                 'type' => get_term_meta($charger_term->term_id, 'charger_current_type', true), // Správný meta klíč pro typ proudu
                                 'power' => get_term_meta($charger_term->term_id, 'power', true),
                                 'quantity' => $quantity, // Přidat počet

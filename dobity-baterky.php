@@ -323,6 +323,14 @@ if ( file_exists( __DIR__ . '/includes/Icon_Admin.php' ) ) {
     }
 }
 
+// Charging Icon Manager - správa SVG ikon pro typy konektorů
+if ( file_exists( __DIR__ . '/includes/Charging_Icon_Manager.php' ) ) {
+    require_once __DIR__ . '/includes/Charging_Icon_Manager.php';
+    if ( class_exists( 'DB\Charging_Icon_Manager' ) ) {
+        DB\Charging_Icon_Manager::init();
+    }
+}
+
 // Hlavní formulář pro charging_location
 if ( file_exists( __DIR__ . '/includes/Charging_Location_Form.php' ) ) {
     require_once __DIR__ . '/includes/Charging_Location_Form.php';

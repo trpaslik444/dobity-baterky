@@ -88,12 +88,11 @@ class REST_Charging_Discovery {
         }
         $svc = new Charging_Discovery();
         $googleId = (string) get_post_meta($postId, '_charging_google_place_id', true);
-        $ocmId = (string) get_post_meta($postId, '_openchargemap_id', true);
         
         // Pokud nemáme externí ID, spustit discovery (s cache kontrolou)
         // Ale ne pokud už máme fallback metadata
         $hasFallback = get_post_meta($postId, '_charging_fallback_metadata', true);
-        if ($googleId === '' && $ocmId === '' && !$hasFallback) {
+        if ($googleId === '' && !$hasFallback) {
             // Zkontrolovat, zda už není discovery v procesu (cache mechanismus)
             $discoveryInProgress = get_post_meta($postId, '_charging_discovery_in_progress', true);
             if ($discoveryInProgress !== '1') {
@@ -101,16 +100,12 @@ class REST_Charging_Discovery {
                 update_post_meta($postId, '_charging_discovery_in_progress', '1');
                 
                 try {
-                    $discoveryResult = $svc->discoverForCharging($postId, true, false, true, true);
+                    $discoveryResult = $svc->discoverForCharging($postId, true, false, true, false); // OCM disabled
                     $googleId = $discoveryResult['google'] ?? '';
-                    $ocmId = $discoveryResult['open_charge_map'] ?? '';
                     
                     // Aktualizovat metadata po discovery
                     if ($googleId !== '') {
                         update_post_meta($postId, '_charging_google_place_id', $googleId);
-                    }
-                    if ($ocmId !== '') {
-                        update_post_meta($postId, '_openchargemap_id', $ocmId);
                     }
                 } finally {
                     // Odstranit flag "v procesu" i při chybě
@@ -119,13 +114,21 @@ class REST_Charging_Discovery {
             } else {
                 // Discovery už běží, načíst stávající data
                 $googleId = get_post_meta($postId, '_charging_google_place_id', true);
-                $ocmId = get_post_meta($postId, '_openchargemap_id', true);
             }
         } else {
             // Pokud máme externí ID, zkusit rychlou aktualizaci dostupnosti
             $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
             if ($liveDataAvailable === '1') {
+                // Only refresh live availability if we have live data available
                 $svc->refreshLiveAvailabilityOnly($postId);
+            } else {
+                // If no live data available, try to refresh Google metadata only if cache is expired
+                $cacheExpires = get_post_meta($postId, '_charging_google_cache_expires', true);
+                if (!$cacheExpires || $cacheExpires < time()) {
+                    if ($googleId !== '') {
+                        $svc->refreshGoogleMetadata($postId, $googleId, false);
+                    }
+                }
             }
         }
         
@@ -133,16 +136,13 @@ class REST_Charging_Discovery {
         if ($googleId !== '' && $meta['google'] === null) {
             $meta['google'] = $svc->refreshGoogleMetadata($postId, $googleId, false);
         }
-        if ($ocmId !== '' && $meta['open_charge_map'] === null) {
-            $meta['open_charge_map'] = $svc->refreshOcmMetadata($postId, $ocmId, false);
-        }
         $live = $svc->refreshLiveStatus($postId, false);
         
         // Vytvořit odpověď ve stejném formátu jako poi-external endpoint
         $response = [
             'post_id' => $postId,
             'google_place_id' => $googleId ?: null,
-            'open_charge_map_id' => $ocmId ?: null,
+            'open_charge_map_id' => null, // OCM removed
             'metadata' => $meta,
             'live_status' => $live,
         ];
@@ -189,12 +189,17 @@ class REST_Charging_Discovery {
             $data['business_status'] = $meta['google']['business_status'];
         }
         
-        // Přidat informace o dostupnosti konektorů
-        if ($live && isset($live['available']) && isset($live['total'])) {
-            $data['charging_live_available'] = (int) $live['available'];
-            $data['charging_live_total'] = (int) $live['total'];
-            $data['charging_live_source'] = $live['source'] ?? 'unknown';
-            $data['charging_live_updated'] = $live['updated_at'] ?? null;
+        // Přidat informace o dostupnosti konektorů - používat aktuální meta data místo starého live status
+        $liveAvailable = get_post_meta($postId, '_charging_live_available', true);
+        $liveTotal = get_post_meta($postId, '_charging_live_total', true);
+        $liveSource = get_post_meta($postId, '_charging_live_source', true);
+        $liveUpdated = get_post_meta($postId, '_charging_live_updated', true);
+        
+        if ($liveAvailable !== '' && $liveTotal !== '') {
+            $data['charging_live_available'] = (int) $liveAvailable;
+            $data['charging_live_total'] = (int) $liveTotal;
+            $data['charging_live_source'] = $liveSource ?: 'unknown';
+            $data['charging_live_updated'] = $liveUpdated ?: null;
         }
         
         // Přidat flag o dostupnosti dat o dostupnosti
@@ -239,11 +244,21 @@ class REST_Charging_Discovery {
                     }
                 }
                 if ($count && $count > 0) {
+                    $power = get_post_meta($postId, '_db_charger_power_' . $type->term_id, true);
+                    if (!$power) {
+                        // Zkusit získat power z celkových power dat
+                        $total_powers = get_post_meta($postId, '_db_charger_power', true);
+                        if (is_array($total_powers) && isset($total_powers[$type->term_id])) {
+                            $power = $total_powers[$type->term_id];
+                        }
+                    }
+                    
                     $connectors[] = [
                         'type' => $type->name,
                         'type_key' => $type->slug,
                         'count' => (int) $count,
-                        'power' => get_post_meta($postId, '_db_charger_power_' . $type->term_id, true) ?: null,
+                        'power' => $power,
+                        'icon' => get_term_meta($type->term_id, 'charger_icon', true),
                         'source' => 'database'
                     ];
                 }
@@ -258,11 +273,21 @@ class REST_Charging_Discovery {
                     if ($count > 0) {
                         $type = get_term($typeId, 'charger_type');
                         if ($type && !is_wp_error($type)) {
+                            $power = get_post_meta($postId, '_db_charger_power_' . $typeId, true);
+                            if (!$power) {
+                                // Zkusit získat power z celkových power dat
+                                $total_powers = get_post_meta($postId, '_db_charger_power', true);
+                                if (is_array($total_powers) && isset($total_powers[$typeId])) {
+                                    $power = $total_powers[$typeId];
+                                }
+                            }
+                            
                             $connectors[] = [
                                 'type' => $type->name,
                                 'type_key' => $type->slug,
                                 'count' => (int) $count,
-                                'power' => get_post_meta($postId, '_db_charger_power_' . $typeId, true) ?: null,
+                                'power' => $power,
+                                'icon' => get_term_meta($typeId, 'charger_icon', true),
                                 'source' => 'database'
                             ];
                         }

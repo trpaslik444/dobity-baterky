@@ -1894,6 +1894,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     s = s.replace(/ccs\s*combo\s*2|combo\s*2|ccs\s*2/g, 'ccs2');
     s = s.replace(/gbt|gb\s*\/\s*t/g, 'gb/t');
     s = s.replace(/domaci zasuvka|domaci\s+zasuvka|household|europlug/g, 'domaci zasuvka');
+    
+    // Google API typy se nepoužívají pro zobrazení konektorů
 
     return s;
   }
@@ -2137,16 +2139,16 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Generování sekce konektorů pro mobile sheet
   function generateMobileConnectorsSection(p) {
-    // Vždy preferovat konektory z databáze, API jen jako fallback
+    // Použít konektory z původních mapových dat - nezávisle na cache
+    const mapConnectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
     const dbConnectors = Array.isArray(p.db_connectors) ? p.db_connectors : [];
-    const apiConnectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
     
-    // Pokud máme konektory z databáze, použít pouze je
+    // Preferovat db_connectors z REST API (obsahuje power), pak mapConnectors jako fallback
     let connectors = [];
     if (dbConnectors.length > 0) {
       connectors = dbConnectors;
-    } else if (apiConnectors.length > 0) {
-      connectors = apiConnectors;
+    } else if (mapConnectors.length > 0) {
+      connectors = mapConnectors;
     }
     
     if (!connectors || connectors.length === 0) {
@@ -2158,7 +2160,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     connectors.forEach(c => {
       const typeKey = getConnectorTypeKey(c);
       if (typeKey) {
-        const power = c.connector_power_kw || c.power_kw || c.power || c.vykon || '';
+        const power = c.power || c.connector_power_kw || c.power_kw || c.vykon || '';
         const quantity = parseInt(c.quantity || c.count || c.connector_count || 1);
         
         if (!connectorCounts[typeKey]) {
@@ -2175,7 +2177,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             return cType === typeKey;
           });
           
-          const iconUrl = getConnectorIconUrl(connector);
+          const iconUrl = connector ? getConnectorIconUrl(connector) : null;
+          const powerText = info.power ? `${info.power} kW` : '';
           
           // Zkontrolovat live dostupnost z API
           let availabilityText = info.count;
@@ -2186,16 +2189,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             isOutOfService = true;
           }
           
-          // Vždy zobrazit počet konektorů z databáze jako hlavní
+          // Zobrazit pouze počet konektorů z databáze - bez dostupnosti z Google API
           if (isOutOfService) {
             availabilityText = 'MIMO PROVOZ';
-          } else if (!isOutOfService && p.charging_live_data_available === true && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
-            // Pouze pokud máme skutečná live data, zobrazit "dostupné/celkem"
-            const available = p.charging_live_available;
-            const total = p.charging_live_total;
-            availabilityText = `${available}/${total}`;
           } else {
-            // Pokud nemáme live data, zobrazit pouze celkový počet z databáze
+            // Zobrazit pouze celkový počet z databáze
             availabilityText = info.count.toString();
           }
           
@@ -2205,14 +2203,17 @@ document.addEventListener('DOMContentLoaded', async function() {
             : 'font-weight: 600; color: #333; font-size: 0.75em;';
           
           if (iconUrl) {
-            return `<div style="display: inline-flex; align-items: center; gap: 3px; margin: 0 4px 0 0;">
-              <img src="${iconUrl}" style="width: 14px; height: 14px; object-fit: contain;" alt="${typeKey}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'">
-              <span style="display: none;">${typeKey.toUpperCase()}</span>
-              <span style="${textStyle}">${availabilityText}</span>
+            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 0 4px 0 0;">
+              <div style="display: flex; align-items: center; gap: 3px;">
+                <img src="${iconUrl}" style="width: 14px; height: 14px; object-fit: contain;" alt="${typeKey}">
+                <span style="${textStyle}">${availabilityText}</span>
+              </div>
+              ${powerText ? `<span style="color: #666; font-size: 0.7em;">${powerText}</span>` : ''}
             </div>`;
           } else {
-            return `<div style="display: inline-flex; align-items: center; gap: 3px; margin: 0 4px 0 0;">
+            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 0 4px 0 0;">
               <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
+              ${powerText ? `<span style="color: #666; font-size: 0.7em;">${powerText}</span>` : ''}
             </div>`;
           }
         }).join('');
@@ -2649,7 +2650,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const hasFreshLive = props.charging_live_expires_at && Date.parse(props.charging_live_expires_at) > Date.now();
     const hasMeta = !!(props.charging_google_details || props.charging_ocm_details);
-    if (hasFreshLive && hasMeta) {
+    const hasDbConnectors = !!(props.db_connectors && props.db_connectors.length > 0);
+    
+    // Volat REST endpoint pokud nemáme fresh live data, metadata, nebo db_connectors
+    if (hasFreshLive && hasMeta && hasDbConnectors) {
       return feature;
     }
 
@@ -2702,7 +2706,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             enrichedProps.image = firstPhoto.street_view_url;
           }
         }
-      } else if (metadata.google.photos) {
+      }
+      
+      if (metadata.google.photos) {
         enrichedProps.poi_photos = (metadata.google.photos || []).map((photo) => {
           if (photo.url) return photo;
           if (photo.photo_reference === 'streetview' && photo.street_view_url) {
@@ -2760,11 +2766,35 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Přidat konektory z databáze
     if (payload?.data?.db_connectors) {
       enrichedProps.db_connectors = payload.data.db_connectors;
+      
+      // Převést db_connectors na connectors pro frontend kompatibilitu
+      if (!enrichedProps.connectors || !enrichedProps.connectors.length) {
+        enrichedProps.connectors = payload.data.db_connectors.map(conn => ({
+          type: conn.type,
+          count: conn.count,
+          power: conn.power,
+          quantity: conn.count,
+          power_kw: conn.power,
+          connector_power_kw: conn.power,
+          source: 'database'
+        }));
+      }
     }
+    
+    // Google konektory se nepoužívají - pouze pro porovnání počtů a fotky
     
     // Přidat flag o dostupnosti live dat
     if (payload?.data?.charging_live_data_available !== undefined) {
       enrichedProps.charging_live_data_available = payload.data.charging_live_data_available;
+    }
+    
+    // Zpracovat fallback metadata (Street View) i když není Google metadata
+    if (payload?.data?.fallback_metadata && payload.data.fallback_metadata.photos && !enrichedProps.image) {
+      enrichedProps.poi_photos = payload.data.fallback_metadata.photos;
+      const firstPhoto = payload.data.fallback_metadata.photos[0];
+      if (firstPhoto && firstPhoto.street_view_url) {
+        enrichedProps.image = firstPhoto.street_view_url;
+      }
     }
 
     enrichedProps.charging_external_expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -3600,7 +3630,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Generování detailních informací o konektorech pro nabíječky
     let connectorsDetail = '';
     if (p.post_type === 'charging_location') {
-      const connectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+      // Použít konektory z původních mapových dat - nezávisle na cache
+      const mapConnectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+      const dbConnectors = Array.isArray(p.db_connectors) ? p.db_connectors : [];
+      
+      // Preferovat db_connectors z REST API (obsahuje power), pak mapConnectors jako fallback
+      let connectors = [];
+      if (dbConnectors.length > 0) {
+        connectors = dbConnectors;
+      } else if (mapConnectors.length > 0) {
+        connectors = mapConnectors;
+      }
+      
       if (connectors && connectors.length) {
         // Seskupit konektory podle typu a spočítat (stejná logika jako v mobile sheet)
         const connectorCounts = {};
@@ -3608,7 +3649,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           const typeKey = getConnectorTypeKey(c);
           if (typeKey) {
             // power – vem cokoliv rozumného (číselo nebo str s číslem)
-            const power = c.connector_power_kw || c.power_kw || c.power || c.vykon || '';
+            const power = c.power || c.connector_power_kw || c.power_kw || c.vykon || '';
             // quantity – použij reálný počet z dat, nebo 1 jako fallback
             const quantity = parseInt(c.quantity || c.count || c.connector_count || 1);
             
@@ -3626,8 +3667,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             return cType === typeKey;
           });
           
-          const iconUrl = getConnectorIconUrl(connector);
-          const powerText = info.power ? ` (${info.power} kW)` : '';
+          const iconUrl = connector ? getConnectorIconUrl(connector) : null;
+          const powerText = info.power ? `${info.power} kW` : '';
           
           // Zkontrolovat live dostupnost z API
           let availabilityText = info.count;
@@ -3638,16 +3679,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             isOutOfService = true;
           }
           
-          // Vždy zobrazit počet konektorů z databáze jako hlavní
+          // Zobrazit pouze počet konektorů z databáze - bez dostupnosti z Google API
           if (isOutOfService) {
             availabilityText = 'MIMO PROVOZ';
-          } else if (!isOutOfService && p.charging_live_data_available === true && p.charging_live_available !== undefined && p.charging_live_total !== undefined) {
-            // Pouze pokud máme skutečná live data, zobrazit "dostupné/celkem"
-            const available = p.charging_live_available;
-            const total = p.charging_live_total;
-            availabilityText = `${available}/${total}`;
           } else {
-            // Pokud nemáme live data, zobrazit pouze celkový počet z databáze
+            // Zobrazit pouze celkový počet z databáze
             availabilityText = info.count.toString();
           }
           
@@ -3661,28 +3697,26 @@ document.addEventListener('DOMContentLoaded', async function() {
             : 'font-weight: 600; color: #333; font-size: 0.9em;';
           
           if (iconUrl) {
-            // Zobraz jako ikonu s číslem
-            return `<div style="${containerStyle}">
-              <img src="${iconUrl}" style="width: 20px; height: 20px; object-fit: contain;" alt="${typeKey}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'">
-              <span style="display: none;">${typeKey.toUpperCase()}</span>
-              <span style="${textStyle}">${availabilityText}</span>
-              <span style="color: #666; font-size: 0.8em;">${powerText}</span>
+            // Zobraz jako ikonu s číslem (ikona + počet horizontálně, výkon pod nimi)
+            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <img src="${iconUrl}" style="width: 20px; height: 20px; object-fit: contain;" alt="${typeKey}">
+                <span style="${textStyle}">${availabilityText}</span>
+              </div>
+              ${powerText ? `<span style="color: #666; font-size: 0.8em;">${powerText}</span>` : ''}
             </div>`;
           } else {
             // Fallback - pouze text
-            return `<div style="${containerStyle}">
+            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
               <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
-              <span style="color: #666; font-size: 0.8em;">${powerText}</span>
+              ${powerText ? `<span style="color: #666; font-size: 0.8em;">${powerText}</span>` : ''}
             </div>`;
           }
         }).join('');
         
         connectorsDetail = `
-          <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
-            <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">Nabíjecí konektory</div>
-            <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-              ${connectorItems}
-            </div>
+          <div style="margin: 16px; display: flex; flex-wrap: wrap; gap: 4px;">
+            ${connectorItems}
           </div>
         `;
       }
@@ -4498,64 +4532,77 @@ document.addEventListener('DOMContentLoaded', async function() {
     return iconUrl.replace(/^http:\/\//, 'https://');
   }
   
-  // Získání ikony konektoru z adminu nebo fallback
+  // Získání ikony konektoru - preferovat SVG z databáze
   function getConnectorIconUrl(connector) {
     if (!connector) return '';
 
-    // Admin ikona – může být URL, filename nebo slug
+    // 1. Preferovat SVG ikonu z databáze (nový systém)
+    if (connector.svg_icon) {
+      console.log('[DEBUG] Using database SVG icon');
+      return 'data:image/svg+xml;base64,' + btoa(connector.svg_icon);
+    }
+
+    // 2. Fallback na ikonu z databáze (WordPress uploads)
     if (connector.icon && connector.icon.trim()) {
       const url = getIconUrl(connector.icon.trim());
-      if (url) return url;
-    }
-
-    // Fallback na typ
-    const typeKey = getConnectorTypeKey(connector);
-    if (!typeKey) return '';
-
-    const iconFile = getConnectorIconByType(typeKey);
-    if (iconFile) {
-      // iconsBase je už absolutní (viz inicializace), ale pro jistotu fallback:
-      const base = (typeof iconsBase === 'string' && iconsBase)
-        ? iconsBase
-        : (dbMapData?.pluginUrl ? (dbMapData.pluginUrl + 'assets/icons/') : '/wp-content/plugins/dobity-baterky/assets/icons/');
-      const fullUrl = base + iconFile;
-      // Na localhost zachovat HTTP, jinak převést na HTTPS
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        return fullUrl;
+      if (url) {
+        return url;
       }
-      return fullUrl.replace(/^http:\/\//, 'https://');
     }
+
+    // 3. Fallback na SVG ikony podle typu - ZAKÁZÁNO (generické ikony)
+    // const typeKey = getConnectorTypeKey(connector);
+    // if (typeKey) {
+    //   const iconFile = getConnectorIconByType(typeKey);
+    //   if (iconFile) {
+    //     // Použít iconsBase z dbMapData (nastaveno v PHP)
+    //     const base = dbMapData?.iconsBase || '/wp-content/plugins/dobity-baterky/assets/icons/';
+    //     const fullUrl = base + iconFile;
+    //     
+    //     console.log('[DEBUG] Using fallback SVG icon:', {
+    //         typeKey: typeKey,
+    //         iconFile: iconFile,
+    //         fullUrl: fullUrl
+    //     });
+    //     
+    //     // Na localhost zachovat HTTP, jinak převést na HTTPS
+    //     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    //       return fullUrl;
+    //     }
+    //     return fullUrl.replace(/^http:\/\//, 'https://');
+    //   }
+    // }
 
     return '';
   }
   
-  // Fallback mapování pro typy konektorů (pouze pokud admin nemá ikonu)
-  function getConnectorIconByType(connectorType) {
-    if (!connectorType) return '';
-    const type = connectorType.toLowerCase().trim();
+  // Fallback mapování pro typy konektorů - ZAKÁZÁNO (generické ikony)
+  // function getConnectorIconByType(connectorType) {
+  //   if (!connectorType) return '';
+  //   const type = connectorType.toLowerCase().trim();
 
-    // Mapování názvů konektorů na soubory
-    const connectorIconMap = {
-      'type 2': 'charger_type-11.svg',
-      'type-2': 'charger_type-11.svg',
-      'mennekes': 'charger_type-11.svg',
-      'iec 62196 type 2': 'charger_type-11.svg',
+  //   // Mapování názvů konektorů na soubory
+  //   const connectorIconMap = {
+  //     'type 2': 'charger_type-11.svg',
+  //     'type-2': 'charger_type-11.svg',
+  //     'mennekes': 'charger_type-11.svg',
+  //     'iec 62196 type 2': 'charger_type-11.svg',
 
-      'ccs': 'charger_type-12.svg',
-      'ccs2': 'charger_type-12.svg',
-      'ccs combo 2': 'charger_type-12.svg',
-      'combo 2': 'charger_type-12.svg',
+  //     'ccs': 'charger_type-12.svg',
+  //     'ccs2': 'charger_type-12.svg',
+  //     'ccs combo 2': 'charger_type-12.svg',
+  //     'combo 2': 'charger_type-12.svg',
 
-      'chademo': 'charger_type-13.svg',
+  //     'chademo': 'charger_type-13.svg',
 
-      'schuko': 'charger_type-14.svg',
-      'domaci zasuvka': 'charger_type-14.svg',
+  //     'schuko': 'charger_type-14.svg',
+  //     'domaci zasuvka': 'charger_type-14.svg',
 
-      'gb/t': 'charger_type-36.svg'
-    };
+  //     'gb/t': 'charger_type-36.svg'
+  //   };
 
-    return connectorIconMap[type] || '';
-  }
+  //   return connectorIconMap[type] || '';
+  // }
   function getDbLogoHtml(size) {
     const url = (dbMapData && dbMapData.dbLogoUrl) ? dbMapData.dbLogoUrl : null;
     // Bílý podklad pro čitelnost, oranžový obrys dle brandbooku - čtvercový
@@ -5204,10 +5251,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         // Primárně otevři spodní náhled (sheet) a zvýrazni pin; modal jen když to uživatel vyžádá
         highlightCardById(p.id);
+        
+        // Otevři mobile sheet na mobilu nebo detail modal na desktopu
+        if (window.innerWidth <= 900) {
+          openMobileSheet(f);
+        } else {
+          openDetailModal(f);
+        }
         map.setView([lat, lng], 15, {animate:true});
         sortMode = 'distance-active';
         renderCards('', p.id);
-        openMobileSheet(f);
       });
       // Double-click na marker: otevři modal s detailem
       marker.on('dblclick', () => {

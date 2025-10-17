@@ -16,14 +16,10 @@ if (!defined('ABSPATH')) {
 class Charging_Discovery {
     private const GOOGLE_TEXTSEARCH_URL = 'https://maps.googleapis.com/maps/api/place/textsearch/json';
     private const GOOGLE_DETAILS_URL    = 'https://maps.googleapis.com/maps/api/place/details/json';
-    private const OCM_POI_URL           = 'https://api.openchargemap.io/v3/poi';
 
     private const META_GOOGLE_ID          = '_charging_google_place_id';
     private const META_GOOGLE_CACHE       = '_charging_google_cache';
     private const META_GOOGLE_CACHE_EXP   = '_charging_google_cache_expires';
-    private const META_OCM_ID             = '_openchargemap_id';
-    private const META_OCM_CACHE          = '_charging_ocm_cache';
-    private const META_OCM_CACHE_EXP      = '_charging_ocm_cache_expires';
     private const META_LIVE_STATUS        = '_charging_live_status';
     private const META_LIVE_STATUS_EXP    = '_charging_live_status_expires';
 
@@ -41,7 +37,7 @@ class Charging_Discovery {
      * @param bool $useOcm   Allow discovering Open Charge Map ID.
      * @return array<string,mixed>
      */
-    public function discoverForCharging(int $postId, bool $save = false, bool $force = false, bool $useGoogle = true, bool $useOcm = true): array {
+    public function discoverForCharging(int $postId, bool $save = false, bool $force = false, bool $useGoogle = true, bool $useOcm = false): array {
         $post = get_post($postId);
         if (!$post || $post->post_type !== 'charging_location') {
             return [
@@ -57,25 +53,24 @@ class Charging_Discovery {
         $hasCoords = ($lat !== 0.0 || $lng !== 0.0);
 
         $googlePlaceId = get_post_meta($postId, self::META_GOOGLE_ID, true);
-        $ocmId = get_post_meta($postId, self::META_OCM_ID, true);
 
         $discoveredGoogle = $googlePlaceId !== '' ? (string) $googlePlaceId : null;
-        $discoveredOcm = $ocmId !== '' ? (string) $ocmId : null;
+        $discoveredOcm = null; // OCM disabled
 
         // Try to discover Google Place ID when missing or forced.
         if ($useGoogle && ($force || !$discoveredGoogle)) {
             $discoveredGoogle = $this->discoverGooglePlaceId($title, $hasCoords ? $lat : null, $hasCoords ? $lng : null);
         }
 
-        // Try to discover OCM ID when missing or forced.
-        if ($useOcm && ($force || !$discoveredOcm)) {
-            $discoveredOcm = $this->discoverOcmStationId($title, $hasCoords ? $lat : null, $hasCoords ? $lng : null);
-        }
+        // OCM API disabled for testing
+        // if ($useOcm && ($force || !$discoveredOcm)) {
+        //     $discoveredOcm = $this->discoverOcmStationId($title, $hasCoords ? $lat : null, $hasCoords ? $lng : null);
+        // }
 
         if ($save) {
             // Kontrola vzdálenosti před uložením ID
             if ($useGoogle && $discoveredGoogle) {
-                $googleDetails = $this->fetchGooglePlaceDetails($discoveredGoogle);
+                $googleDetails = $this->fetchGooglePlaceDetails($discoveredGoogle, $postId);
                 if ($googleDetails && $hasCoords) {
                     $googleLat = $googleDetails['latitude'] ?? null;
                     $googleLng = $googleDetails['longitude'] ?? null;
@@ -104,40 +99,15 @@ class Charging_Discovery {
                 }
             }
             
-            if ($useOcm && $discoveredOcm) {
-                $ocmDetails = $this->fetchOcmStationDetails($discoveredOcm);
-                if ($ocmDetails && $hasCoords) {
-                    $ocmLat = $ocmDetails['latitude'] ?? null;
-                    $ocmLng = $ocmDetails['longitude'] ?? null;
-                    if ($ocmLat !== null && $ocmLng !== null) {
-                        $distance = $this->haversineM($lat, $lng, $ocmLat, $ocmLng);
-                        if ($distance > 100) {
-                            // Příliš daleko - neukládat ID, přidat do review fronty
-                            $discoveredOcm = null;
-                            error_log("Charging Discovery: OCM ID příliš daleko ({$distance}m) pro objekt $postId");
-                            $this->addToReviewQueue($postId, "OCM ID příliš daleko ({$distance}m)");
-                        } elseif ($distance > 50) {
-                            // Podezřelé - uložit s varováním a přidat do review
-                            error_log("Charging Discovery: OCM ID podezřele daleko ({$distance}m) pro objekt $postId");
-                            $this->addToReviewQueue($postId, "OCM ID podezřele daleko ({$distance}m)");
-                        }
-                    }
-                }
-                if ($discoveredOcm) {
-                    update_post_meta($postId, self::META_OCM_ID, $discoveredOcm);
-                    $this->refreshOcmMetadata($postId, $discoveredOcm, true);
-                } else {
-                    // Pokud se ID neuložilo kvůli vzdálenosti, vymaž existující
-                    delete_post_meta($postId, self::META_OCM_ID);
-                    delete_post_meta($postId, self::META_OCM_CACHE);
-                    delete_post_meta($postId, self::META_OCM_CACHE_EXP);
-                }
-            }
+            // OCM API disabled for testing
+            // if ($useOcm && $discoveredOcm) {
+            //     // ... OCM logic disabled
+            // }
         }
 
         // Pokud se nenašlo žádné ID, přidat do review fronty a přidat Street View fallback
-        if (!$discoveredGoogle && !$discoveredOcm) {
-            $this->addToReviewQueue($postId, "Nebylo nalezeno žádné ID (Google ani OCM)");
+        if (!$discoveredGoogle) {
+            $this->addToReviewQueue($postId, "Nebylo nalezeno žádné Google ID");
             // Přidat Street View jako fallback pro nabíječky ve frontě
             $this->addStreetViewFallback($postId, $lat, $lng);
         }
@@ -158,10 +128,9 @@ class Charging_Discovery {
      */
     public function getCachedMetadata(int $postId): array {
         $google = $this->maybeGetPostCache($postId, self::META_GOOGLE_CACHE, self::META_GOOGLE_CACHE_EXP);
-        $ocm = $this->maybeGetPostCache($postId, self::META_OCM_CACHE, self::META_OCM_CACHE_EXP);
         return [
             'google' => $google,
-            'open_charge_map' => $ocm,
+            'open_charge_map' => null, // OCM disabled
         ];
     }
 
@@ -169,18 +138,23 @@ class Charging_Discovery {
         if ($placeId === '') {
             return null;
         }
-        if (!$force) {
-            // Pro data o dostupnosti použijeme speciální logiku
-            if ($this->shouldRefreshLiveData($postId)) {
-                // Aktualizovat data
-            } else {
-                $cached = $this->maybeGetPostCache($postId, self::META_GOOGLE_CACHE, self::META_GOOGLE_CACHE_EXP);
-                if ($cached !== null) {
-                    return $cached;
-                }
+        
+        if (!$force && !$this->shouldRefreshGoogleMetadata($postId)) {
+            // Return cached data if no refresh needed
+            $cached = $this->maybeGetPostCache($postId, self::META_GOOGLE_CACHE, self::META_GOOGLE_CACHE_EXP);
+            if ($cached !== null) {
+                return $cached;
             }
         }
-        $details = $this->fetchGooglePlaceDetails($placeId);
+        
+        // Check if we only need to refresh live data
+        $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
+        if ($liveDataAvailable === '1' && !$force) {
+            // Only refresh live availability, not full metadata
+            $this->refreshLiveAvailabilityOnly($postId);
+            return $this->maybeGetPostCache($postId, self::META_GOOGLE_CACHE, self::META_GOOGLE_CACHE_EXP);
+        }
+        $details = $this->fetchGooglePlaceDetails($placeId, $postId);
         if ($details) {
             update_post_meta($postId, self::META_GOOGLE_CACHE, $details);
             update_post_meta($postId, self::META_GOOGLE_CACHE_EXP, time() + self::METADATA_TTL);
@@ -232,33 +206,7 @@ class Charging_Discovery {
         return $details;
     }
 
-    public function refreshOcmMetadata(int $postId, string $ocmId, bool $force = false): ?array {
-        if ($ocmId === '') {
-            return null;
-        }
-        if (!$force) {
-            $cached = $this->maybeGetPostCache($postId, self::META_OCM_CACHE, self::META_OCM_CACHE_EXP);
-            if ($cached !== null) {
-                return $cached;
-            }
-        }
-        $details = $this->fetchOcmStationDetails($ocmId);
-        if ($details) {
-            update_post_meta($postId, self::META_OCM_CACHE, $details);
-            update_post_meta($postId, self::META_OCM_CACHE_EXP, time() + self::METADATA_TTL);
-            
-            // OCM obvykle neposkytuje data o aktuální dostupnosti, jen obecný stav
-            // Proto ukládáme pouze celkový počet konektorů
-            if (isset($details['status_summary']['total']) && $details['status_summary']['total'] > 0) {
-                delete_post_meta($postId, '_charging_live_available');
-                update_post_meta($postId, '_charging_live_total', $details['status_summary']['total']);
-                delete_post_meta($postId, '_charging_live_source');
-                delete_post_meta($postId, '_charging_live_updated');
-                update_post_meta($postId, '_charging_live_data_available', '0');
-            }
-        }
-        return $details;
-    }
+    // OCM methods removed - no longer supported
 
     public function refreshLiveStatus(int $postId, bool $force = false): ?array {
         if (!$force) {
@@ -268,8 +216,7 @@ class Charging_Discovery {
             }
         }
         $googleId = (string) get_post_meta($postId, self::META_GOOGLE_ID, true);
-        $ocmId = (string) get_post_meta($postId, self::META_OCM_ID, true);
-        $status = $this->fetchLiveStatus($googleId ?: null, $ocmId ?: null);
+        $status = $this->fetchLiveStatus($googleId ?: null, null, $postId); // OCM disabled
         if ($status !== null) {
             update_post_meta($postId, self::META_LIVE_STATUS, $status);
             update_post_meta($postId, self::META_LIVE_STATUS_EXP, time() + rand(self::LIVE_TTL_MIN, self::LIVE_TTL_MAX));
@@ -297,6 +244,32 @@ class Charging_Discovery {
         // Pokud máme data o dostupnosti, respektujeme cache TTL (30 dní)
         $expires = (int) get_post_meta($postId, self::META_GOOGLE_CACHE_EXP, true);
         return $expires <= time();
+    }
+    
+    /**
+     * Check if we should refresh Google metadata based on cache and live data availability
+     */
+    private function shouldRefreshGoogleMetadata(int $postId): bool {
+        // Always refresh if no cache exists
+        $expires = (int) get_post_meta($postId, self::META_GOOGLE_CACHE_EXP, true);
+        if ($expires <= time()) {
+            return true;
+        }
+        
+        // Check if we have live data available and should refresh only live data
+        $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
+        if ($liveDataAvailable === '1') {
+            // If we have live data, only refresh if live data is stale
+            $liveUpdated = get_post_meta($postId, '_charging_live_updated', true);
+            if ($liveUpdated) {
+                $liveTimestamp = strtotime($liveUpdated);
+                // Refresh live data if older than 5 minutes
+                return $liveTimestamp < (time() - 300);
+            }
+            return false; // Don't refresh static metadata if we have live data
+        }
+        
+        return true; // Refresh static metadata if no live data
     }
     
     /**
@@ -419,13 +392,22 @@ class Charging_Discovery {
     
     /**
      * Přidá Street View jako fallback pro nabíječky ve frontě
+     * Pokusí se použít adresu z databáze, pokud GPS nefunguje
      */
     private function addStreetViewFallback(int $postId, ?float $lat, ?float $lng): void {
-        if ($lat === null || $lng === null) {
-            return;
+        // Zkusit nejdříve s adresou z databáze
+        $address = get_post_meta($postId, '_db_address', true);
+        $streetViewUrl = null;
+        
+        if (!empty($address)) {
+            $streetViewUrl = $this->generateStreetViewUrlFromAddress($address);
         }
         
-        $streetViewUrl = $this->generateStreetViewUrl($lat, $lng);
+        // Pokud adresa nefunguje a máme GPS, zkusit GPS
+        if (!$streetViewUrl && $lat !== null && $lng !== null) {
+            $streetViewUrl = $this->generateStreetViewUrl($lat, $lng);
+        }
+        
         if ($streetViewUrl) {
             // Uložit Street View jako fallback metadata
             $fallbackData = [
@@ -450,180 +432,171 @@ class Charging_Discovery {
         if ($apiKey === '') {
             return null;
         }
+
+        // Use new searchNearby API for GPS-based discovery
+        if ($lat !== null && $lng !== null) {
+            return $this->discoverGooglePlaceIdNearby($title, $lat, $lng, $apiKey);
+        }
+
+        // Fallback to text search if no GPS coordinates
+        return $this->discoverGooglePlaceIdTextSearch($title, $apiKey);
+    }
+
+    /**
+     * Discover Google Place ID using searchNearby API (GPS-based)
+     */
+    private function discoverGooglePlaceIdNearby(string $title, float $lat, float $lng, string $apiKey): ?string {
+        $url = 'https://places.googleapis.com/v1/places:searchNearby';
+        
+        $requestData = [
+            'includedTypes' => ['electric_vehicle_charging_station'],
+            'locationRestriction' => [
+                'circle' => [
+                    'center' => [
+                        'latitude' => $lat,
+                        'longitude' => $lng
+                    ],
+                    'radius' => 500.0 // 500 meters
+                ]
+            ]
+        ];
+
+        $response = wp_remote_post($url, [
+            'timeout' => 15,
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'X-Goog-Api-Key' => $apiKey,
+                'X-Goog-FieldMask' => 'places.id,places.displayName,places.location,places.formattedAddress,places.businessStatus'
+            ],
+            'body' => json_encode($requestData)
+        ]);
+
+        if (is_wp_error($response)) {
+            return null;
+        }
+
+        $code = (int) wp_remote_retrieve_response_code($response);
+        if ($code < 200 || $code >= 300) {
+            return null;
+        }
+
+        $data = json_decode((string) wp_remote_retrieve_body($response), true);
+        if (!is_array($data) || empty($data['places']) || !is_array($data['places'])) {
+            return null;
+        }
+
+        return $this->findBestMatch($title, $lat, $lng, $data['places']);
+    }
+
+    /**
+     * Find best match from nearby search results
+     */
+    private function findBestMatch(string $title, float $lat, float $lng, array $places): ?string {
+        $bestMatch = null;
+        $bestScore = -1;
+
+        foreach ($places as $place) {
+            $placeId = (string) ($place['id'] ?? '');
+            if ($placeId === '') {
+                continue;
+            }
+
+            $score = 0;
+            $name = (string) ($place['displayName']['text'] ?? '');
+            $placeLat = $place['location']['latitude'] ?? null;
+            $placeLng = $place['location']['longitude'] ?? null;
+            $businessStatus = (string) ($place['businessStatus'] ?? '');
+
+            // GPS distance score (primary criterion - highest weight)
+            if ($placeLat !== null && $placeLng !== null) {
+                $distance = $this->haversineM($lat, $lng, $placeLat, $placeLng);
+                
+                if ($distance < 50) {
+                    $score += 1000; // Perfect match
+                } elseif ($distance < 100) {
+                    $score += 800; // Very good match
+                } elseif ($distance < 200) {
+                    $score += 400; // Good match
+                } elseif ($distance < 500) {
+                    $score += 100; // Acceptable match
+                } else {
+                    continue; // Too far, skip this place
+                }
+            }
+
+            // Business status bonus
+            if ($businessStatus === 'OPERATIONAL') {
+                $score += 50;
+            }
+
+            // Text similarity score (secondary criterion)
+            if (!empty($name) && !empty($title)) {
+                $similarity = similar_text(mb_strtolower($title), mb_strtolower($name));
+                $score += $similarity * 2; // Lower weight than GPS
+            }
+
+            // Provider name bonus
+            $titleParts = explode(' - ', $title);
+            if (count($titleParts) >= 2) {
+                $provider = trim($titleParts[0]);
+                if (stripos($name, $provider) !== false) {
+                    $score += 100; // Provider name match bonus
+                } else {
+                    // Try partial match - remove ", a.s." etc.
+                    $providerShort = preg_replace('/,\s*(a\.s\.|s\.r\.o\.|spol\.\s*s\s*r\.o\.|s\.p\.|a\.s\.)$/i', '', $provider);
+                    if (stripos($name, $providerShort) !== false) {
+                        $score += 50; // Partial provider match
+                    }
+                }
+            }
+
+            if ($score > $bestScore) {
+                $bestScore = $score;
+                $bestMatch = $placeId;
+            }
+        }
+
+        return $bestMatch;
+    }
+
+    /**
+     * Fallback: Discover Google Place ID using text search (legacy method)
+     */
+    private function discoverGooglePlaceIdTextSearch(string $title, string $apiKey): ?string {
         $query = [
             'query' => $title,
             'type' => 'electric_vehicle_charging_station',
             'language' => 'cs',
             'key' => $apiKey,
         ];
-        if ($lat !== null && $lng !== null) {
-            $query['location'] = $lat . ',' . $lng;
-            $query['radius'] = '1000';
-        }
+        
         $url = add_query_arg($query, self::GOOGLE_TEXTSEARCH_URL);
         $response = wp_remote_get($url, [
             'timeout' => 10,
             'user-agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
         ]);
+        
         if (is_wp_error($response)) {
             return null;
         }
+        
         $code = (int) wp_remote_retrieve_response_code($response);
         if ($code < 200 || $code >= 300) {
             return null;
         }
+        
         $data = json_decode((string) wp_remote_retrieve_body($response), true);
         if (!is_array($data) || empty($data['results']) || !is_array($data['results'])) {
             return null;
         }
-        $best = null;
-        $score = -INF;
-        $candidates = [];
-        foreach ($data['results'] as $item) {
-            $placeId = (string) ($item['place_id'] ?? '');
-            if ($placeId === '') {
-                continue;
-            }
-            $candidateScore = 0.0;
-            $name = (string) ($item['name'] ?? '');
-            $nameSimilarity = 0.0;
-            $addressBonus = 0.0;
-            
-            if ($title !== '' && $name !== '') {
-                // Základní podobnost názvu
-                $nameSimilarity = similar_text(mb_strtolower($title), mb_strtolower($name));
-                $candidateScore += $nameSimilarity;
-                
-                // Bonus za shodu poskytovatele a adresy
-                $titleParts = explode(' - ', $title);
-                if (count($titleParts) >= 2) {
-                    $provider = trim($titleParts[0]);
-                    $address = trim($titleParts[1]);
-                    
-                    // Bonus za shodu poskytovatele (celý nebo částečný)
-                    if (stripos($name, $provider) !== false) {
-                        $addressBonus += 10.0;
-                    } else {
-                        // Zkusit částečnou shodu - odstranit ", a.s." a podobné
-                        $providerShort = preg_replace('/,\s*(a\.s\.|s\.r\.o\.|spol\.\s*s\s*r\.o\.|s\.p\.|a\.s\.)$/i', '', $provider);
-                        if (stripos($name, $providerShort) !== false) {
-                            $addressBonus += 8.0; // Menší bonus za částečnou shodu
-                        }
-                    }
-                    
-                    // Bonus za slova z adresy
-                    $addressWords = preg_split('/[\s,]+/', $address);
-                    foreach ($addressWords as $word) {
-                        if (strlen($word) > 2 && stripos($name, $word) !== false) {
-                            $addressBonus += 5.0;
-                        }
-                    }
-                }
-                $candidateScore += $addressBonus;
-            }
-            // Hodnocení se nepoužívá pro výběr správného místa
-            $distanceScore = 0.0;
-            $dist = 0.0;
-            if ($lat !== null && $lng !== null && isset($item['geometry']['location'])) {
-                $ilat = (float) ($item['geometry']['location']['lat'] ?? 0.0);
-                $ilng = (float) ($item['geometry']['location']['lng'] ?? 0.0);
-                $dist = $this->haversineM($lat, $lng, $ilat, $ilng);
-                // Preferovat nejbližší nabíječky - vzdálenost má mnohem větší váhu
-                $distanceScore = max(0.0, 1000.0 - min(1000.0, $dist)) / 5.0; // Zvýšená váha vzdálenosti
-                $candidateScore += $distanceScore;
-            }
-            
-            $candidates[] = [
-                'place_id' => $placeId,
-                'name' => $name,
-                'distance' => round($dist),
-                'name_similarity' => $nameSimilarity,
-                'address_bonus' => round($addressBonus, 2),
-                'distance_score' => round($distanceScore, 2),
-                'total_score' => round($candidateScore, 2)
-            ];
-            
-            if ($candidateScore > $score) {
-                $score = $candidateScore;
-                $best = $placeId;
-            }
-        }
         
-        // Debug logging odstraněno
-        
-        return $best;
+        // Return first result for text search (no GPS-based scoring)
+        return (string) ($data['results'][0]['place_id'] ?? '');
     }
 
-    private function discoverOcmStationId(string $title, ?float $lat, ?float $lng): ?string {
-        $apiKey = (string) get_option('db_openchargemap_api_key');
-        $query = [
-            'output' => 'json',
-            'compact' => 'true',
-            'maxresults' => 20,
-        ];
-        if ($apiKey !== '') {
-            $query['key'] = $apiKey;
-        }
-        if ($lat !== null && $lng !== null) {
-            $query['latitude'] = $lat;
-            $query['longitude'] = $lng;
-            $query['distance'] = 10;
-            $query['distanceunit'] = 'KM';
-        } elseif ($title !== '') {
-            $query['query'] = $title;
-        } else {
-            return null;
-        }
-        $url = add_query_arg($query, self::OCM_POI_URL);
-        $headers = [
-            'User-Agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
-        ];
-        if ($apiKey !== '') {
-            $headers['X-API-Key'] = $apiKey;
-        }
-        $response = wp_remote_get($url, [
-            'timeout' => 12,
-            'headers' => $headers,
-        ]);
-        if (is_wp_error($response)) {
-            return null;
-        }
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code < 200 || $code >= 300) {
-            return null;
-        }
-        $data = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($data)) {
-            return null;
-        }
-        $best = null;
-        $score = -INF;
-        foreach ($data as $poi) {
-            $id = (string) ($poi['ID'] ?? '');
-            if ($id === '') {
-                continue;
-            }
-            $candidateScore = 0.0;
-            $name = (string) ($poi['AddressInfo']['Title'] ?? '');
-            if ($title !== '' && $name !== '') {
-                $candidateScore += similar_text(mb_strtolower($title), mb_strtolower($name));
-            }
-            if ($lat !== null && $lng !== null && isset($poi['AddressInfo']['Latitude'], $poi['AddressInfo']['Longitude'])) {
-                $ilat = (float) $poi['AddressInfo']['Latitude'];
-                $ilng = (float) $poi['AddressInfo']['Longitude'];
-                $dist = $this->haversineM($lat, $lng, $ilat, $ilng);
-                // Preferovat nejbližší nabíječky - vzdálenost má mnohem větší váhu
-                $candidateScore += max(0.0, 1000.0 - min(1000.0, $dist)) / 5.0; // Zvýšená váha vzdálenosti
-            }
-            if ($candidateScore > $score) {
-                $score = $candidateScore;
-                $best = 'ocm_' . $id;
-            }
-        }
-        return $best;
-    }
+    // OCM discovery method removed - no longer supported
 
-    private function fetchGooglePlaceDetails(string $placeId): ?array {
+    private function fetchGooglePlaceDetails(string $placeId, int $postId = 0): ?array {
         $apiKey = (string) get_option('db_google_api_key');
         if ($apiKey === '' || $placeId === '') {
             return null;
@@ -710,11 +683,25 @@ class Charging_Discovery {
         }
 
         // Pokud nejsou fotky, přidat Street View jako fallback
-        if (empty($photos) && isset($data['location']['latitude'], $data['location']['longitude'])) {
-            $streetViewUrl = $this->generateStreetViewUrl(
-                (float) $data['location']['latitude'], 
-                (float) $data['location']['longitude']
-            );
+        if (empty($photos)) {
+            $streetViewUrl = null;
+            
+            // Zkusit nejdříve s adresou z databáze (pokud máme post ID)
+            if ($postId > 0) {
+                $address = get_post_meta($postId, '_db_address', true);
+                if (!empty($address)) {
+                    $streetViewUrl = $this->generateStreetViewUrlFromAddress($address);
+                }
+            }
+            
+            // Pokud adresa nefunguje, zkusit GPS souřadnice
+            if (!$streetViewUrl && isset($data['location']['latitude'], $data['location']['longitude'])) {
+                $streetViewUrl = $this->generateStreetViewUrl(
+                    (float) $data['location']['latitude'], 
+                    (float) $data['location']['longitude']
+                );
+            }
+            
             if ($streetViewUrl) {
                 $photos[] = [
                     'photo_reference' => 'streetview',
@@ -744,110 +731,13 @@ class Charging_Discovery {
         return $payload;
     }
 
-    private function fetchOcmStationDetails(string $ocmId): ?array {
-        if ($ocmId === '') {
-            return null;
-        }
-        $numericId = preg_replace('/^ocm_/i', '', $ocmId);
-        if ($numericId === '') {
-            return null;
-        }
-        $apiKey = (string) get_option('db_openchargemap_api_key');
-        $query = [
-            'output' => 'json',
-            'chargepoints' => 'true',
-            'compact' => 'false',
-            'includecomments' => 'false',
-            'verbose' => 'true',
-            'maxresults' => 1,
-            'countrycode' => '',
-            'id' => $numericId,
-        ];
-        if ($apiKey !== '') {
-            $query['key'] = $apiKey;
-        }
-        $url = add_query_arg($query, self::OCM_POI_URL);
-        $headers = [
-            'User-Agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
-        ];
-        if ($apiKey !== '') {
-            $headers['X-API-Key'] = $apiKey;
-        }
-        $response = wp_remote_get($url, [
-            'timeout' => 12,
-            'headers' => $headers,
-        ]);
-        if (is_wp_error($response)) {
-            return null;
-        }
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code < 200 || $code >= 300) {
-            return null;
-        }
-        $data = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($data) || empty($data[0])) {
-            return null;
-        }
-        $poi = $data[0];
-        $address = $poi['AddressInfo'] ?? [];
-        $connections = $poi['Connections'] ?? [];
-        $connectors = [];
-        $available = 0;
-        $total = 0;
-        foreach ($connections as $connection) {
-            $status = (string) ($connection['StatusType']['Title'] ?? '');
-            $isAvailable = stripos($status, 'available') !== false;
-            $quantity = isset($connection['Quantity']) ? (int) $connection['Quantity'] : 1;
-            $total += $quantity;
-            if ($isAvailable) {
-                $available += $quantity;
-            }
-            $connectors[] = [
-                'type' => (string) ($connection['ConnectionType']['Title'] ?? ''),
-                'power_kw' => isset($connection['PowerKW']) ? (float) $connection['PowerKW'] : null,
-                'current_type' => (string) ($connection['CurrentType']['Title'] ?? ''),
-                'status' => $status,
-                'quantity' => $quantity,
-            ];
-        }
-        return [
-            'id' => $ocmId,
-            'name' => (string) ($address['Title'] ?? ''),
-            'address' => [
-                'street' => (string) ($address['AddressLine1'] ?? ''),
-                'town' => (string) ($address['Town'] ?? ''),
-                'state' => (string) ($address['StateOrProvince'] ?? ''),
-                'postcode' => (string) ($address['Postcode'] ?? ''),
-                'country' => (string) ($address['Country']['Title'] ?? ''),
-            ],
-            'latitude' => isset($address['Latitude']) ? (float) $address['Latitude'] : null,
-            'longitude' => isset($address['Longitude']) ? (float) $address['Longitude'] : null,
-            'connectors' => $connectors,
-            'status_summary' => [
-                'available' => $available,
-                'total' => $total,
-            ],
-            'url' => (string) ($poi['DataProvider']['WebsiteURL'] ?? ''),
-            'last_updated' => (string) ($poi['DateLastStatusUpdate'] ?? ''),
-            'data_provider' => (string) ($poi['DataProvider']['Title'] ?? ''),
-        ];
-    }
+    // OCM fetch method removed - no longer supported
 
-    private function fetchLiveStatus(?string $googleId, ?string $ocmId): ?array {
+    private function fetchLiveStatus(?string $googleId, ?string $ocmId, int $postId = 0): ?array {
         $status = null;
-        if ($ocmId) {
-            $meta = $this->fetchOcmStationDetails($ocmId);
-            if ($meta && isset($meta['status_summary'])) {
-                $status = [
-                    'available' => (int) ($meta['status_summary']['available'] ?? 0),
-                    'total' => (int) ($meta['status_summary']['total'] ?? 0),
-                    'source' => 'open_charge_map',
-                    'updated_at' => $meta['last_updated'] ?? null,
-                ];
-            }
-        }
-        if (!$status && $googleId) {
-            $details = $this->fetchGooglePlaceDetails($googleId);
+        // OCM removed - only Google supported
+        if ($googleId) {
+            $details = $this->fetchGooglePlaceDetails($googleId, $postId);
             if ($details) {
                 $status = [
                     'available' => null,
@@ -870,7 +760,7 @@ class Charging_Discovery {
     }
 
     /**
-     * Generuje URL pro Street View Static API jako fallback pro chybějící fotky
+     * Generuje URL pro Street View Static API z GPS souřadnic
      */
     private function generateStreetViewUrl(float $lat, float $lng): ?string {
         $apiKey = (string) get_option('db_google_api_key');
@@ -878,9 +768,30 @@ class Charging_Discovery {
             return null;
         }
 
-        // Street View Static API URL
+        // Street View Static API URL s GPS souřadnicemi
         return add_query_arg([
             'location' => $lat . ',' . $lng,
+            'size' => '640x480',
+            'fov' => '90',
+            'heading' => '0',
+            'pitch' => '0',
+            'key' => $apiKey,
+        ], 'https://maps.googleapis.com/maps/api/streetview');
+    }
+
+    /**
+     * Generuje URL pro Street View Static API z adresy
+     * Tato metoda je spolehlivější než GPS souřadnice
+     */
+    private function generateStreetViewUrlFromAddress(string $address): ?string {
+        $apiKey = (string) get_option('db_google_api_key');
+        if ($apiKey === '') {
+            return null;
+        }
+
+        // Street View Static API URL s adresou
+        return add_query_arg([
+            'location' => urlencode($address),
             'size' => '640x480',
             'fov' => '90',
             'heading' => '0',
