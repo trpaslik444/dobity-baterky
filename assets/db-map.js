@@ -959,6 +959,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         console.log('[DB Map] fetchAndRenderRadiusInternal: final features count =', features.length);
         window.features = features;
+        
+        // Vykreslit karty po načtení dat
+        renderCards('', null, false);
 
       // FALLBACK: Pokud radius vrátí 0 bodů, stáhneme ALL a vyfiltrujeme klientsky
       if (features.length === 0) {
