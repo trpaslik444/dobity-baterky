@@ -1158,6 +1158,19 @@ document.addEventListener('DOMContentLoaded', async function() {
        }).setView([50.08, 14.42], 12);
        console.log('[DB Map] Map initialized, loadMode:', loadMode);
        window.map = map; // Nastavit globální přístup pro isochrones funkce
+       
+       // Spustit počáteční fetch hned po inicializaci mapy
+       if (loadMode === 'radius') {
+         console.log('[DB Map] Starting initial radius fetch after map init');
+         setTimeout(async () => {
+           const c = map.getCenter();
+           console.log('[DB Map] Initial fetch center:', c);
+           await fetchAndRenderRadius(c, null);
+           lastSearchCenter = { lat: c.lat, lng: c.lng };
+           lastSearchRadiusKm = FIXED_RADIUS_KM;
+           console.log('[DB Map] Initial radius fetch completed after map init');
+         }, 100);
+       }
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
          maxZoom: 19
