@@ -4398,6 +4398,150 @@ document.addEventListener('DOMContentLoaded', async function() {
     ensureChargerSvgColoredLoaded();
     return __dbChargerSvgColored;
   }
+
+  // ===== ŽIVÁ POLOHA UŽIVATELE (LocationService) =====
+  const LocationService = (() => {
+    let watchId = null;
+    let last = null;
+    const listeners = new Set();
+    const cacheKey = 'db_last_location';
+
+    function loadCache() {
+      try { return JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch(_) { return null; }
+    }
+    function saveCache(p) {
+      try { localStorage.setItem(cacheKey, JSON.stringify(p)); } catch(_) {}
+    }
+    async function permissionState() {
+      if (!('permissions' in navigator)) return 'prompt';
+      try { const s = await navigator.permissions.query({ name: 'geolocation' }); return s.state; } catch(_) { return 'prompt'; }
+    }
+    function startWatch() {
+      if (!navigator.geolocation || watchId !== null) return;
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          last = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now() };
+          saveCache(last);
+          listeners.forEach(fn => { try { fn(last); } catch(_) {} });
+        },
+        (_) => {},
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+      );
+    }
+    function stopWatch() {
+      if (watchId !== null) {
+        try { navigator.geolocation.clearWatch(watchId); } catch(_) {}
+        watchId = null;
+      }
+    }
+    function onUpdate(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+    function getLast() { return last || loadCache(); }
+    async function autoStartIfGranted() { try { if (await permissionState() === 'granted') startWatch(); } catch(_) {} }
+    return { startWatch, stopWatch, onUpdate, getLast, permissionState, autoStartIfGranted };
+  })();
+
+  // Auto-start, pokud je již povoleno
+  LocationService.autoStartIfGranted();
+
+  // Vykreslení živé polohy do mapy
+  let __dbUserMarker = null;
+  let __dbUserAccuracy = null;
+  let __dbFirstFixDone = false;
+  let __dbHeadingMarker = null;
+  let __dbCurrentHeading = null; // degrees 0..360
+
+  LocationService.onUpdate((p) => {
+    if (!map || !p) return;
+    const latlng = [p.lat, p.lng];
+    if (!__dbUserMarker) {
+      __dbUserMarker = L.circleMarker(latlng, { radius: 6, color: '#049FE8', fillColor: '#049FE8', fillOpacity: 1, className: 'db-live-loc' }).addTo(map);
+      __dbUserAccuracy = L.circle(latlng, { radius: p.acc || 50, color: '#049FE8', weight: 1, fillColor: '#049FE8', fillOpacity: 0.12 }).addTo(map);
+      // Vytvořit marker směru (šípka) – DivIcon s rotací dle headingu
+      const arrowHtml = '<div class="db-heading-wrapper">\
+          <div class="db-heading-fov"></div>\
+          <div class="db-live-dot"><span></span></div>\
+        </div>';
+      __dbHeadingMarker = L.marker(latlng, { icon: L.divIcon({ className: 'db-heading-container', html: arrowHtml, iconSize: [120,120], iconAnchor: [60,60] }), interactive: false }).addTo(map);
+    } else {
+      __dbUserMarker.setLatLng(latlng);
+      __dbUserAccuracy.setLatLng(latlng).setRadius(p.acc || 50);
+      if (__dbHeadingMarker) __dbHeadingMarker.setLatLng(latlng);
+    }
+    if (!__dbFirstFixDone && (p.acc || 9999) <= 2000) {
+      try { map.fitBounds(__dbUserAccuracy.getBounds(), { maxZoom: 15 }); } catch(_) {}
+      __dbFirstFixDone = true;
+      // TODO: případné doplnění: debounce načítání okolních dat
+    }
+  });
+
+  // Tlačítko Moje poloha – spustit sledování / vyžádat přístup
+  setTimeout(() => {
+    const btn = document.getElementById('db-locate-btn');
+    if (btn && !btn.dataset.dbListenerAttached) {
+      btn.addEventListener('click', async () => {
+        try {
+          const state = await LocationService.permissionState();
+          if (state === 'granted') { LocationService.startWatch(); return; }
+          // prompt nebo unknown – watchPosition vyvolá dialog
+          LocationService.startWatch();
+          // iOS 13+ vyžaduje explicitní povolení pro orientaci zařízení – vyžádej při kliknutí
+          if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+            try { await DeviceOrientationEvent.requestPermission(); } catch(_) {}
+          }
+        } catch(_) {
+          LocationService.startWatch();
+        }
+      });
+      btn.dataset.dbListenerAttached = '1';
+    }
+  }, 0);
+
+  // ===== SMĚR NATOČENÍ (HEADING) – mobilní zařízení =====
+  const HeadingService = (() => {
+    let listening = false;
+    let lastHeading = null;
+    const listeners = new Set();
+    function normalize(deg){ if (deg == null || isNaN(deg)) return null; let d = ((deg % 360) + 360) % 360; return d; }
+    function onOrientation(e){
+      // iOS: webkitCompassHeading (0 = sever, roste s hodinami)
+      let h = null;
+      if (typeof e.webkitCompassHeading === 'number') {
+        h = e.webkitCompassHeading;
+      } else if (typeof e.alpha === 'number') {
+        // alpha: 0..360 relativní k zařízení; pokus o absolutní heading (není vždy přesné)
+        // Pokud je k dispozici screen.orientation, kompenzuj rotaci obrazovky
+        let alpha = e.alpha;
+        try {
+          const orient = (screen.orientation && screen.orientation.angle) ? screen.orientation.angle : (window.orientation || 0);
+          alpha = alpha + (orient || 0);
+        } catch(_) {}
+        h = 360 - alpha; // převod do kompasu (0 = sever, CW)
+      }
+      h = normalize(h);
+      if (h === null) return;
+      lastHeading = h;
+      listeners.forEach(fn => { try { fn(lastHeading); } catch(_) {} });
+    }
+    function start(){ if (listening) return; listening = true; window.addEventListener('deviceorientation', onOrientation, { passive: true }); }
+    function stop(){ if (!listening) return; listening = false; window.removeEventListener('deviceorientation', onOrientation); }
+    function onUpdate(fn){ listeners.add(fn); return () => listeners.delete(fn); }
+    function get(){ return lastHeading; }
+    return { start, stop, onUpdate, get };
+  })();
+
+  // Aktivovat pouze na mobilech
+  if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+    HeadingService.start();
+    HeadingService.onUpdate((deg) => {
+      __dbCurrentHeading = deg;
+      if (__dbHeadingMarker && typeof deg === 'number') {
+        const el = __dbHeadingMarker.getElement();
+        if (el) {
+          try { el.style.transform = `rotate(${deg}deg)`; } catch(_) {}
+        }
+      }
+    });
+  }
   
   // Stav filtrů
   const filterState = {
