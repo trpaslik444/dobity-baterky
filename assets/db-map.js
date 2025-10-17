@@ -2269,8 +2269,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const iconUrl = getIconUrl(props.icon_slug);
       return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
     } else if (props.post_type === 'charging_location') {
-      // Fallback pro nabíječky
-      return '🔌';
+      // Fallback pro nabíječky – použít inlinovaný recolorovaný SVG stejně jako v detailu
+      return getChargerColoredSvg() || '🔌';
     } else if (props.post_type === 'rv_spot') {
       // Fallback pro RV
       return '🚐';
@@ -4390,7 +4390,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Načti GeoJSON body
   const restUrl = dbMapData?.restUrl || '/wp-json/db/v1/map';
   // Zkusit najít správnou cestu k ikonám
-  let iconsBase = dbMapData?.iconsBase || 'assets/icons/';
+  // Základní cesta k ikonám – preferuj absolutní cestu ve WP
+  let iconsBase = dbMapData?.iconsBase || '/wp-content/plugins/dobity-baterky/assets/icons/';
   
   // Pokud je cesta relativní, použít WordPress plugin URL
   if (iconsBase.startsWith('assets/')) {
@@ -4416,7 +4417,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   function ensureChargerSvgColoredLoaded() {
     if (__dbChargerSvgColored !== null || __dbChargerSvgLoading) return;
     try {
-      const color = (dbMapData && dbMapData.chargerIconColor) || '#ffffff';
+      // Barva výplně/obrysu pro ikonu nabíječky: na produkci je modrá (#049FE8)
+      const color = (dbMapData && dbMapData.chargerIconColor) || '#049FE8';
       // Nový název souboru bez vnitřního fill: "charger ivon no fill.svg"
       const chargerSvgFile = 'charger ivon no fill.svg';
       const url = (iconsBase || '') + encodeURIComponent(chargerSvgFile);
