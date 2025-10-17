@@ -703,7 +703,7 @@ body.db-license-modal-open {
     border-radius: 0; 
     position: fixed; 
     inset: 0; 
-    z-index: 10000;
+    z-index: 999999;
     transition: transform 0.3s ease;
   }
   .db-map-wrap { flex-direction: column; height: 100%; }
@@ -721,7 +721,7 @@ body.db-license-modal-open {
     margin: 0;
     padding-top: 0.5rem;
     box-shadow: none;
-    z-index: 10001;
+    z-index: 999999;
   }
   .db-list-mode .db-map-topbar { display: none; }
   
@@ -1343,7 +1343,7 @@ body.has-attribution #db-mobile-sheet.open {
 }
 
 /* List režim – header s ovládáním */
-#db-list-header { position: sticky; top: 0; z-index: 10002; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #049FE8; }
+#db-list-header { position: sticky; top: 0; z-index: 999999; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #049FE8; }
 #db-list-header .db-map-topbar-btn { margin-left: 0; }
 .db-map-topbar-btn.active { background: #FF8DAA; color: #fff; transform: scale(1.05); }
 
@@ -1355,7 +1355,7 @@ body.has-attribution #db-mobile-sheet.open {
   display: none; 
   align-items: flex-end; 
   justify-content: center; 
-  z-index: 10001; 
+  z-index: 999999; 
   /* Overlay nesmí scrollovat, scroll patří jen kartě */
   overflow: hidden;
 }
