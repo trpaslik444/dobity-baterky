@@ -4639,38 +4639,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     access: new Set(),
   };
   
-  // Funkce pro počáteční načtení bodů - zjednodušeno
+  // Funkce pro počáteční načtení bodů - s radius filtrem jako mapa
   async function loadInitialPoints() {
     if (!map) return;
     
     try {
-      // Načíst všechny body bez radius filtru
-      const restUrl = dbMapData?.restUrl || '/wp-json/db/v1/map';
-      const url = new URL(restUrl, window.location.origin);
-      try { url.searchParams.set('limit', '5000'); } catch(_) {}
-      
-      const response = await fetch(url, {
-        headers: { 
-          'Accept': 'application/json',
-          'X-WP-Nonce': dbMapData.restNonce
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-        if (data.features && Array.isArray(data.features)) {
-          features = data.features;
-          window.features = features;
-          renderCards('', null, false);
-
-      } else {
-        features = [];
-        window.features = features;
-      }
+      // Použít stejnou logiku jako mapa - načíst body v radiusu kolem středu mapy
+      const center = map.getCenter();
+      await fetchAndRenderRadius(center, null);
     } catch (error) {
       features = [];
       window.features = features;
