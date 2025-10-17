@@ -615,12 +615,31 @@ document.addEventListener('DOMContentLoaded', async function() {
   let sortMode = 'distance';
   let searchAddressCoords = null;
   let searchSortLocked = false;
+  
+  // Nový stav pro list sorting
+  let listSortMode = 'user_distance'; // 'user_distance', 'address_distance', 'active_distance'
   let searchAddressMarker = null;
   let lastSearchResults = [];
   let activeIdxGlobal = null;
   let activeFeatureId = null;
   // --- DEBUG utility odstraněna ---
   
+  // Funkce pro správu list sorting
+  function setSortByUser() {
+    listSortMode = 'user_distance';
+    renderCards('', activeFeatureId, false);
+  }
+  
+  function setSortByAddress(lat, lng) {
+    listSortMode = 'address_distance';
+    searchAddressCoords = { lat, lng };
+    renderCards('', activeFeatureId, false);
+  }
+  
+  function setSortByActive(featureId) {
+    listSortMode = 'active_distance';
+    renderCards('', featureId, false);
+  }
   
   // Nearby data se načítají pouze pokud jsou k dispozici (batch zpracování)
 
@@ -1617,7 +1636,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // Mobilní přepínač seznamu
-  function handleListToggle(event) {
+  async function handleListToggle(event) {
     if (window.innerWidth > 900) {
       return;
     }
@@ -1625,6 +1644,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     const willShowList = !root.classList.contains('db-list-mode');
     root.classList.toggle('db-list-mode');
     if (willShowList) {
+      // Pokud máme podezřele málo bodů, pokus se znovu načíst celé body (bez radiusu)
+      if (!Array.isArray(features) || features.length < 10) {
+        try { await loadInitialPoints(); } catch(_) {}
+      }
       ensureUserLocationAndSort();
       ensureListHeader();
     } else {
@@ -4171,13 +4194,18 @@ document.addEventListener('DOMContentLoaded', async function() {
   async function ensureUserLocationAndSort() {
     const coords = await getUserLocationOnce();
     if (coords) {
-      searchAddressCoords = coords;
-      sortMode = 'distance_from_address';
-      searchSortLocked = true;
-      try { const sel = document.getElementById('db-map-list-sort'); if (sel) sel.value = 'distance-address'; } catch(_) {}
-      // Kontrola, zda jsou features načtené
-      if (features && features.length > 0) {
-        renderCards('', null, false);
+      // V list režimu použij setSortByUser, jinak původní logiku
+      if (root.classList.contains('db-list-mode')) {
+        setSortByUser();
+      } else {
+        searchAddressCoords = coords;
+        sortMode = 'distance_from_address';
+        searchSortLocked = true;
+        try { const sel = document.getElementById('db-map-list-sort'); if (sel) sel.value = 'distance-address'; } catch(_) {}
+        // Kontrola, zda jsou features načtené
+        if (features && features.length > 0) {
+          renderCards('', null, false);
+        }
       }
     } else {
       // Bez polohy zobrazíme vše bez řazení a sdělíme hint (jednorázově)
@@ -4239,32 +4267,67 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     
     const listLocateBtn = listHeader.querySelector('#db-list-locate-btn');
-    if (listLocateBtn) listLocateBtn.addEventListener('click', function(){
-      // Získat aktuální polohu uživatele
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          function(position) {
-            const lat = position.coords.latitude;
-            const lng = position.coords.longitude;
-            
+    if (listLocateBtn) listLocateBtn.addEventListener('click', async function(){
+      try {
+        // Zkus získat polohu přes LocationService
+        const state = await LocationService.permissionState();
+        if (state === 'granted') {
+          const last = LocationService.getLast();
+          if (last) {
             // Centrovat mapu na polohu uživatele
-            map.setView([lat, lng], 15, { animate: true, duration: 0.5 });
-            
-            // Přepnout zpět na mapu
-            root.classList.remove('db-list-mode');
-            setTimeout(() => map.invalidateSize(), 200);
-          },
-          function(error) {
-            
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 60000
+            map.setView([last.lat, last.lng], 15, { animate: true, duration: 0.5 });
+            // Resetovat search a přepnout na user sorting
+            searchAddressCoords = null;
+            searchSortLocked = false;
+            setSortByUser();
+            // Odstranit hint o povolení polohy
+            const hint = document.getElementById('db-list-location-hint');
+            if (hint) hint.remove();
+            return;
           }
-        );
-      } else {
+        }
         
+        // Pokud nemáme polohu, zkus ji získat
+        if (navigator.geolocation) {
+          navigator.geolocation.getCurrentPosition(
+            function(position) {
+              const lat = position.coords.latitude;
+              const lng = position.coords.longitude;
+              
+              // Centrovat mapu na polohu uživatele
+              map.setView([lat, lng], 15, { animate: true, duration: 0.5 });
+              
+              // Resetovat search a přepnout na user sorting
+              searchAddressCoords = null;
+              searchSortLocked = false;
+              setSortByUser();
+              
+              // Odstranit hint o povolení polohy
+              const hint = document.getElementById('db-list-location-hint');
+              if (hint) hint.remove();
+            },
+            function(error) {
+              // Zobrazit hint o povolení polohy
+              const hint = document.getElementById('db-list-location-hint');
+              if (!hint) {
+                const hintEl = document.createElement('div');
+                hintEl.id = 'db-list-location-hint';
+                hintEl.className = 'db-map-nores';
+                hintEl.textContent = 'Povolte prosím zjištění polohy pro seřazení podle vzdálenosti.';
+                listHeader.appendChild(hintEl);
+              }
+            },
+            {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 60000
+            }
+          );
+        } else {
+          // Geolocation není podporováno
+        }
+      } catch (error) {
+        // Chyba při získávání polohy
       }
     });
     
@@ -4578,6 +4641,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Načíst všechny body bez radius filtru
       const restUrl = dbMapData?.restUrl || '/wp-json/db/v1/map';
       const url = new URL(restUrl, window.location.origin);
+      try { url.searchParams.set('limit', '5000'); } catch(_) {}
       
       const response = await fetch(url, {
         headers: { 
@@ -5218,28 +5282,62 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const renderActiveId = Number.isFinite(activeFeatureId) ? activeFeatureId : null;
 
-    // Řazení podle sortMode
+    // Řazení podle listSortMode (pro list view) nebo sortMode (pro map view)
     let sort = searchSortLocked ? 'distance_from_address' : sortMode;
-    // Sjednocený výpočet vzdálenosti
-    if ((sort === 'distance_from_address' && searchAddressCoords) || (sort === 'distance-address' && addressCoords)) {
-      // Vzdálenost od adresy
-      const coords = searchAddressCoords || addressCoords;
-      filtered.forEach(f => {
-        f._distance = getDistance(coords[0], coords[1], f.geometry.coordinates[1], f.geometry.coordinates[0]);
-      });
-      filtered.sort((a, b) => (a._distance||1e9)-(b._distance||1e9));
-    } else if (sort === 'distance-active' && (renderActiveId !== null || activeIdxGlobal !== null)) {
-      // Vzdálenost od aktivního bodu (po kliknutí na pin/kartu)
-      const idx = activeIdxGlobal !== null ? activeIdxGlobal : findFeatureIndexById(renderActiveId);
-      const active = features[idx];
-      if (active) {
+    
+    // V list režimu použij listSortMode
+    if (root.classList.contains('db-list-mode')) {
+      if (listSortMode === 'user_distance') {
+        // Řazení podle polohy uživatele
+        const last = LocationService.getLast();
+        if (last) {
+          filtered.forEach(f => {
+            f._distance = getDistance(last.lat, last.lng, f.geometry.coordinates[1], f.geometry.coordinates[0]);
+          });
+          filtered.sort((a, b) => (a._distance||1e9)-(b._distance||1e9));
+        }
+      } else if (listSortMode === 'address_distance' && searchAddressCoords) {
+        // Řazení podle hledané adresy
         filtered.forEach(f => {
-          f._distance = getDistance(
-            active.geometry.coordinates[1], active.geometry.coordinates[0],
-            f.geometry.coordinates[1], f.geometry.coordinates[0]
-          );
+          f._distance = getDistance(searchAddressCoords.lat, searchAddressCoords.lng, f.geometry.coordinates[1], f.geometry.coordinates[0]);
         });
         filtered.sort((a, b) => (a._distance||1e9)-(b._distance||1e9));
+      } else if (listSortMode === 'active_distance' && (renderActiveId !== null || activeIdxGlobal !== null)) {
+        // Řazení podle aktivního bodu
+        const idx = activeIdxGlobal !== null ? activeIdxGlobal : findFeatureIndexById(renderActiveId);
+        const active = features[idx];
+        if (active) {
+          filtered.forEach(f => {
+            f._distance = getDistance(
+              active.geometry.coordinates[1], active.geometry.coordinates[0],
+              f.geometry.coordinates[1], f.geometry.coordinates[0]
+            );
+          });
+          filtered.sort((a, b) => (a._distance||1e9)-(b._distance||1e9));
+        }
+      }
+    } else {
+      // Původní logika pro map view
+      if ((sort === 'distance_from_address' && searchAddressCoords) || (sort === 'distance-address' && addressCoords)) {
+        // Vzdálenost od adresy
+        const coords = searchAddressCoords || addressCoords;
+        filtered.forEach(f => {
+          f._distance = getDistance(coords[0], coords[1], f.geometry.coordinates[1], f.geometry.coordinates[0]);
+        });
+        filtered.sort((a, b) => (a._distance||1e9)-(b._distance||1e9));
+      } else if (sort === 'distance-active' && (renderActiveId !== null || activeIdxGlobal !== null)) {
+        // Vzdálenost od aktivního bodu (po kliknutí na pin/kartu)
+        const idx = activeIdxGlobal !== null ? activeIdxGlobal : findFeatureIndexById(renderActiveId);
+        const active = features[idx];
+        if (active) {
+          filtered.forEach(f => {
+            f._distance = getDistance(
+              active.geometry.coordinates[1], active.geometry.coordinates[0],
+              f.geometry.coordinates[1], f.geometry.coordinates[0]
+            );
+          });
+          filtered.sort((a, b) => (a._distance||1e9)-(b._distance||1e9));
+        }
       }
     }
     // Pokud je aktivní ID, přesuneme aktivní bod na začátek

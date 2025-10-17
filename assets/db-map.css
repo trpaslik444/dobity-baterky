@@ -640,6 +640,13 @@ body.db-license-modal-open {
   margin-bottom: 0.3em;
 }
 
+/* Skrýt sort dropdown v mobile view */
+@media (max-width: 900px) {
+  .db-map-list-sort-wrap {
+    display: none;
+  }
+}
+
 .db-map-card:first-of-type {
   margin-top: 0.3rem;
 }
