@@ -5620,52 +5620,6 @@ document.addEventListener('DOMContentLoaded', async function() {
               ${titleHtml}
               ${typeHtml}
               <div class="db-map-card-desc">${p.description || '<span style="color:#aaa;">(Popis zatím není k&nbsp;dispozici)</span>'}</div>
-              ${p.post_type === 'charging_location' ? (() => {
-                let additionalInfo = '';
-
-                // Poskytovatel/operátor
-                if (p.operator_original || p.provider) {
-                  const providerName = p.operator_original || p.provider;
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> <span style="white-space: nowrap; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;" title="${providerName}">${providerName}</span></div>`;
-                }
-
-                if (!p.operator_original && !p.provider && p.charging_ocm_details && p.charging_ocm_details.data_provider) {
-                  const providerName = p.charging_ocm_details.data_provider;
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> <span style="white-space: nowrap; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;" title="${providerName}">${providerName}</span></div>`;
-                }
-
-                // Maximální výkon stanice
-                if (p.station_max_power_kw) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Max. výkon:</strong> ${p.station_max_power_kw} kW</div>`;
-                }
-
-                // Počet nabíjecích bodů
-                if (p.evse_count) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Nabíjecí body:</strong> ${p.evse_count}</div>`;
-                }
-
-                if (typeof p.charging_live_available === 'number' && typeof p.charging_live_total === 'number') {
-                  const available = Math.max(0, p.charging_live_available);
-                  const total = Math.max(0, p.charging_live_total);
-                  const ratio = total > 0 ? (available / total) : 0;
-                  let color = '#ef4444';
-                  if (ratio >= 0.5) color = '#10b981';
-                  else if (ratio > 0) color = '#f59e0b';
-                  const updatedText = formatRelativeLiveTime(p.charging_live_updated_at);
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Dostupnost:</strong> <span style="color:${color}; font-weight: 600;">${available}/${total} volných</span>${updatedText ? `<span style=\"display:block;color:#94a3b8;font-size:0.75em;\">Aktualizace ${updatedText}</span>` : ''}</div>`;
-                }
-
-                if (p.charging_google_details && p.charging_google_details.phone) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Telefon:</strong> <a href="tel:${p.charging_google_details.phone}" style="color: #049FE8; text-decoration: none;">${p.charging_google_details.phone}</a></div>`;
-                }
-
-                if (p.charging_google_details && p.charging_google_details.website) {
-                  const web = p.charging_google_details.website;
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Web:</strong> <a href="${web}" target="_blank" rel="noopener" style="color: #049FE8; text-decoration: none;">${web.replace(/^https?:\/\//, '')}</a></div>`;
-                }
-
-                return additionalInfo ? `<div class="db-map-card-amenities" style="margin-top:0.5em;padding-top:0.5em;border-top:1px solid #f0f0f0;" data-debug="amenities-container-${p.id}">${additionalInfo}</div>` : '';
-              })() : ''}
               ${p.post_type === 'poi' ? (() => {
                 let additionalInfo = '';
                 
