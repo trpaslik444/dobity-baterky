@@ -5981,13 +5981,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     // V RADIUS režimu rovnou dotáhni data pro aktuální střed
     try {
       if (loadMode === 'radius') {
-        // Fetch pouze pokud jsme dostatečně přiblíženi
-        if (map.getZoom() >= MIN_FETCH_ZOOM) {
-          const c = map.getCenter();
-          await fetchAndRenderRadius(c, null);
-          lastSearchCenter = { lat: c.lat, lng: c.lng };
-          lastSearchRadiusKm = FIXED_RADIUS_KM;
-        }
+        // Při onloadu vždy spustit radius fetch (bez ohledu na zoom)
+        const c = map.getCenter();
+        await fetchAndRenderRadius(c, null);
+        lastSearchCenter = { lat: c.lat, lng: c.lng };
+        lastSearchRadiusKm = FIXED_RADIUS_KM;
       }
     } catch(_) {}
   });
