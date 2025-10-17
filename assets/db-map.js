@@ -5978,16 +5978,21 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Event listener pro počáteční načtení mapy
   map.once('load', async function() {
+    console.log('[DB Map] map.once("load") triggered, loadMode:', loadMode);
     // V RADIUS režimu rovnou dotáhni data pro aktuální střed
     try {
       if (loadMode === 'radius') {
+        console.log('[DB Map] Starting initial radius fetch');
         // Při onloadu vždy spustit radius fetch (bez ohledu na zoom)
         const c = map.getCenter();
         await fetchAndRenderRadius(c, null);
         lastSearchCenter = { lat: c.lat, lng: c.lng };
         lastSearchRadiusKm = FIXED_RADIUS_KM;
+        console.log('[DB Map] Initial radius fetch completed');
       }
-    } catch(_) {}
+    } catch(error) {
+      console.error('[DB Map] Initial radius fetch failed:', error);
+    }
   });
 
   // Určení režimu nabíjení z konektorů: 'ac' | 'dc' | 'hybrid'
