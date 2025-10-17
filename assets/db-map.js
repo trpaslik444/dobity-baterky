@@ -4481,7 +4481,23 @@ document.addEventListener('DOMContentLoaded', async function() {
       btn.addEventListener('click', async () => {
         try {
           const state = await LocationService.permissionState();
-          if (state === 'granted') { LocationService.startWatch(); return; }
+          if (state === 'granted') {
+            // Pokud je k dispozici poslední poloha, vrať mapu na uživatele
+            const last = LocationService.getLast();
+            if (last && map) {
+              try {
+                const latlng = [last.lat, last.lng];
+                if (__dbUserAccuracy) {
+                  __dbUserAccuracy.setLatLng(latlng).setRadius(last.acc || 50);
+                  map.fitBounds(__dbUserAccuracy.getBounds(), { maxZoom: 15 });
+                } else {
+                  map.setView(latlng, Math.max(map.getZoom() || 13, 15));
+                }
+              } catch(_) {}
+            }
+            LocationService.startWatch();
+            return;
+          }
           // prompt nebo unknown – watchPosition vyvolá dialog
           LocationService.startWatch();
           // iOS 13+ vyžaduje explicitní povolení pro orientaci zařízení – vyžádej při kliknutí
