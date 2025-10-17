@@ -4282,6 +4282,12 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (last) {
             // Centrovat mapu na polohu uživatele
             map.setView([last.lat, last.lng], 15, { animate: true, duration: 0.5 });
+            // Refetch bodů pouze pokud je uživatelova poloha výrazně odlišná od posledního středu
+            const currentCenter = map.getCenter();
+            const distance = getDistance(currentCenter.lat, currentCenter.lng, last.lat, last.lng);
+            if (distance > 5) { // 5km threshold
+              await fetchAndRenderRadius({ lat: last.lat, lng: last.lng }, null);
+            }
             // Resetovat search a přepnout na user sorting
             searchAddressCoords = null;
             searchSortLocked = false;
@@ -4639,14 +4645,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     access: new Set(),
   };
   
-  // Funkce pro počáteční načtení bodů - s radius filtrem jako mapa
+  // Funkce pro počáteční načtení bodů - používá stávající data z mapy
   async function loadInitialPoints() {
     if (!map) return;
     
     try {
-      // Použít stejnou logiku jako mapa - načíst body v radiusu kolem středu mapy
-      const center = map.getCenter();
-      await fetchAndRenderRadius(center, null);
+      // Použít stávající načtená data z mapy (respektovat poslední stav mapy)
+      if (features && features.length > 0) {
+        renderCards('', null, false);
+        return;
+      }
+      
+      // Pokud nemáme data, počkat na načtení z mapy
+      // (logika pro mapu už funguje správně)
     } catch (error) {
       features = [];
       window.features = features;
@@ -5773,10 +5784,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Načíst nearby data pro každou kartu - VYPNUTO pro optimalizaci
     // setTimeout(() => {
     //   const nearbyContainers = document.querySelectorAll('.db-map-card-nearby-list');
-    // Načíst nearby data pro list cards
+    // Načíst nearby data pro list cards (optimalizace - pouze pro prvních 100 položek)
     setTimeout(() => {
       const nearbyContainers = document.querySelectorAll('.sheet-nearby-list');
-      nearbyContainers.forEach(container => {
+      nearbyContainers.forEach((container, index) => {
+        // Optimalizace: načíst nearby pouze pro prvních 100 položek
+        if (index >= 100) return;
+        
         const featureId = container.dataset.featureId;
         if (featureId) {
           // Najít feature podle ID
