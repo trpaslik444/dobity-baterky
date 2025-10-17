@@ -948,7 +948,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       lastSearchRadiusKm = radiusKm;
       // Výběr pro aktuální zobrazení: pouze body uvnitř posledního radiusu a aktuálního viewportu
         const visibleNow = selectFeaturesForView();
-        features = (visibleNow && visibleNow.length > 0) ? visibleNow : (lastRenderedFeatures.length > 0 ? lastRenderedFeatures : incoming);
+        // Pro počáteční načítání použít všechny načtené body, ne filtrovat podle viewportu
+        if (lastRenderedFeatures.length === 0) {
+          // První načítání - použít všechny body z API
+          features = incoming;
+        } else {
+          // Další načítání - filtrovat podle viewportu
+          features = (visibleNow && visibleNow.length > 0) ? visibleNow : (lastRenderedFeatures.length > 0 ? lastRenderedFeatures : incoming);
+        }
         console.log('[DB Map] fetchAndRenderRadiusInternal: final features count =', features.length);
         window.features = features;
 
