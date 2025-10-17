@@ -5625,11 +5625,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 
                 // Poskytovatel/operátor
                 if (p.operator_original || p.provider) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> ${p.operator_original || p.provider}</div>`;
+                  const providerName = p.operator_original || p.provider;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> <span style="white-space: nowrap; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;" title="${providerName}">${providerName}</span></div>`;
                 }
 
                 if (!p.operator_original && !p.provider && p.charging_ocm_details && p.charging_ocm_details.data_provider) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> ${p.charging_ocm_details.data_provider}</div>`;
+                  const providerName = p.charging_ocm_details.data_provider;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> <span style="white-space: nowrap; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis;" title="${providerName}">${providerName}</span></div>`;
                 }
 
                 // Maximální výkon stanice
