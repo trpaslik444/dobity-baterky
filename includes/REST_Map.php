@@ -78,21 +78,41 @@ class REST_Map {
         register_rest_route( 'db/v1', '/map', array(
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_map' ),
-            'permission_callback' => '__return_true', // Veřejný endpoint pro frontend
+            'permission_callback' => function ( $request ) {
+                // Zkontroluj nonce autentizaci
+                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                    return false;
+                }
+
+                // Jednoduchá kontrola - necháme Members plugin, aby měl kontrolu
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
         ) );
 
         // Externí detaily POI (Google Places / Tripadvisor)
         register_rest_route( 'db/v1', '/poi-external/(?P<id>\d+)', array(
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_poi_external' ),
-            'permission_callback' => '__return_true', // Veřejný endpoint pro frontend
+            'permission_callback' => function ( $request ) {
+                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                    return false;
+                }
+
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
         ) );
 
         // Internal database search endpoint
         register_rest_route( 'db/v1', '/map-search', array(
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_map_search' ),
-            'permission_callback' => '__return_true', // Veřejný endpoint pro frontend
+            'permission_callback' => function ( $request ) {
+                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                    return false;
+                }
+
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
             'args' => array(
                 'query' => array(
                     'required' => true,
