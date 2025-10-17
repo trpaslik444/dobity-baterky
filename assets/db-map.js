@@ -5797,13 +5797,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Načíst nearby data pro každou kartu - VYPNUTO pro optimalizaci
     // setTimeout(() => {
     //   const nearbyContainers = document.querySelectorAll('.db-map-card-nearby-list');
-    //   nearbyContainers.forEach(container => {
-    //     const featureId = container.dataset.featureId;
-    //     if (featureId) {
-    //       loadNearbyForCard(container, featureId);
-    //     }
-    //   });
-    // }, 200);
+    // Načíst nearby data pro list cards
+    setTimeout(() => {
+      const nearbyContainers = document.querySelectorAll('.sheet-nearby-list');
+      nearbyContainers.forEach(container => {
+        const featureId = container.dataset.featureId;
+        if (featureId) {
+          // Najít feature podle ID
+          const feature = features.find(f => f.properties.id == featureId);
+          if (feature) {
+            const lat = feature.geometry.coordinates[1];
+            const lng = feature.geometry.coordinates[0];
+            loadNearbyForMobileSheet(container, featureId, lat, lng);
+          }
+        }
+      });
+    }, 200);
     
 
   // duplicitní tvorba markerů odstraněna – markerů se vytváří jen z filtered výběru výše
