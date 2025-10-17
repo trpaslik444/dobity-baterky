@@ -435,6 +435,12 @@ add_action('wp_enqueue_scripts', function() {
         'rvColor' => get_option('db_rv_color', '#FCE67D'),
         // Barva ikony nabíječky uvnitř pinu (bez vnitřního fill ve SVG)
         'chargerIconColor' => get_option('db_charger_icon_color', '#ffffff'),
+        // Account / user info for frontend menu
+        'isLoggedIn' => is_user_logged_in(),
+        'currentUser' => is_user_logged_in() ? wp_get_current_user()->display_name : '',
+        'accountUrl' => is_user_logged_in() ? admin_url('profile.php') : wp_login_url(),
+        'logoutUrl' => is_user_logged_in() ? wp_logout_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ) : '',
+        'loginUrl' => is_user_logged_in() ? '' : wp_login_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ),
     ) );
 }, 20);
 
