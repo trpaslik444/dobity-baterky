@@ -1036,8 +1036,8 @@ body.has-attribution #db-mobile-sheet.open {
 }
 
 #db-mobile-sheet .sheet-icon {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -1060,12 +1060,41 @@ body.has-attribution #db-mobile-sheet.open {
   height: 18px;
 }
 
+#db-mobile-sheet .sheet-content-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 #db-mobile-sheet .sheet-title { 
   font-weight: 700; 
   font-size: 1.1rem; 
   color: #049FE8; /* Modrý text podle brandbooku */
   line-height: 1.3;
-  flex: 1;
+}
+
+#db-mobile-sheet .sheet-connectors {
+  margin-top: 4px;
+}
+
+#db-mobile-sheet .sheet-connectors .connector-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 4px 0 0;
+}
+
+#db-mobile-sheet .sheet-connectors .connector-item img {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+#db-mobile-sheet .sheet-connectors .connector-item .connector-count {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.75em;
 }
 
 #db-mobile-sheet .sheet-subtitle { 

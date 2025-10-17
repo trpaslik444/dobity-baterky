@@ -905,7 +905,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // FALLBACK: Pokud radius vrátí 0 bodů, stáhneme ALL a vyfiltrujeme klientsky
       if (features.length === 0) {
         try {
-          const allUrl = new URL((window.dbMapData?.restUrl) || '/wp-json/db/v1/map', window.location.origin);
+          const allUrl = new URL((dbMapData?.restUrl) || '/wp-json/db/v1/map', window.location.origin);
           const allRes = await fetch(allUrl.toString(), { 
             signal: inFlightController.signal,
             credentials: 'same-origin',
@@ -957,7 +957,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Funkce pro načtení všech dat (bez radius filtru)
   async function fetchAndRenderAll() {
-    const base = (window.dbMapData?.restUrl) || '/wp-json/db/v1/map';
+    const base = (dbMapData?.restUrl) || '/wp-json/db/v1/map';
     const url = new URL(base, window.location.origin);
     url.searchParams.set('limit', '5000');
     
@@ -1274,15 +1274,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
     const size = 36; const badgeSize = 16;
     let bg = '#049FE8'; let color = '#fff';
-    const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
-    const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
-    const poiColor = (window.dbMapData && window.dbMapData.poiColor) || '#FCE67D';
+    const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+    const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
+    const poiColor = (dbMapData && dbMapData.poiColor) || '#FCE67D';
     if (style === 'charger') {
           // Hladší prolínání (více mezikroků mezi modrou a růžovou)
       bg = 'linear-gradient(135deg, ' + acColor + ' 0%, ' + dcColor + ' 100%)';
           color = '#ffffff';
         }
-    else if (style === 'rv') { bg = (window.dbMapData && window.dbMapData.rvColor) ? window.dbMapData.rvColor : '#FCE67D'; color = '#333333'; }
+    else if (style === 'rv') { bg = (dbMapData && dbMapData.rvColor) ? dbMapData.rvColor : '#FCE67D'; color = '#333333'; }
     else if (style === 'poi') { bg = poiColor; color = '#333333'; }
         const dbBadge = hasRecommended ? `<div style="position:absolute;right:-4px;top:-4px;width:${badgeSize}px;height:${badgeSize}px;">${getDbLogoHtml(badgeSize)}</div>` : '';
         const clusterHtml = `
@@ -1894,6 +1894,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     s = s.replace(/ccs\s*combo\s*2|combo\s*2|ccs\s*2/g, 'ccs2');
     s = s.replace(/gbt|gb\s*\/\s*t/g, 'gb/t');
     s = s.replace(/domaci zasuvka|domaci\s+zasuvka|household|europlug/g, 'domaci zasuvka');
+    
+    // Google API typy se nepoužívají pro zobrazení konektorů
 
     return s;
   }
@@ -2135,6 +2137,100 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
   
+  // Generování sekce konektorů pro mobile sheet
+  function generateMobileConnectorsSection(p) {
+    // Použít konektory z původních mapových dat - nezávisle na cache
+    const mapConnectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+    const dbConnectors = Array.isArray(p.db_connectors) ? p.db_connectors : [];
+    
+    // Preferovat db_connectors z REST API (obsahuje power), pak mapConnectors jako fallback
+    let connectors = [];
+    if (dbConnectors.length > 0) {
+      connectors = dbConnectors;
+    } else if (mapConnectors.length > 0) {
+      connectors = mapConnectors;
+    }
+    
+    if (!connectors || connectors.length === 0) {
+      return '';
+    }
+    
+    // Seskupit konektory podle typu a spočítat
+    const connectorCounts = {};
+    connectors.forEach(c => {
+      const typeKey = getConnectorTypeKey(c);
+      if (typeKey) {
+        const power = c.power || c.connector_power_kw || c.power_kw || c.vykon || '';
+        const quantity = parseInt(c.quantity || c.count || c.connector_count || 1);
+        
+        if (!connectorCounts[typeKey]) {
+          connectorCounts[typeKey] = { count: 0, power: power };
+        }
+        connectorCounts[typeKey].count += quantity;
+      }
+    });
+    
+        // Vytvořit zjednodušené HTML pro mobile sheet header
+        const connectorItems = Object.entries(connectorCounts).map(([typeKey, info]) => {
+          const connector = connectors.find(c => {
+            const cType = getConnectorTypeKey(c);
+            return cType === typeKey;
+          });
+          
+          const iconUrl = connector ? getConnectorIconUrl(connector) : null;
+          const powerText = info.power ? `${info.power} kW` : '';
+          
+          // Zkontrolovat live dostupnost z API
+          let availabilityText = info.count;
+          let isOutOfService = false;
+          
+          // Zkontrolovat stav "mimo provoz" z Google API
+          if (p.business_status === 'CLOSED_TEMPORARILY' || p.business_status === 'CLOSED_PERMANENTLY') {
+            isOutOfService = true;
+          }
+          
+          // Zobrazit pouze počet konektorů z databáze - bez dostupnosti z Google API
+          if (isOutOfService) {
+            availabilityText = 'MIMO PROVOZ';
+          } else {
+            // Zobrazit pouze celkový počet z databáze
+            availabilityText = info.count.toString();
+          }
+          
+          // Zjednodušený styl bez pozadí
+          const textStyle = isOutOfService 
+            ? 'font-weight: 600; color: #c33; font-size: 0.75em;'
+            : 'font-weight: 600; color: #333; font-size: 0.75em;';
+          
+          if (iconUrl) {
+            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 0 4px 0 0;">
+              <div style="display: flex; align-items: center; gap: 3px;">
+                <img src="${iconUrl}" style="width: 14px; height: 14px; object-fit: contain;" alt="${typeKey}">
+                <span style="${textStyle}">${availabilityText}</span>
+              </div>
+              ${powerText ? `<span style="color: #666; font-size: 0.7em;">${powerText}</span>` : ''}
+            </div>`;
+          } else {
+            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 0 4px 0 0;">
+              <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
+              ${powerText ? `<span style="color: #666; font-size: 0.7em;">${powerText}</span>` : ''}
+            </div>`;
+          }
+        }).join('');
+        
+        if (connectorItems) {
+          return `
+            <div class="sheet-connectors" style="margin-top: 4px;">
+              <div style="display: flex; flex-wrap: wrap; gap: 2px;">
+                ${connectorItems}
+              </div>
+            </div>
+          `;
+        }
+    
+    return '';
+  }
+
   function openMobileSheet(feature) {
     if (window.innerWidth > 900) return;
     
@@ -2148,8 +2244,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (props.post_type === 'charging_location') {
       // Pro nabíječky použít stejnou logiku jako piny
       const mode = getChargerMode(props);
-      const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
-      const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
+      const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+      const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
       if (mode === 'hybrid') {
         return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
       }
@@ -2185,10 +2281,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Nový obsah s kompaktním designem
     const finalHTML = `
       <div class="sheet-header">
-        <div class="sheet-icon" style="background: ${getSquareColor(p)};">
+        <div class="sheet-icon" style="background: ${getSquareColor(p)}; width: 48px; height: 48px;">
           ${getTypeIcon(p)}
         </div>
-        <div class="sheet-title">${p.title || ''}</div>
+        <div class="sheet-content-wrapper">
+          <div class="sheet-title">${p.title || ''}</div>
+          ${p.post_type === 'charging_location' ? generateMobileConnectorsSection(p) : ''}
+        </div>
       </div>
       
       <div class="sheet-actions-row">
@@ -2295,7 +2394,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     const p = feature.properties || {};
-    const type = (p.post_type === 'charging_location') ? 'poi' : 'charging_location';
+    const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
     
     // Zkontrolovat, zda má bod nearby data
     const hasNearbyData = await checkNearbyDataAvailable(centerId, type);
@@ -2341,8 +2440,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           const getNearbySquareColor = (props) => {
             if (props.post_type === 'charging_location') {
               const mode = getChargerMode(props);
-              const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
-              const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
+              const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+              const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
               if (mode === 'hybrid') {
                 return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
               }
@@ -2427,8 +2526,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
 
-      const restBase = (window.dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external').replace(/\/$/, '');
-      const nonce = window.dbMapData?.restNonce || '';
+      const restBase = (dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external').replace(/\/$/, '');
+      const nonce = dbMapData?.restNonce || '';
       try { console.debug('[DB Map][POI enrich] fetching', { url: `${restBase}/${props.id}`, hasNonce: !!nonce }); } catch(_) {}
       const response = await fetch(`${restBase}/${props.id}`, {
         headers: {
@@ -2489,16 +2588,31 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (typeof data.servesLunch !== 'undefined') enrichedProps.poi_serves_lunch = !!data.servesLunch;
       if (typeof data.servesDinner !== 'undefined') enrichedProps.poi_serves_dinner = !!data.servesDinner;
       if (typeof data.wheelchairAccessibleEntrance !== 'undefined') enrichedProps.poi_wheelchair = !!data.wheelchairAccessibleEntrance;
-      if (Array.isArray(data.photos) && data.photos.length) {
-        enrichedProps.poi_photos = data.photos;
+      // Preferovat fallback metadata, pak standardní fotky
+      if (payload.data?.fallback_metadata && payload.data.fallback_metadata.photos) {
+        enrichedProps.poi_photos = payload.data.fallback_metadata.photos;
+        if (!enrichedProps.image && payload.data.fallback_metadata.photos[0]) {
+          const firstPhoto = payload.data.fallback_metadata.photos[0];
+          if (firstPhoto.street_view_url) {
+            enrichedProps.image = firstPhoto.street_view_url;
+          }
+        }
+      } else if (Array.isArray(payload.data?.photos) && payload.data.photos.length) {
+        enrichedProps.poi_photos = payload.data.photos;
         if (!enrichedProps.image) {
-          const firstPhoto = data.photos[0];
+          const firstPhoto = payload.data.photos[0];
           if (firstPhoto && typeof firstPhoto === 'object') {
             if (firstPhoto.url) {
               enrichedProps.image = firstPhoto.url;
-            } else if ((firstPhoto.photo_reference || firstPhoto.photoReference) && window.dbMapData?.googleApiKey) {
+            } else if ((firstPhoto.photo_reference || firstPhoto.photoReference) && dbMapData?.googleApiKey) {
               const ref = firstPhoto.photo_reference || firstPhoto.photoReference;
-              enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${window.dbMapData.googleApiKey}`;
+              if (ref === 'streetview' && firstPhoto.street_view_url) {
+                // Street View obrázek
+                enrichedProps.image = firstPhoto.street_view_url;
+              } else if (ref !== 'streetview') {
+                // Google Places foto
+                enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+              }
             }
           } else if (typeof firstPhoto === 'string') {
             enrichedProps.image = firstPhoto;
@@ -2526,6 +2640,207 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
+  async function enrichChargingFeature(feature) {
+    if (!feature || !feature.properties || feature.properties.post_type !== 'charging_location') {
+      return feature;
+    }
+
+    const props = feature.properties;
+    try { console.debug('[DB Map][Charging enrich] start', { id: props.id, title: props.title, hasGoogleDetails: !!props.charging_google_details, hasOcmDetails: !!props.charging_ocm_details }); } catch (_) {}
+
+    const hasFreshLive = props.charging_live_expires_at && Date.parse(props.charging_live_expires_at) > Date.now();
+    const hasMeta = !!(props.charging_google_details || props.charging_ocm_details);
+    const hasDbConnectors = !!(props.db_connectors && props.db_connectors.length > 0);
+    
+    // Volat REST endpoint pokud nemáme fresh live data, metadata, nebo db_connectors
+    if (hasFreshLive && hasMeta && hasDbConnectors) {
+      return feature;
+    }
+
+    const restBase = (dbMapData?.chargingExternalUrl || '/wp-json/db/v1/charging-external').replace(/\/$/, '');
+    const nonce = dbMapData?.restNonce || '';
+    try { console.debug('[DB Map][Charging enrich] fetching', { url: `${restBase}/${props.id}`, hasNonce: !!nonce }); } catch (_) {}
+    const response = await fetch(`${restBase}/${props.id}`, {
+      headers: {
+        'X-WP-Nonce': nonce,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      try { console.warn('[DB Map][Charging enrich] failed', response.status); } catch (_) {}
+      return feature;
+    }
+
+    const payload = await response.json();
+    const enriched = { ...feature, properties: { ...props } };
+    const enrichedProps = enriched.properties;
+    const metadata = payload?.metadata || {};
+
+    if (metadata.google) {
+      enrichedProps.charging_google_details = metadata.google;
+      if (!enrichedProps.image && metadata.google.photos && metadata.google.photos.length > 0) {
+        const first = metadata.google.photos[0];
+        if (first.url) {
+          enrichedProps.image = first.url;
+        } else if (first.photo_reference === 'streetview' && first.street_view_url) {
+          // Street View obrázek
+          enrichedProps.image = first.street_view_url;
+        } else if (first.photo_reference && first.photo_reference !== 'streetview' && dbMapData?.googleApiKey) {
+          // Nové Google Places API v1 foto
+          if (first.photo_reference.startsWith('places/')) {
+            // Nové API v1 formát
+            enrichedProps.image = `https://places.googleapis.com/v1/${first.photo_reference}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
+          } else if (first.photo_reference !== 'streetview') {
+            // Staré API formát (fallback)
+            enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${first.photo_reference}&key=${dbMapData.googleApiKey}`;
+          }
+        }
+      }
+      // Přidat fallback metadata (Street View pro nabíječky ve frontě)
+      if (payload.data?.fallback_metadata && payload.data.fallback_metadata.photos) {
+        enrichedProps.poi_photos = payload.data.fallback_metadata.photos;
+        if (!enrichedProps.image && payload.data.fallback_metadata.photos[0]) {
+          const firstPhoto = payload.data.fallback_metadata.photos[0];
+          if (firstPhoto.street_view_url) {
+            enrichedProps.image = firstPhoto.street_view_url;
+          }
+        }
+      }
+      
+      if (metadata.google.photos) {
+        enrichedProps.poi_photos = (metadata.google.photos || []).map((photo) => {
+          if (photo.url) return photo;
+          if (photo.photo_reference === 'streetview' && photo.street_view_url) {
+            return {
+              url: photo.street_view_url,
+              source: 'street_view'
+            };
+          }
+          if ((photo.photo_reference || photo.photoReference) && photo.photo_reference !== 'streetview' && dbMapData?.googleApiKey) {
+            const ref = photo.photo_reference || photo.photoReference;
+            let url;
+            if (ref.startsWith('places/')) {
+              // Nové API v1 formát
+              url = `https://places.googleapis.com/v1/${ref}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
+            } else if (ref !== 'streetview') {
+              // Staré API formát (fallback)
+              url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+            }
+            return {
+              url: url,
+              source: 'google_places'
+            };
+          }
+          return photo;
+        });
+      }
+      if (metadata.google.formatted_address && !enrichedProps.address) {
+        enrichedProps.address = metadata.google.formatted_address;
+      }
+    }
+
+    if (metadata.open_charge_map) {
+      enrichedProps.charging_ocm_details = metadata.open_charge_map;
+      if ((!Array.isArray(enrichedProps.connectors) || !enrichedProps.connectors.length) && Array.isArray(metadata.open_charge_map.connectors)) {
+        enrichedProps.connectors = metadata.open_charge_map.connectors;
+      }
+      if (!enrichedProps.station_max_power_kw && Array.isArray(metadata.open_charge_map.connectors)) {
+        const max = metadata.open_charge_map.connectors.reduce((acc, conn) => Math.max(acc, conn.power_kw || conn.powerKw || 0), 0);
+        if (max > 0) enrichedProps.station_max_power_kw = max;
+      }
+      if (!enrichedProps.evse_count && metadata.open_charge_map.status_summary && typeof metadata.open_charge_map.status_summary.total !== 'undefined') {
+        enrichedProps.evse_count = metadata.open_charge_map.status_summary.total;
+      }
+    }
+
+    const live = payload?.live_status || null;
+    if (live) {
+      if (typeof live.available === 'number') enrichedProps.charging_live_available = live.available;
+      if (typeof live.total === 'number') enrichedProps.charging_live_total = live.total;
+      if (live.source) enrichedProps.charging_live_source = live.source;
+      if (live.updated_at) enrichedProps.charging_live_updated_at = live.updated_at;
+      enrichedProps.charging_live_expires_at = new Date(Date.now() + 90 * 1000).toISOString();
+    }
+    
+    // Přidat konektory z databáze
+    if (payload?.data?.db_connectors) {
+      enrichedProps.db_connectors = payload.data.db_connectors;
+      
+      // Převést db_connectors na connectors pro frontend kompatibilitu
+      if (!enrichedProps.connectors || !enrichedProps.connectors.length) {
+        enrichedProps.connectors = payload.data.db_connectors.map(conn => ({
+          type: conn.type,
+          count: conn.count,
+          power: conn.power,
+          quantity: conn.count,
+          power_kw: conn.power,
+          connector_power_kw: conn.power,
+          source: 'database'
+        }));
+      }
+    }
+    
+    // Google konektory se nepoužívají - pouze pro porovnání počtů a fotky
+    
+    // Přidat flag o dostupnosti live dat
+    if (payload?.data?.charging_live_data_available !== undefined) {
+      enrichedProps.charging_live_data_available = payload.data.charging_live_data_available;
+    }
+    
+    // Zpracovat fallback metadata (Street View) i když není Google metadata
+    if (payload?.data?.fallback_metadata && payload.data.fallback_metadata.photos && !enrichedProps.image) {
+      enrichedProps.poi_photos = payload.data.fallback_metadata.photos;
+      const firstPhoto = payload.data.fallback_metadata.photos[0];
+      if (firstPhoto && firstPhoto.street_view_url) {
+        enrichedProps.image = firstPhoto.street_view_url;
+      }
+    }
+
+    enrichedProps.charging_external_expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    try { console.debug('[DB Map][Charging enrich] enriched props applied', { id: enrichedProps.id, hasLive: typeof enrichedProps.charging_live_available !== 'undefined', hasImage: !!enrichedProps.image, hasPhotos: !!enrichedProps.poi_photos }); } catch (_) {}
+    return enriched;
+  }
+
+  function shouldFetchChargingDetails(props) {
+    if (!props) return false;
+    const liveExpire = props.charging_live_expires_at ? Date.parse(props.charging_live_expires_at) : 0;
+    const needLive = !(typeof props.charging_live_available === 'number' && typeof props.charging_live_total === 'number');
+    const needMeta = !(props.charging_google_details || props.charging_ocm_details);
+    const liveFresh = liveExpire && Date.now() < (liveExpire - 1000);
+    const shouldFetch = needMeta || needLive || !liveFresh;
+    
+    // Debug výpis
+    try { 
+      console.debug('[DB Map][Charging] shouldFetchChargingDetails', {
+        id: props.id,
+        needMeta,
+        needLive,
+        liveFresh,
+        shouldFetch,
+        hasGoogleDetails: !!props.charging_google_details,
+        hasOcmDetails: !!props.charging_ocm_details
+      }); 
+    } catch(_) {}
+    
+    return shouldFetch;
+  }
+
+  function formatRelativeLiveTime(dateString) {
+    if (!dateString) return '';
+    const ts = Date.parse(dateString);
+    if (!ts) return '';
+    const diffMs = Date.now() - ts;
+    if (diffMs < 60000) return 'před chvílí';
+    const diffMinutes = Math.round(diffMs / 60000);
+    if (diffMinutes === 1) return 'před minutou';
+    if (diffMinutes < 60) return `před ${diffMinutes} minutami`;
+    const diffHours = Math.round(diffMinutes / 60);
+    if (diffHours === 1) return 'před hodinou';
+    if (diffHours < 6) return `před ${diffHours} hodinami`;
+    return new Date(ts).toLocaleString('cs-CZ', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+  }
+
   // Určí, zda má smysl volat REST pro doplnění detailu (kvůli loaderu)
   function shouldFetchPOIDetails(props) {
     if (!props) return false;
@@ -2543,7 +2858,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Funkce pro načítání detailu POI
   async function loadPOIDetail(poiId, lat, lng) {
     try {
-      const nonce = window.dbMapData?.restNonce || '';
+      const nonce = dbMapData?.restNonce || '';
       const response = await fetch(`/wp-json/db/v1/map?lat=${lat}&lng=${lng}&radius=0.1&post_types=poi&limit=1`, {
         headers: {
           'X-WP-Nonce': nonce,
@@ -2647,8 +2962,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const getCacheItemSquareColor = (props) => {
         if (props.post_type === 'charging_location') {
           const mode = getChargerMode(props);
-          const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
-          const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
+          const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+          const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
           if (mode === 'hybrid') {
             return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
           }
@@ -2811,7 +3126,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     const p = feature.properties || {};
-    const type = (p.post_type === 'charging_location') ? 'poi' : 'charging_location';
+    const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
     
     // Pokus o načtení s retry logikou
     let attempts = 0;
@@ -2886,7 +3201,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     try {
       const response = await fetch(`/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=1`, {
         headers: {
-          'X-WP-Nonce': window.dbMapData?.restNonce || ''
+          'X-WP-Nonce': dbMapData?.restNonce || ''
         }
       });
       
@@ -2910,7 +3225,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const requestId = currentIsochronesRequestId;
     clearIsochrones();
     const p = centerFeature.properties;
-    const type = (p.post_type === 'charging_location') ? 'poi' : 'charging_location';
+    const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
     
     // Zkontrolovat, zda má bod nearby data
     const hasNearbyData = await checkNearbyDataAvailable(p.id, type);
@@ -3218,6 +3533,26 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
 
+    if (feature && feature.properties && feature.properties.post_type === 'charging_location') {
+      const needsChargingEnrich = shouldFetchChargingDetails(feature.properties);
+      try { console.debug('[DB Map][Detail] charging_location detected', { id: feature.properties.id, needsChargingEnrich, hasGoogleDetails: !!feature.properties.charging_google_details, hasOcmDetails: !!feature.properties.charging_ocm_details }); } catch(_) {}
+      if (needsChargingEnrich) {
+        try { console.debug('[DB Map][Detail] enriching charging now', { id: feature.properties.id }); } catch(_) {}
+        try {
+          const enrichedCharging = await enrichChargingFeature(feature);
+          if (enrichedCharging && enrichedCharging !== feature) {
+            feature = enrichedCharging;
+            featureCache.set(enrichedCharging.properties.id, enrichedCharging);
+            try { console.debug('[DB Map][Detail] charging enriched', { id: enrichedCharging.properties.id, live: enrichedCharging.properties.charging_live_available }); } catch(_) {}
+          }
+        } catch (err) {
+          try { console.warn('[DB Map][Detail] charging enrich failed', err); } catch(_) {}
+        }
+      } else {
+        try { console.debug('[DB Map][Detail] charging enrich skipped', { id: feature.properties.id, reason: 'has fresh data' }); } catch(_) {}
+      }
+    }
+
     const p = feature.properties || {};
     const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
     const lat = coords ? coords[1] : null;
@@ -3232,9 +3567,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (firstPhoto && typeof firstPhoto === 'object') {
         if (firstPhoto.url) {
           heroImageUrl = firstPhoto.url;
-        } else if ((firstPhoto.photo_reference || firstPhoto.photoReference) && window.dbMapData?.googleApiKey) {
+        } else if ((firstPhoto.photo_reference || firstPhoto.photoReference) && dbMapData?.googleApiKey) {
           const ref = firstPhoto.photo_reference || firstPhoto.photoReference;
-          heroImageUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${window.dbMapData.googleApiKey}`;
+          if (ref === 'streetview' && firstPhoto.street_view_url) {
+            // Street View obrázek
+            heroImageUrl = firstPhoto.street_view_url;
+          } else if (ref.startsWith('places/')) {
+            // Nové API v1 formát
+            heroImageUrl = `https://places.googleapis.com/v1/${ref}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
+          } else if (ref !== 'streetview') {
+            // Staré API formát (fallback)
+            heroImageUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+          }
         }
       } else if (typeof firstPhoto === 'string') {
         heroImageUrl = firstPhoto;
@@ -3244,7 +3588,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!heroImageUrl && p.poi_photo_url) {
       heroImageUrl = p.poi_photo_url;
     }
-    try { console.log('[DB Map][Detail] heroImageUrl', heroImageUrl); } catch(_) {}
+    try { console.log('[DB Map][Detail] heroImageUrl', heroImageUrl, 'p.image:', p.image, 'p.poi_photos:', p.poi_photos); } catch(_) {}
     const img = heroImageUrl 
       ? `<img class="hero-img" src="${heroImageUrl}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">`
       : '';
@@ -3256,9 +3600,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         let u = '';
         if (ph && typeof ph === 'object') {
           if (ph.url) u = ph.url;
-          else if ((ph.photo_reference || ph.photoReference) && window.dbMapData?.googleApiKey) {
+          else if ((ph.photo_reference || ph.photoReference) && dbMapData?.googleApiKey) {
             const ref = ph.photo_reference || ph.photoReference;
-            u = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${window.dbMapData.googleApiKey}`;
+            if (ref === 'streetview' && ph.street_view_url) {
+              u = ph.street_view_url;
+            } else if (ref !== 'streetview') {
+              u = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+            }
           }
         } else if (typeof ph === 'string') {
           u = ph;
@@ -3282,7 +3630,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Generování detailních informací o konektorech pro nabíječky
     let connectorsDetail = '';
     if (p.post_type === 'charging_location') {
-      const connectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+      // Použít konektory z původních mapových dat - nezávisle na cache
+      const mapConnectors = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+      const dbConnectors = Array.isArray(p.db_connectors) ? p.db_connectors : [];
+      
+      // Preferovat db_connectors z REST API (obsahuje power), pak mapConnectors jako fallback
+      let connectors = [];
+      if (dbConnectors.length > 0) {
+        connectors = dbConnectors;
+      } else if (mapConnectors.length > 0) {
+        connectors = mapConnectors;
+      }
+      
       if (connectors && connectors.length) {
         // Seskupit konektory podle typu a spočítat (stejná logika jako v mobile sheet)
         const connectorCounts = {};
@@ -3290,7 +3649,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           const typeKey = getConnectorTypeKey(c);
           if (typeKey) {
             // power – vem cokoliv rozumného (číselo nebo str s číslem)
-            const power = c.connector_power_kw || c.power_kw || c.power || c.vykon || '';
+            const power = c.power || c.connector_power_kw || c.power_kw || c.vykon || '';
             // quantity – použij reálný počet z dat, nebo 1 jako fallback
             const quantity = parseInt(c.quantity || c.count || c.connector_count || 1);
             
@@ -3301,34 +3660,62 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         });
         
-        // Vytvořit detailní HTML pro konektory s ikonami
+        // Vytvořit HTML pro konektory jako ikony s čísly na jednom řádku
         const connectorItems = Object.entries(connectorCounts).map(([typeKey, info]) => {
           const connector = connectors.find(c => {
             const cType = getConnectorTypeKey(c);
             return cType === typeKey;
           });
           
-          const iconUrl = getConnectorIconUrl(connector);
-          const powerText = info.power ? ` (${info.power} kW)` : '';
+          const iconUrl = connector ? getConnectorIconUrl(connector) : null;
+          const powerText = info.power ? `${info.power} kW` : '';
+          
+          // Zkontrolovat live dostupnost z API
+          let availabilityText = info.count;
+          let isOutOfService = false;
+          
+          // Zkontrolovat stav "mimo provoz" z Google API
+          if (p.business_status === 'CLOSED_TEMPORARILY' || p.business_status === 'CLOSED_PERMANENTLY') {
+            isOutOfService = true;
+          }
+          
+          // Zobrazit pouze počet konektorů z databáze - bez dostupnosti z Google API
+          if (isOutOfService) {
+            availabilityText = 'MIMO PROVOZ';
+          } else {
+            // Zobrazit pouze celkový počet z databáze
+            availabilityText = info.count.toString();
+          }
+          
+          // Určit styly podle stavu
+          const containerStyle = isOutOfService 
+            ? 'display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #fee; border-radius: 6px; border: 1px solid #fcc; opacity: 0.7;'
+            : 'display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;';
+          
+          const textStyle = isOutOfService 
+            ? 'font-weight: 600; color: #c33; font-size: 0.9em;'
+            : 'font-weight: 600; color: #333; font-size: 0.9em;';
           
           if (iconUrl) {
-            // Zobraz s ikonou a počtem (bez textového popisu)
-            return `<div style="margin: 8px 0; padding: 12px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #049FE8; display: flex; align-items: center; gap: 12px;">
-              <img src="${iconUrl}" style="width: 24px; height: 24px; object-fit: contain;" alt="${typeKey}" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline'">
-              <span style="display: none;">${typeKey.toUpperCase()}: ${info.count}x${powerText}</span>
-              <div style="color: #666; font-size: 0.9em;">${info.count}x${powerText}</div>
+            // Zobraz jako ikonu s číslem (ikona + počet horizontálně, výkon pod nimi)
+            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <img src="${iconUrl}" style="width: 20px; height: 20px; object-fit: contain;" alt="${typeKey}">
+                <span style="${textStyle}">${availabilityText}</span>
+              </div>
+              ${powerText ? `<span style="color: #666; font-size: 0.8em;">${powerText}</span>` : ''}
             </div>`;
           } else {
             // Fallback - pouze text
-            return `<div style="margin: 8px 0; padding: 12px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #049FE8;">
-              <div style="color: #666; font-size: 0.9em;">${typeKey.toUpperCase()}: ${info.count}x${powerText}</div>
+            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
+              <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
+              ${powerText ? `<span style="color: #666; font-size: 0.8em;">${powerText}</span>` : ''}
             </div>`;
           }
         }).join('');
         
         connectorsDetail = `
-          <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
-            <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">Nabíjecí konektory</div>
+          <div style="margin: 16px; display: flex; flex-wrap: wrap; gap: 4px;">
             ${connectorItems}
           </div>
         `;
@@ -3398,9 +3785,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (photo && typeof photo === 'object') {
           if (photo.url) {
             photoUrl = photo.url;
-          } else if ((photo.photo_reference || photo.photoReference) && window.dbMapData?.googleApiKey) {
+          } else if ((photo.photo_reference || photo.photoReference) && dbMapData?.googleApiKey) {
             const ref = photo.photo_reference || photo.photoReference;
-            photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${window.dbMapData?.googleApiKey || ''}`;
+            if (ref === 'streetview' && photo.street_view_url) {
+              photoUrl = photo.street_view_url;
+            } else if (ref !== 'streetview') {
+              photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${ref}&key=${dbMapData?.googleApiKey || ''}`;
+            }
           }
         } else if (typeof photo === 'string') {
           photoUrl = photo;
@@ -3512,7 +3903,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     // Admin panel HTML (pouze pro adminy/editory)
-    const adminPanel = (window.dbMapData && window.dbMapData.isAdmin) ? `
+    const adminPanel = (dbMapData && dbMapData.isAdmin) ? `
       <div class="db-admin-panel">
         <h3><i class="db-icon-admin"></i>Admin panel</h3>
         <div class="db-admin-actions">
@@ -3541,8 +3932,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const getDetailSquareColor = (props) => {
       if (props.post_type === 'charging_location') {
         const mode = getChargerMode(props);
-        const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
-        const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
+        const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+        const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
         if (mode === 'hybrid') {
           return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
         }
@@ -3579,6 +3970,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Základní info blok
     const infoRows = [];
     if (ratingInfo) infoRows.push(ratingInfo);
+    if (connectorsDetail) infoRows.push(connectorsDetail);
     if (openingHoursSection) infoRows.push(openingHoursSection);
     if (contactSection) infoRows.push(contactSection);
 
@@ -3619,9 +4011,15 @@ document.addEventListener('DOMContentLoaded', async function() {
           const fp = p.poi_photos[0];
           if (fp && typeof fp === 'object') {
             if (fp.url) url = fp.url;
-            else if ((fp.photo_reference || fp.photoReference) && window.dbMapData?.googleApiKey) {
+            else if ((fp.photo_reference || fp.photoReference) && dbMapData?.googleApiKey) {
               const ref = fp.photo_reference || fp.photoReference;
-              url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${window.dbMapData.googleApiKey}`;
+              if (ref.startsWith('places/')) {
+                // Nové API v1 formát
+                url = `https://places.googleapis.com/v1/${ref}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
+              } else if (ref !== 'streetview') {
+                // Staré API formát (fallback)
+                url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+              }
             }
           } else if (typeof fp === 'string') {
             url = fp;
@@ -3629,10 +4027,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         if (!url && p.poi_photo_url) url = p.poi_photo_url;
 
-        // Pokud pořád nic, vytáhni z poi-external
+        // Pokud pořád nic, vytáhni z externího endpointu podle typu
         if (!url) {
-          const restBase = (window.dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external').replace(/\/$/, '');
-          const nonce = window.dbMapData?.restNonce || '';
+          const restBase = (p.post_type === 'charging_location' 
+            ? (dbMapData?.chargingExternalUrl || '/wp-json/db/v1/charging-external')
+            : (dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external')
+          ).replace(/\/$/, '');
+          const nonce = dbMapData?.restNonce || '';
           const r = await fetch(`${restBase}/${p.id}`, { headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' } });
           if (r.ok) {
             const payload = await r.json();
@@ -3671,12 +4072,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       };
       bindThumbClicks();
-      // Pokud nejsou k dispozici žádné náhledy, zkus je získat z poi-external a doplnit
+      // Pokud nejsou k dispozici žádné náhledy, zkus je získat z externího endpointu podle typu a doplnit
       if (!detailModal.querySelector('.hero-thumbs') || !detailModal.querySelector('.hero-thumbs .hero-thumb')) {
         (async () => {
           try {
-            const restBase = (window.dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external').replace(/\/$/, '');
-            const nonce = window.dbMapData?.restNonce || '';
+            const restBase = (p.post_type === 'charging_location' 
+              ? (dbMapData?.chargingExternalUrl || '/wp-json/db/v1/charging-external')
+              : (dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external')
+            ).replace(/\/$/, '');
+            const nonce = dbMapData?.restNonce || '';
             const r = await fetch(`${restBase}/${p.id}`, { headers: { 'X-WP-Nonce': nonce, 'Content-Type': 'application/json' } });
             if (!r.ok) return;
             const payload = await r.json();
@@ -3685,9 +4089,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             for (const ph of photos) {
               if (typeof ph === 'object') {
                 if (ph.url) urls.push(ph.url);
-                else if ((ph.photo_reference || ph.photoReference) && window.dbMapData?.googleApiKey) {
+                else if ((ph.photo_reference || ph.photoReference) && dbMapData?.googleApiKey) {
                   const ref = ph.photo_reference || ph.photoReference;
-                  urls.push(`https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${window.dbMapData.googleApiKey}`);
+                  if (ref === 'streetview' && ph.street_view_url) {
+                    urls.push(ph.street_view_url);
+                  } else if (ref !== 'streetview') {
+                    urls.push(`https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${ref}&key=${dbMapData.googleApiKey}`);
+                  }
                 }
               }
               if (urls.length >= 3) break;
@@ -3723,9 +4131,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             const fp = p.poi_photos[0];
             if (fp && typeof fp === 'object') {
               if (fp.url) url = fp.url;
-              else if ((fp.photo_reference || fp.photoReference) && window.dbMapData?.googleApiKey) {
+              else if ((fp.photo_reference || fp.photoReference) && dbMapData?.googleApiKey) {
                 const ref = fp.photo_reference || fp.photoReference;
-                url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${window.dbMapData.googleApiKey}`;
+                if (ref === 'streetview' && fp.street_view_url) {
+                  url = fp.street_view_url;
+                } else if (ref !== 'streetview') {
+                  url = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${ref}&key=${dbMapData.googleApiKey}`;
+                }
               }
             } else if (typeof fp === 'string') {
               url = fp;
@@ -3976,9 +4388,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   // Načti GeoJSON body
-  const restUrl = window.dbMapData?.restUrl || '/wp-json/db/v1/map';
+  const restUrl = dbMapData?.restUrl || '/wp-json/db/v1/map';
   // Zkusit najít správnou cestu k ikonám
-  let iconsBase = window.dbMapData?.iconsBase || 'assets/icons/';
+  let iconsBase = dbMapData?.iconsBase || 'assets/icons/';
   
   // Pokud je cesta relativní, použít WordPress plugin URL
   if (iconsBase.startsWith('assets/')) {
@@ -4004,7 +4416,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   function ensureChargerSvgColoredLoaded() {
     if (__dbChargerSvgColored !== null || __dbChargerSvgLoading) return;
     try {
-      const color = (window.dbMapData && window.dbMapData.chargerIconColor) || '#ffffff';
+      const color = (dbMapData && dbMapData.chargerIconColor) || '#ffffff';
       // Nový název souboru bez vnitřního fill: "charger ivon no fill.svg"
       const chargerSvgFile = 'charger ivon no fill.svg';
       const url = (iconsBase || '') + encodeURIComponent(chargerSvgFile);
@@ -4047,7 +4459,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     try {
       // Načíst všechny body bez radius filtru
-      const restUrl = window.dbMapData?.restUrl || '/wp-json/db/v1/map';
+      const restUrl = dbMapData?.restUrl || '/wp-json/db/v1/map';
       const url = new URL(restUrl, window.location.origin);
       
       const response = await fetch(url, {
@@ -4103,7 +4515,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Pokud je fileName jen název souboru (bez cesty), přidáme cestu k ikonám
     if (!fileName.includes('/')) {
-        const iconUrl = `${window.dbMapData.pluginUrl}assets/icons/${fileName}`;
+        const iconUrl = `${dbMapData.pluginUrl}assets/icons/${fileName}`;
         // Na localhost zachovat HTTP, jinak převést na HTTPS
         if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
             return iconUrl;
@@ -4112,7 +4524,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Pokud je fileName s cestou, použijeme ho přímo
-    const iconUrl = `${window.dbMapData.pluginUrl}${fileName}`;
+    const iconUrl = `${dbMapData.pluginUrl}${fileName}`;
     // Na localhost zachovat HTTP, jinak převést na HTTPS
     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
         return iconUrl;
@@ -4120,66 +4532,79 @@ document.addEventListener('DOMContentLoaded', async function() {
     return iconUrl.replace(/^http:\/\//, 'https://');
   }
   
-  // Získání ikony konektoru z adminu nebo fallback
+  // Získání ikony konektoru - preferovat SVG z databáze
   function getConnectorIconUrl(connector) {
     if (!connector) return '';
 
-    // Admin ikona – může být URL, filename nebo slug
+    // 1. Preferovat SVG ikonu z databáze (nový systém)
+    if (connector.svg_icon) {
+      console.log('[DEBUG] Using database SVG icon');
+      return 'data:image/svg+xml;base64,' + btoa(connector.svg_icon);
+    }
+
+    // 2. Fallback na ikonu z databáze (WordPress uploads)
     if (connector.icon && connector.icon.trim()) {
       const url = getIconUrl(connector.icon.trim());
-      if (url) return url;
-    }
-
-    // Fallback na typ
-    const typeKey = getConnectorTypeKey(connector);
-    if (!typeKey) return '';
-
-    const iconFile = getConnectorIconByType(typeKey);
-    if (iconFile) {
-      // iconsBase je už absolutní (viz inicializace), ale pro jistotu fallback:
-      const base = (typeof iconsBase === 'string' && iconsBase)
-        ? iconsBase
-        : (window.dbMapData?.pluginUrl ? (window.dbMapData.pluginUrl + 'assets/icons/') : '/wp-content/plugins/dobity-baterky/assets/icons/');
-      const fullUrl = base + iconFile;
-      // Na localhost zachovat HTTP, jinak převést na HTTPS
-      if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-        return fullUrl;
+      if (url) {
+        return url;
       }
-      return fullUrl.replace(/^http:\/\//, 'https://');
     }
+
+    // 3. Fallback na SVG ikony podle typu - ZAKÁZÁNO (generické ikony)
+    // const typeKey = getConnectorTypeKey(connector);
+    // if (typeKey) {
+    //   const iconFile = getConnectorIconByType(typeKey);
+    //   if (iconFile) {
+    //     // Použít iconsBase z dbMapData (nastaveno v PHP)
+    //     const base = dbMapData?.iconsBase || '/wp-content/plugins/dobity-baterky/assets/icons/';
+    //     const fullUrl = base + iconFile;
+    //     
+    //     console.log('[DEBUG] Using fallback SVG icon:', {
+    //         typeKey: typeKey,
+    //         iconFile: iconFile,
+    //         fullUrl: fullUrl
+    //     });
+    //     
+    //     // Na localhost zachovat HTTP, jinak převést na HTTPS
+    //     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+    //       return fullUrl;
+    //     }
+    //     return fullUrl.replace(/^http:\/\//, 'https://');
+    //   }
+    // }
 
     return '';
   }
   
-  // Fallback mapování pro typy konektorů (pouze pokud admin nemá ikonu)
-  function getConnectorIconByType(connectorType) {
-    if (!connectorType) return '';
-    const type = connectorType.toLowerCase().trim();
+  // Fallback mapování pro typy konektorů - ZAKÁZÁNO (generické ikony)
+  // function getConnectorIconByType(connectorType) {
+  //   if (!connectorType) return '';
+  //   const type = connectorType.toLowerCase().trim();
 
-    // Mapování názvů konektorů na soubory
-    const connectorIconMap = {
-      'type 2': 'charger_type-11.svg',
-      'type-2': 'charger_type-11.svg',
-      'mennekes': 'charger_type-11.svg',
-      'iec 62196 type 2': 'charger_type-11.svg',
+  //   // Mapování názvů konektorů na soubory
+  //   const connectorIconMap = {
+  //     'type 2': 'charger_type-11.svg',
+  //     'type-2': 'charger_type-11.svg',
+  //     'mennekes': 'charger_type-11.svg',
+  //     'iec 62196 type 2': 'charger_type-11.svg',
 
-      'ccs': 'charger_type-12.svg',
-      'ccs2': 'charger_type-12.svg',
-      'ccs combo 2': 'charger_type-12.svg',
-      'combo 2': 'charger_type-12.svg',
+  //     'ccs': 'charger_type-12.svg',
+  //     'ccs2': 'charger_type-12.svg',
+  //     'ccs combo 2': 'charger_type-12.svg',
+  //     'combo 2': 'charger_type-12.svg',
 
-      'chademo': 'charger_type-13.svg',
+  //     'chademo': 'charger_type-13.svg',
 
-      'schuko': 'charger_type-14.svg',
-      'domaci zasuvka': 'charger_type-14.svg',
+  //     'schuko': 'charger_type-14.svg',
+  //     'domaci zasuvka': 'charger_type-14.svg',
 
-      'gb/t': 'charger_type-36.svg'
-    };
+  //     'gb/t': 'charger_type-36.svg'
+  //   };
 
-    return connectorIconMap[type] || '';
-  }
+  //   return connectorIconMap[type] || '';
+  // }
   function getDbLogoHtml(size) {
-    const url = (window.dbMapData && dbMapData.dbLogoUrl) ? dbMapData.dbLogoUrl : null;
+    const url = (dbMapData && dbMapData.dbLogoUrl) ? dbMapData.dbLogoUrl : null;
     // Bílý podklad pro čitelnost, oranžový obrys dle brandbooku - čtvercový
     if (!url) return '<div style="width:'+size+'px;height:'+size+'px;border-radius:4px;background:#ffffff;border:2px solid #FF6A4B;color:#FF6A4B;display:flex;align-items:center;justify-content:center;font-weight:700;pointer-events:none;">DB</div>';
     return '<div style="width:'+size+'px;height:'+size+'px;border-radius:4px;background:#ffffff;border:2px solid #FF6A4B;display:flex;align-items:center;justify-content:center;pointer-events:none;">'
@@ -4826,10 +5251,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         // Primárně otevři spodní náhled (sheet) a zvýrazni pin; modal jen když to uživatel vyžádá
         highlightCardById(p.id);
+        
+        // Otevři mobile sheet na mobilu nebo detail modal na desktopu
+        if (window.innerWidth <= 900) {
+          openMobileSheet(f);
+        } else {
+          openDetailModal(f);
+        }
         map.setView([lat, lng], 15, {animate:true});
         sortMode = 'distance-active';
         renderCards('', p.id);
-        openMobileSheet(f);
       });
       // Double-click na marker: otevři modal s detailem
       marker.on('dblclick', () => {
@@ -4853,8 +5284,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else if (p.post_type === 'charging_location') {
           // Pro nabíjecí místa použít hybridní pin ikonu
           const mode = getChargerMode(p);
-          const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
-          const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
+          const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+          const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
           if (mode === 'hybrid') {
             fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><defs><linearGradient id="card-grad-${p.id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="${acColor}"/><stop offset="100%" stop-color="${dcColor}"/></linearGradient></defs><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="url(#card-grad-${p.id})"/></svg>`;
           } else {
@@ -4864,21 +5295,21 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else {
           // Default ikona pro ostatní typy – použij centrální barvy
           if (p.post_type === 'rv_spot') {
-            const rvColor = (window.dbMapData && window.dbMapData.rvColor) || '#FCE67D';
+            const rvColor = (dbMapData && dbMapData.rvColor) || '#FCE67D';
             fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${rvColor}"/></svg>`;
           } else if (p.post_type === 'poi') {
-            const poiColor = (window.dbMapData && window.dbMapData.poiColor) || '#FCE67D';
+            const poiColor = (dbMapData && dbMapData.poiColor) || '#FCE67D';
             fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${poiColor}"/></svg>`;
           } else {
-            const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
+            const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
             fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${acColor}"/></svg>`;
           }
         }
         const bgColor = (p.post_type === 'rv_spot')
-          ? ((window.dbMapData && window.dbMapData.rvColor) || '#FCE67D')
+          ? ((dbMapData && dbMapData.rvColor) || '#FCE67D')
           : (p.post_type === 'poi')
-            ? ((window.dbMapData && window.dbMapData.poiColor) || '#FCE67D')
-            : ((window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8');
+            ? ((dbMapData && dbMapData.poiColor) || '#FCE67D')
+            : ((dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8');
         imgHtml = `<div class="db-map-card-img" style="background:${bgColor};display:flex;align-items:center;justify-content:center;border:1px solid #e5e7eb;">${fallbackIcon}</div>`;
       }
       const card = document.createElement('div');
@@ -4969,22 +5400,46 @@ document.addEventListener('DOMContentLoaded', async function() {
               <div class="db-map-card-desc">${p.description || '<span style="color:#aaa;">(Popis zatím není k&nbsp;dispozici)</span>'}</div>
               ${p.post_type === 'charging_location' ? (() => {
                 let additionalInfo = '';
-                
+
                 // Poskytovatel/operátor
                 if (p.operator_original || p.provider) {
                   additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> ${p.operator_original || p.provider}</div>`;
                 }
-                
+
+                if (!p.operator_original && !p.provider && p.charging_ocm_details && p.charging_ocm_details.data_provider) {
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Poskytovatel:</strong> ${p.charging_ocm_details.data_provider}</div>`;
+                }
+
                 // Maximální výkon stanice
                 if (p.station_max_power_kw) {
                   additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Max. výkon:</strong> ${p.station_max_power_kw} kW</div>`;
                 }
-                
+
                 // Počet nabíjecích bodů
                 if (p.evse_count) {
                   additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Nabíjecí body:</strong> ${p.evse_count}</div>`;
                 }
-                
+
+                if (typeof p.charging_live_available === 'number' && typeof p.charging_live_total === 'number') {
+                  const available = Math.max(0, p.charging_live_available);
+                  const total = Math.max(0, p.charging_live_total);
+                  const ratio = total > 0 ? (available / total) : 0;
+                  let color = '#ef4444';
+                  if (ratio >= 0.5) color = '#10b981';
+                  else if (ratio > 0) color = '#f59e0b';
+                  const updatedText = formatRelativeLiveTime(p.charging_live_updated_at);
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Dostupnost:</strong> <span style="color:${color}; font-weight: 600;">${available}/${total} volných</span>${updatedText ? `<span style=\"display:block;color:#94a3b8;font-size:0.75em;\">Aktualizace ${updatedText}</span>` : ''}</div>`;
+                }
+
+                if (p.charging_google_details && p.charging_google_details.phone) {
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Telefon:</strong> <a href="tel:${p.charging_google_details.phone}" style="color: #049FE8; text-decoration: none;">${p.charging_google_details.phone}</a></div>`;
+                }
+
+                if (p.charging_google_details && p.charging_google_details.website) {
+                  const web = p.charging_google_details.website;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Web:</strong> <a href="${web}" target="_blank" rel="noopener" style="color: #049FE8; text-decoration: none;">${web.replace(/^https?:\/\//, '')}</a></div>`;
+                }
+
                 return additionalInfo ? `<div class="db-map-card-amenities" style="margin-top:0.5em;padding-top:0.5em;border-top:1px solid #f0f0f0;" data-debug="amenities-container-${p.id}">${additionalInfo}</div>` : '';
               })() : ''}
               ${p.post_type === 'poi' ? (() => {
@@ -5387,10 +5842,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Výpočet výplně markeru (barva nebo gradient) pro nabíječky
   function getChargerFill(p, active) {
     const mode = getChargerMode(p);
-    const acColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.ac) || '#049FE8';
-    const dcColor = (window.dbMapData && window.dbMapData.chargerColors && window.dbMapData.chargerColors.dc) || '#FFACC4';
-    const blendStart = (window.dbMapData && window.dbMapData.chargerColors && Number.isFinite(window.dbMapData.chargerColors.blendStart)) ? window.dbMapData.chargerColors.blendStart : 30;
-    const blendEnd = (window.dbMapData && window.dbMapData.chargerColors && Number.isFinite(window.dbMapData.chargerColors.blendEnd)) ? window.dbMapData.chargerColors.blendEnd : 70;
+    const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+    const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
+    const blendStart = (dbMapData && dbMapData.chargerColors && Number.isFinite(dbMapData.chargerColors.blendStart)) ? dbMapData.chargerColors.blendStart : 30;
+    const blendEnd = (dbMapData && dbMapData.chargerColors && Number.isFinite(dbMapData.chargerColors.blendEnd)) ? dbMapData.chargerColors.blendEnd : 70;
     if (mode === 'hybrid') {
       const gid = 'grad-' + (p.id || Math.random().toString(36).slice(2)) + '-' + (active ? 'a' : 'd');
       const defs = '<defs><linearGradient id="' + gid + '" x1="0" y1="0" x2="1" y2="0">'
@@ -6331,7 +6786,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       query: query.trim(),
       limit: '8'
     });
-    const restUrl = window.dbMapData?.searchUrl || '/wp-json/db/v1/map-search';
+    const restUrl = dbMapData?.searchUrl || '/wp-json/db/v1/map-search';
 
     try {
       const res = await fetch(`${restUrl}?${params.toString()}`, {
@@ -6339,7 +6794,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         credentials: 'same-origin',
         headers: {
           'Accept': 'application/json',
-          'X-WP-Nonce': window.dbMapData?.restNonce || ''
+          'X-WP-Nonce': dbMapData?.restNonce || ''
         }
       });
       if (!res.ok) {
@@ -6957,11 +7412,11 @@ document.addEventListener('DOMContentLoaded', async function() {
    * Aktualizace DB doporučuje toggle
    */
   function updateDbRecommended(postId, isRecommended) {
-    if (!window.dbMapData || !window.dbMapData.isAdmin) {
+    if (!dbMapData || !dbMapData.isAdmin) {
       return;
     }
 
-    fetch(window.dbMapData.ajaxUrl, {
+    fetch(dbMapData.ajaxUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -6970,7 +7425,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         action: 'db_update_recommended',
         post_id: postId,
         recommended: isRecommended ? '1' : '0',
-        nonce: window.dbMapData.adminNonce
+        nonce: dbMapData.adminNonce
       })
     })
     .then(response => response.json())
@@ -7007,7 +7462,7 @@ document.addEventListener('DOMContentLoaded', async function() {
    * Nahrávání fotek
    */
   function handlePhotoUpload(files, postId) {
-    if (!window.dbMapData || !window.dbMapData.isAdmin) {
+    if (!dbMapData || !dbMapData.isAdmin) {
       return;
     }
 
@@ -7018,7 +7473,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const formData = new FormData();
     formData.append('action', 'db_upload_photo');
     formData.append('post_id', postId);
-    formData.append('nonce', window.dbMapData.adminNonce);
+    formData.append('nonce', dbMapData.adminNonce);
 
     // Nahrát všechny vybrané soubory
     Array.from(files).forEach((file, index) => {
@@ -7031,7 +7486,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       preview.innerHTML = '<div class="db-photo-loading">Nahrávám fotky...</div>';
     }
 
-    fetch(window.dbMapData.ajaxUrl, {
+    fetch(dbMapData.ajaxUrl, {
       method: 'POST',
       body: formData
     })

@@ -454,6 +454,13 @@ class REST_Map {
                     'connectors' => get_post_meta($post->ID, '_db_connectors', true),
                     'konektory' => get_post_meta($post->ID, '_db_konektory', true),
                     'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
+                    // Metadata o stavu a dostupnosti z externích API
+                    'business_status' => get_post_meta($post->ID, '_charging_business_status', true),
+                    'charging_live_available' => get_post_meta($post->ID, '_charging_live_available', true),
+                    'charging_live_total' => get_post_meta($post->ID, '_charging_live_total', true),
+                    'charging_live_source' => get_post_meta($post->ID, '_charging_live_source', true),
+                    'charging_live_updated' => get_post_meta($post->ID, '_charging_live_updated', true),
+                    'charging_live_data_available' => get_post_meta($post->ID, '_charging_live_data_available', true),
                     'image' => get_post_meta($post->ID, '_db_image', true),
                     'address' => get_post_meta($post->ID, '_db_address', true),
                     'phone' => get_post_meta($post->ID, '_db_phone', true),
@@ -603,10 +610,14 @@ class REST_Map {
                                 }
                             }
                             
+                            // SVG ikony dočasně zakázány - čekáme na správné ikony
+                            $svg_icon = null;
+                            
                             $connectors[] = [
                                 'name' => $charger_term->name,
                                 'slug' => $charger_term->slug,
                                 'icon' => get_term_meta($charger_term->term_id, 'charger_icon', true), // Správný meta klíč pro ikony
+                                'svg_icon' => $svg_icon, // Nový SVG systém
                                 'type' => get_term_meta($charger_term->term_id, 'charger_current_type', true), // Správný meta klíč pro typ proudu
                                 'power' => get_term_meta($charger_term->term_id, 'power', true),
                                 'quantity' => $quantity, // Přidat počet
