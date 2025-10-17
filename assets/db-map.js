@@ -5872,8 +5872,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (loadMode !== 'radius') return;
       if (!map) return;
       // 1) Minimální zoom: pod tímto zoomem nefetchovat (šetření API)
-      if (map.getZoom() < MIN_FETCH_ZOOM) { return; }
+      if (map.getZoom() < MIN_FETCH_ZOOM) { 
+        console.log('[DB Map] onViewportChanged: zoom too low, skipping fetch');
+        return; 
+      }
       const c = map.getCenter();
+      console.log('[DB Map] onViewportChanged: triggering fetch for center:', c);
       // 2) Containment logika: fetchneme znovu až když se přiblížíme k hraně posledního okruhu
       if (lastSearchCenter && lastSearchRadiusKm) {
         const distFromLastCenter = haversineKm(lastSearchCenter, { lat: c.lat, lng: c.lng });
@@ -5985,13 +5989,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     // V RADIUS režimu rovnou dotáhni data pro aktuální střed
     try {
       if (loadMode === 'radius') {
-        console.log('[DB Map] Starting initial radius fetch');
+        console.log('[DB Map] Starting initial radius fetch from map.once("load")');
         // Při onloadu vždy spustit radius fetch (bez ohledu na zoom)
         const c = map.getCenter();
+        console.log('[DB Map] map.once("load") center:', c);
         await fetchAndRenderRadius(c, null);
         lastSearchCenter = { lat: c.lat, lng: c.lng };
         lastSearchRadiusKm = FIXED_RADIUS_KM;
-        console.log('[DB Map] Initial radius fetch completed');
+        console.log('[DB Map] Initial radius fetch completed from map.once("load")');
       }
     } catch(error) {
       console.error('[DB Map] Initial radius fetch failed:', error);
