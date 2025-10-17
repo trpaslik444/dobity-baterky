@@ -3513,43 +3513,43 @@ document.addEventListener('DOMContentLoaded', async function() {
   async function openDetailModal(feature) {
     // Přidat třídu pro scroll lock
     try { document.body.classList.add('db-modal-open'); } catch(_) {}
-    try { console.debug('[DB Map][Detail] open', { id: feature?.properties?.id, post_type: feature?.properties?.post_type, title: feature?.properties?.title }); } catch(_) {}
+    // debug log removed
 
     // Pokud je to POI, pokus se před renderem obohatit (pokud chybí data)
     if (feature && feature.properties && feature.properties.post_type === 'poi') {
       const needsEnrich = shouldFetchPOIDetails(feature.properties);
       if (needsEnrich) {
-        try { console.debug('[DB Map][Detail] enriching now', { id: feature.properties.id }); } catch(_) {}
+        // debug log removed
         try {
           const enriched = await enrichPOIFeature(feature);
           if (enriched && enriched !== feature) {
             feature = enriched;
             featureCache.set(enriched.properties.id, enriched);
-            try { console.debug('[DB Map][Detail] enriched', { id: enriched.properties.id, hasWebsite: !!enriched.properties.poi_website, hasPhotos: Array.isArray(enriched.properties.poi_photos) && enriched.properties.poi_photos.length>0 }); } catch(_) {}
+            // debug log removed
           }
         } catch(err) {
-          try { console.warn('[DB Map][Detail] enrich failed', err); } catch(_) {}
+          // warn log kept minimal: removed noisy output
         }
       }
     }
 
     if (feature && feature.properties && feature.properties.post_type === 'charging_location') {
       const needsChargingEnrich = shouldFetchChargingDetails(feature.properties);
-      try { console.debug('[DB Map][Detail] charging_location detected', { id: feature.properties.id, needsChargingEnrich, hasGoogleDetails: !!feature.properties.charging_google_details, hasOcmDetails: !!feature.properties.charging_ocm_details }); } catch(_) {}
+      // debug log removed
       if (needsChargingEnrich) {
-        try { console.debug('[DB Map][Detail] enriching charging now', { id: feature.properties.id }); } catch(_) {}
+        // debug log removed
         try {
           const enrichedCharging = await enrichChargingFeature(feature);
           if (enrichedCharging && enrichedCharging !== feature) {
             feature = enrichedCharging;
             featureCache.set(enrichedCharging.properties.id, enrichedCharging);
-            try { console.debug('[DB Map][Detail] charging enriched', { id: enrichedCharging.properties.id, live: enrichedCharging.properties.charging_live_available }); } catch(_) {}
+            // debug log removed
           }
         } catch (err) {
-          try { console.warn('[DB Map][Detail] charging enrich failed', err); } catch(_) {}
+          // warn log kept minimal: removed noisy output
         }
       } else {
-        try { console.debug('[DB Map][Detail] charging enrich skipped', { id: feature.properties.id, reason: 'has fresh data' }); } catch(_) {}
+        // debug log removed
       }
     }
 
@@ -3588,7 +3588,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!heroImageUrl && p.poi_photo_url) {
       heroImageUrl = p.poi_photo_url;
     }
-    try { console.log('[DB Map][Detail] heroImageUrl', heroImageUrl, 'p.image:', p.image, 'p.poi_photos:', p.poi_photos); } catch(_) {}
+    // console log removed to reduce noise in production
     const img = heroImageUrl 
       ? `<img class="hero-img" src="${heroImageUrl}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">`
       : '';
@@ -4048,9 +4048,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           imgTag.style.width = '100%'; imgTag.style.height = '100%';
           imgTag.style.objectFit = 'cover'; imgTag.style.display = 'block';
           heroEl.appendChild(imgTag);
-          try { console.log('[DB Map][Detail] hero injected', url); } catch(_) {}
+          // console log removed
         } else {
-          try { console.log('[DB Map][Detail] no hero url found'); } catch(_) {}
+          // console log removed
         }
       } catch (err) {
         try { console.warn('[DB Map][Detail] hero fallback error', err); } catch(_) {}
