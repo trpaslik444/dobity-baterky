@@ -621,6 +621,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   let searchAddressMarker = null;
   let lastSearchResults = [];
   let activeIdxGlobal = null;
+  let initialLoadCompleted = false; // Flag pro označení dokončení počátečního načítání
   let activeFeatureId = null;
   // --- DEBUG utility odstraněna ---
   
@@ -1204,6 +1205,7 @@ document.addEventListener('DOMContentLoaded', async function() {
            await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
            lastSearchCenter = { lat: c.lat, lng: c.lng };
            lastSearchRadiusKm = FIXED_RADIUS_KM;
+           initialLoadCompleted = true; // Označit dokončení počátečního načítání
            console.log('[DB Map] Initial radius fetch completed after map init');
          }, 100);
        }
@@ -5920,6 +5922,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     try {
       if (loadMode !== 'radius') return;
       if (!map) return;
+      // Pokud ještě neproběhlo počáteční načítání, nefetchovat
+      if (!initialLoadCompleted) {
+        console.log('[DB Map] onViewportChanged: initial load not completed yet, skipping fetch');
+        return;
+      }
       // 1) Minimální zoom: pod tímto zoomem nefetchovat (šetření API)
       if (map.getZoom() < MIN_FETCH_ZOOM) { 
         console.log('[DB Map] onViewportChanged: zoom too low, skipping fetch');
