@@ -894,6 +894,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     const url = buildRestUrlForRadius(center, includedTypesCsv, radiusKm);
     console.log('[DB Map] fetchAndRenderRadius: URL =', url);
     
+    await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
+  }
+  
+  async function fetchAndRenderRadiusWithFixedRadius(center, includedTypesCsv = null, fixedRadiusKm = null) {
+    console.log('[DB Map] fetchAndRenderRadiusWithFixedRadius called with center:', center, 'fixedRadius:', fixedRadiusKm);
+    const previousCenter = lastSearchCenter ? { ...lastSearchCenter } : null;
+
+    
+    if (inFlightController) { 
+      try { inFlightController.abort(); } catch(_) {} 
+    }
+    inFlightController = new AbortController();
+
+    // Použít fixní radius místo dynamického
+    const radiusKm = fixedRadiusKm || FIXED_RADIUS_KM;
+    console.log('[DB Map] fetchAndRenderRadiusWithFixedRadius: radiusKm =', radiusKm);
+    const url = buildRestUrlForRadius(center, includedTypesCsv, radiusKm);
+    console.log('[DB Map] fetchAndRenderRadiusWithFixedRadius: URL =', url);
+    
+    await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
+  }
+  
+  async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
+    
     // Zobrazení středu mapy na obrazovce (s aktuálním radiusem)
     showMapCenterDebug(center, radiusKm);
 
@@ -913,7 +937,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const geo = await res.json();
       const incoming = Array.isArray(geo?.features) ? geo.features : [];
-      console.log('[DB Map] fetchAndRenderRadius: received', incoming.length, 'features from API');
+      console.log('[DB Map] fetchAndRenderRadiusInternal: received', incoming.length, 'features from API');
       // Sloučit do cache
       for (let i = 0; i < incoming.length; i++) {
         const f = incoming[i];
@@ -925,7 +949,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Výběr pro aktuální zobrazení: pouze body uvnitř posledního radiusu a aktuálního viewportu
         const visibleNow = selectFeaturesForView();
         features = (visibleNow && visibleNow.length > 0) ? visibleNow : (lastRenderedFeatures.length > 0 ? lastRenderedFeatures : incoming);
-        console.log('[DB Map] fetchAndRenderRadius: final features count =', features.length);
+        console.log('[DB Map] fetchAndRenderRadiusInternal: final features count =', features.length);
         window.features = features;
 
       // FALLBACK: Pokud radius vrátí 0 bodů, stáhneme ALL a vyfiltrujeme klientsky
@@ -1169,7 +1193,8 @@ document.addEventListener('DOMContentLoaded', async function() {
          setTimeout(async () => {
            const c = map.getCenter();
            console.log('[DB Map] Initial fetch center:', c);
-           await fetchAndRenderRadius(c, null);
+           // Pro počáteční načítání použít větší radius (FIXED_RADIUS_KM)
+           await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
            lastSearchCenter = { lat: c.lat, lng: c.lng };
            lastSearchRadiusKm = FIXED_RADIUS_KM;
            console.log('[DB Map] Initial radius fetch completed after map init');
