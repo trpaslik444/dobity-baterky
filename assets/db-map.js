@@ -890,7 +890,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Dynamický radius dle aktuálního viewportu – polovina diagonály bounds
     // (původně fixních 75 km i při přiblížení způsobovalo truncaci výsledků v hustých oblastech)
     const radiusKm = getRadiusForRequest();
+    console.log('[DB Map] fetchAndRenderRadius: radiusKm =', radiusKm);
     const url = buildRestUrlForRadius(center, includedTypesCsv, radiusKm);
+    console.log('[DB Map] fetchAndRenderRadius: URL =', url);
     
     // Zobrazení středu mapy na obrazovce (s aktuálním radiusem)
     showMapCenterDebug(center, radiusKm);
@@ -911,6 +913,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const geo = await res.json();
       const incoming = Array.isArray(geo?.features) ? geo.features : [];
+      console.log('[DB Map] fetchAndRenderRadius: received', incoming.length, 'features from API');
       // Sloučit do cache
       for (let i = 0; i < incoming.length; i++) {
         const f = incoming[i];
@@ -922,6 +925,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Výběr pro aktuální zobrazení: pouze body uvnitř posledního radiusu a aktuálního viewportu
         const visibleNow = selectFeaturesForView();
         features = (visibleNow && visibleNow.length > 0) ? visibleNow : (lastRenderedFeatures.length > 0 ? lastRenderedFeatures : incoming);
+        console.log('[DB Map] fetchAndRenderRadius: final features count =', features.length);
         window.features = features;
 
       // FALLBACK: Pokud radius vrátí 0 bodů, stáhneme ALL a vyfiltrujeme klientsky
