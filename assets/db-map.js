@@ -498,7 +498,6 @@ function updateAttributionBar(options) {
   try {
   } catch(_) {}
 }
-
 function addIsochronesAttribution() {
   updateAttributionBar({ includeORS: true });
 }
@@ -1494,7 +1493,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
   }, 500); // 500ms delay před přidáním resize listeneru
-
   // Menu toggle - slide-out menu panel (funguje na všech zařízeních)
   function handleMenuToggle(event) {
     event.preventDefault();
@@ -1516,28 +1514,26 @@ document.addEventListener('DOMContentLoaded', async function() {
             </button>
             </div>
           <div class="db-menu-content">
-            <div class="db-menu-toggle-section">
-              <div class="db-menu-toggle-item">
-                <label class="db-menu-toggle-label">
-                  <input type="radio" name="map-mode" value="all" class="db-menu-toggle-radio">
-                  <span class="db-menu-toggle-text">Zobrazit všechny body</span>
-                </label>
-              </div>
-              <div class="db-menu-toggle-item">
-                <label class="db-menu-toggle-label">
-                  <input type="radio" name="map-mode" value="radius" class="db-menu-toggle-radio" checked>
-                  <span class="db-menu-toggle-text">Radius 75 km</span>
-                </label>
-              </div>
-              <div class="db-menu-toggle-item">
-                <label class="db-menu-toggle-label">
-                  <input type="checkbox" id="db-show-center-debug" class="db-menu-toggle-checkbox">
-                  <span class="db-menu-toggle-text">Zobrazit střed mapy</span>
-                </label>
-              </div>
+            <div class="db-account-section">
+              ${ (typeof dbMapData !== 'undefined' && dbMapData.isLoggedIn) ? `
+                <div class="db-account-item">
+                  <div class="db-account-user">${dbMapData.currentUser ? String(dbMapData.currentUser) : 'Uživatel'}</div>
+                  <div class="db-account-actions">
+                    <a class="db-account-link" href="${dbMapData.accountUrl}" target="_self" rel="nofollow">Můj účet</a>
+                    ${ dbMapData.logoutUrl ? `<a class=\"db-account-link\" href=\"${dbMapData.logoutUrl}\" target=\"_self\" rel=\"nofollow\">Odhlásit</a>` : '' }
+                  </div>
+                </div>
+              ` : `
+                <div class="db-account-item">
+                  <div class="db-account-user">Nepřihlášený uživatel</div>
+                  <div class="db-account-actions">
+                    <a class="db-account-link" href="${(typeof dbMapData !== 'undefined' && dbMapData.loginUrl) ? dbMapData.loginUrl : '/wp-login.php'}" target="_self" rel="nofollow">Přihlásit se</a>
+                  </div>
+                </div>
+              ` }
             </div>
-            </div>
-          `;
+          </div>
+        `;
       document.body.appendChild(menuPanel);
     }
 
@@ -1569,42 +1565,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       });
       menuPanel.dataset.dbBackdropListenerAttached = '1';
-    }
-
-    const modeRadios = menuPanel.querySelectorAll('input[name="map-mode"]');
-    modeRadios.forEach(radio => {
-      if (radio.dataset.dbListenerAttached) {
-        return;
-      }
-      radio.addEventListener('change', (e) => {
-        if (e.target.value === 'all') {
-          fetchAndRenderAll();
-        } else if (e.target.value === 'radius') {
-          const center = map.getCenter();
-          fetchAndRenderRadius(center);
-        }
-      });
-      radio.dataset.dbListenerAttached = '1';
-    });
-
-    const centerDebugCheckbox = menuPanel.querySelector('#db-show-center-debug');
-    if (centerDebugCheckbox && !centerDebugCheckbox.dataset.dbListenerAttached) {
-      centerDebugCheckbox.addEventListener('change', (e) => {
-        if (e.target.checked) {
-          const center = map.getCenter();
-          showMapCenterDebug(center);
-        } else {
-          if (centerDebugMarker) {
-            map.removeLayer(centerDebugMarker);
-            centerDebugMarker = null;
-          }
-          if (centerDebugCircle) {
-            map.removeLayer(centerDebugCircle);
-            centerDebugCircle = null;
-          }
-        }
-      });
-      centerDebugCheckbox.dataset.dbListenerAttached = '1';
     }
 
     root.classList.toggle('db-menu-open');
@@ -2495,7 +2455,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     tryLoad();
   }
-
   async function enrichPOIFeature(feature) {
     if (!feature || !feature.properties || feature.properties.post_type !== 'poi') {
       return feature;
@@ -2927,7 +2886,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     return nearby;
   }
-
   /**
    * Vyrenderuje položky z walking distance cache
    */
@@ -3429,7 +3387,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       return false;
     }
   }
-
   // Funkce pro otevření navigačního menu s 3 mapovými aplikacemi
   function openNavigationMenu(lat, lng) {
     if (!lat || !lng) return;
@@ -3927,7 +3884,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         </div>
       </div>
     ` : '';
-
     // Získat barvu čtverečku pro Detail Modal (stejně jako piny na mapě)
     const getDetailSquareColor = (props) => {
       if (props.post_type === 'charging_location') {
@@ -4410,7 +4366,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     }
   }
-  
   // Charger inline SVG recolor – načtení a cache (abychom nemuseli mít <img> s bílou výplní)
   let __dbChargerSvgColored = null;
   let __dbChargerSvgLoading = false;
@@ -4883,7 +4838,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       addOrMoveSearchAddressMarker(searchAddressCoords);
     });
   }
-
   async function doAddressSearch(e) {
     if (e) e.preventDefault();
     if (!searchInput) return; // Kontrola existence searchInput
@@ -5754,8 +5708,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     clearIsochrones();
     updateIsochronesLockButtons();
   });
-
-
   // Toggle „Jen DB doporučuje"
   const toggleRecommended = document.getElementById('db-map-toggle-recommended');
   if (toggleRecommended) {
@@ -6219,7 +6171,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       return 'CZ'; // Fallback
     }
   }
-  
   // Funkce pro IP geolokaci s fallback službami
   async function getIPLocation() {
     // Seznam IP geolokace služeb s fallback
@@ -6708,7 +6659,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       console.error('Chyba při zobrazení externího výsledku:', error);
     }
   }
-
   async function showDesktopAutocomplete(query, inputElement) {
     const trimmed = (query || '').trim();
     if (trimmed.length < 2) {
@@ -7205,7 +7155,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
   }
-  
   // Funkce pro zobrazení potvrzení vyhledávání
   function showMobileSearchConfirmation(message, options = {}) {
     const { headline = 'Výsledek nalezen', icon = '✓' } = options || {};
