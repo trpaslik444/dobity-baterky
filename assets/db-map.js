@@ -3746,11 +3746,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     const ratingCount = p.post_type === 'poi' ? (p.poi_user_rating_count || '') : (p.user_rating_count || '');
     if (ratingValue) {
       const countText = ratingCount ? `<span style="font-size:12px;color:#684c0f;margin-left:8px;">(${ratingCount} hodnocení)</span>` : '';
+      const rating = parseFloat(ratingValue);
+      const fullStars = Math.floor(rating);
+      const hasHalfStar = rating % 1 >= 0.5;
+      const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+      const stars = '★'.repeat(fullStars) + (hasHalfStar ? '☆' : '') + '☆'.repeat(emptyStars);
+      
       ratingInfo = `
         <div style="margin: 16px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
           <div style="font-weight: 600; color: #856404;">Hodnocení</div>
           <div style="color: #856404; margin-top: 4px; display:flex;align-items:center;gap:6px;">
-            <span>★★★★☆ ${parseFloat(ratingValue).toFixed(1)}</span>
+            <span>${stars} ${rating.toFixed(1)}</span>
             ${countText}
           </div>
         </div>
@@ -5603,10 +5609,10 @@ document.addEventListener('DOMContentLoaded', async function() {
           <div style="display:flex;flex-direction:column;align-items:center;min-width:64px;">
             ${imgHtml}
             ${distHtml}
-            <div class="db-map-card-rating" style="margin:0.3em 0;display:flex;align-items:center;justify-content:center;color:#FF6A4B;font-size:0.8em;">
+            ${p.rating ? `<div class="db-map-card-rating" style="margin:0.3em 0;display:flex;align-items:center;justify-content:center;color:#FF6A4B;font-size:0.8em;">
               <span style="margin-right:2px;">★</span>
-              <span>${p.rating || '4.2'}</span>
-            </div>
+              <span>${p.rating}</span>
+            </div>` : ''}
             <div style="margin:0.3em 0;">${navIcon}</div>
             <div>${infoIcon}</div>
           </div>
