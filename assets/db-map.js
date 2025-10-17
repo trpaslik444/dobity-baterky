@@ -5496,34 +5496,36 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else if (p.icon_slug) {
           fallbackIcon = `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;object-fit:contain;" alt="">`;
         } else if (p.post_type === 'charging_location') {
-          // Pro nabíjecí místa použít hybridní pin ikonu
-          const mode = getChargerMode(p);
-          const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
-          const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
-          if (mode === 'hybrid') {
-            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><defs><linearGradient id="card-grad-${p.id}" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="${acColor}"/><stop offset="100%" stop-color="${dcColor}"/></linearGradient></defs><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="url(#card-grad-${p.id})"/></svg>`;
-          } else {
-            const color = mode === 'dc' ? dcColor : acColor;
-            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${color}"/></svg>`;
-          }
+          // Pro nabíjecí místa použít správnou charger ikonu
+          fallbackIcon = getChargerColoredSvg(p);
         } else {
-          // Default ikona pro ostatní typy – použij centrální barvy
+          // Default ikona pro ostatní typy
           if (p.post_type === 'rv_spot') {
-            const rvColor = (dbMapData && dbMapData.rvColor) || '#FCE67D';
-            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${rvColor}"/></svg>`;
+            fallbackIcon = getTypeIcon(p);
           } else if (p.post_type === 'poi') {
-            const poiColor = (dbMapData && dbMapData.poiColor) || '#FCE67D';
-            fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${poiColor}"/></svg>`;
+            fallbackIcon = getTypeIcon(p);
           } else {
             const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
             fallbackIcon = `<svg width="100%" height="100%" viewBox="0 0 32 32"><path d="M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z" fill="${acColor}"/></svg>`;
           }
         }
-        const bgColor = (p.post_type === 'rv_spot')
-          ? ((dbMapData && dbMapData.rvColor) || '#FCE67D')
-          : (p.post_type === 'poi')
-            ? ((dbMapData && dbMapData.poiColor) || '#FCE67D')
-            : ((dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8');
+        // Dynamická barva pozadí podle typu bodu
+        let bgColor = '#049FE8'; // default
+        if (p.post_type === 'charging_location') {
+          const mode = getChargerMode(p);
+          const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+          const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
+          if (mode === 'hybrid') {
+            bgColor = `linear-gradient(90deg, ${acColor} 0%, ${dcColor} 100%)`;
+          } else {
+            bgColor = mode === 'dc' ? dcColor : acColor;
+          }
+        } else if (p.post_type === 'rv_spot') {
+          bgColor = (dbMapData && dbMapData.rvColor) || '#FCE67D';
+        } else if (p.post_type === 'poi') {
+          bgColor = (dbMapData && dbMapData.poiColor) || '#FCE67D';
+        }
+        
         imgHtml = `<div class="db-map-card-img" style="background:${bgColor};display:flex;align-items:center;justify-content:center;border:1px solid #e5e7eb;">${fallbackIcon}</div>`;
       }
       const card = document.createElement('div');
