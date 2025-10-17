@@ -1198,20 +1198,34 @@ document.addEventListener('DOMContentLoaded', async function() {
        console.log('[DB Map] Map initialized, loadMode:', loadMode);
        window.map = map; // Nastavit globální přístup pro isochrones funkce
        
-       // Spustit počáteční fetch hned po inicializaci mapy
-       if (loadMode === 'radius') {
-         console.log('[DB Map] Starting initial radius fetch after map init');
-         setTimeout(async () => {
-           const c = map.getCenter();
-           console.log('[DB Map] Initial fetch center:', c);
-           // Pro počáteční načítání použít větší radius (FIXED_RADIUS_KM)
-           await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
-           lastSearchCenter = { lat: c.lat, lng: c.lng };
-           lastSearchRadiusKm = FIXED_RADIUS_KM;
-           initialLoadCompleted = true; // Označit dokončení počátečního načítání
-           console.log('[DB Map] Initial radius fetch completed after map init');
-         }, 100);
-       }
+      // Spustit počáteční fetch hned po inicializaci mapy
+      if (loadMode === 'radius') {
+        console.log('[DB Map] Starting initial radius fetch after map init');
+        setTimeout(async () => {
+          const c = map.getCenter();
+          console.log('[DB Map] Initial fetch center:', c);
+          try {
+            // Pro počáteční načítání použít větší radius (FIXED_RADIUS_KM)
+            await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
+            lastSearchCenter = { lat: c.lat, lng: c.lng };
+            lastSearchRadiusKm = FIXED_RADIUS_KM;
+            console.log('[DB Map] Initial radius fetch completed after map init');
+          } catch (e) {
+            console.error('[DB Map] Initial radius fetch after map init failed, retrying once:', e);
+            try {
+              await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
+              lastSearchCenter = { lat: c.lat, lng: c.lng };
+              lastSearchRadiusKm = FIXED_RADIUS_KM;
+              console.log('[DB Map] Initial radius fetch retry after map init succeeded');
+            } catch (e2) {
+              console.error('[DB Map] Initial radius fetch retry after map init failed:', e2);
+            }
+          } finally {
+            // Označit dokončení pokusu o počáteční načítání, aby viewport změny mohly obnovit fetch
+            initialLoadCompleted = true;
+          }
+        }, 100);
+      }
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
          maxZoom: 19
@@ -6046,19 +6060,33 @@ document.addEventListener('DOMContentLoaded', async function() {
   map.once('load', async function() {
     console.log('[DB Map] map.once("load") triggered, loadMode:', loadMode);
     // V RADIUS režimu rovnou dotáhni data pro aktuální střed
-    try {
-      if (loadMode === 'radius') {
-        console.log('[DB Map] Starting initial radius fetch from map.once("load")');
-        // Při onloadu vždy spustit radius fetch (bez ohledu na zoom)
-        const c = map.getCenter();
-        console.log('[DB Map] map.once("load") center:', c);
-        await fetchAndRenderRadius(c, null);
+    if (loadMode === 'radius') {
+      console.log('[DB Map] Starting initial radius fetch from map.once("load")');
+      // Při onloadu vždy spustit radius fetch (bez ohledu na zoom)
+      const c = map.getCenter();
+      console.log('[DB Map] map.once("load") center:', c);
+      try {
+        // Použít fixní radius pro co nejbohatší úvodní dataset
+        await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
         lastSearchCenter = { lat: c.lat, lng: c.lng };
         lastSearchRadiusKm = FIXED_RADIUS_KM;
         console.log('[DB Map] Initial radius fetch completed from map.once("load")');
+      } catch(error) {
+        console.error('[DB Map] Initial radius fetch from map.once("load") failed, retrying once:', error);
+        try {
+          await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
+          lastSearchCenter = { lat: c.lat, lng: c.lng };
+          lastSearchRadiusKm = FIXED_RADIUS_KM;
+          console.log('[DB Map] Initial radius fetch retry from map.once("load") succeeded');
+        } catch (error2) {
+          console.error('[DB Map] Initial radius fetch retry from map.once("load") failed:', error2);
+        } finally {
+          initialLoadCompleted = true;
+        }
+        return;
       }
-    } catch(error) {
-      console.error('[DB Map] Initial radius fetch failed:', error);
+      // I při úspěchu uvolnit gate pro viewport-driven fetch (pro jistotu)
+      initialLoadCompleted = true;
     }
   });
 
