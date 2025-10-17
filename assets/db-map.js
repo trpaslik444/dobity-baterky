@@ -878,6 +878,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   async function fetchAndRenderRadius(center, includedTypesCsv = null) {
+    console.log('[DB Map] fetchAndRenderRadius called with center:', center, 'includedTypes:', includedTypesCsv);
     const previousCenter = lastSearchCenter ? { ...lastSearchCenter } : null;
 
     
@@ -1145,6 +1146,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     return;
   }
      try {
+       console.log('[DB Map] Initializing map...');
        map = L.map('db-map', {
          zoomControl: true,
          dragging: true,
@@ -1154,6 +1156,7 @@ document.addEventListener('DOMContentLoaded', async function() {
          wheelDebounceTime: 20,
          wheelPxPerZoomLevel: 120
        }).setView([50.08, 14.42], 12);
+       console.log('[DB Map] Map initialized, loadMode:', loadMode);
        window.map = map; // Nastavit globální přístup pro isochrones funkce
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
