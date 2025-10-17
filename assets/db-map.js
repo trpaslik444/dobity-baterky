@@ -627,6 +627,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Funkce pro správu list sorting
   function setSortByUser() {
     listSortMode = 'user_distance';
+    // Odstranit hint pokud existuje
+    const hint = document.getElementById('db-list-location-hint');
+    if (hint) hint.remove();
     renderCards('', activeFeatureId, false);
   }
   
@@ -4200,6 +4203,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   async function ensureUserLocationAndSort() {
     const coords = await getUserLocationOnce();
     if (coords) {
+      // Odstranit hint pokud existuje
+      const hint = document.getElementById('db-list-location-hint');
+      if (hint) hint.remove();
+      
       // V list režimu použij setSortByUser, jinak původní logiku
       if (root.classList.contains('db-list-mode')) {
         setSortByUser();
@@ -4214,14 +4221,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
     } else {
-      // Bez polohy zobrazíme vše bez řazení a sdělíme hint (jednorázově)
-      if (!document.getElementById('db-list-location-hint')) {
-        const hint = document.createElement('div');
-        hint.id = 'db-list-location-hint';
-        hint.className = 'db-map-nores';
-        hint.textContent = 'Povolte prosím zjištění polohy pro seřazení podle vzdálenosti.';
-        list.prepend(hint);
-      }
+      // Bez polohy zobrazíme vše bez řazení - hint se nezobrazuje
       // Kontrola, zda jsou features načtené
       if (features && features.length > 0) {
         renderCards('', null, false);
