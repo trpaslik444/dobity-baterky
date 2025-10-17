@@ -93,27 +93,37 @@ class REST_Charging_Discovery {
         // Ale ne pokud už máme fallback metadata
         $hasFallback = get_post_meta($postId, '_charging_fallback_metadata', true);
         if ($googleId === '' && !$hasFallback) {
-            // Zkontrolovat, zda už není discovery v procesu (cache mechanismus)
-            $discoveryInProgress = get_post_meta($postId, '_charging_discovery_in_progress', true);
-            if ($discoveryInProgress !== '1') {
-                // Označit discovery jako v procesu
-                update_post_meta($postId, '_charging_discovery_in_progress', '1');
-                
-                try {
-                    $discoveryResult = $svc->discoverForCharging($postId, true, false, true, false); // OCM disabled
-                    $googleId = $discoveryResult['google'] ?? '';
-                    
-                    // Aktualizovat metadata po discovery
-                    if ($googleId !== '') {
-                        update_post_meta($postId, '_charging_google_place_id', $googleId);
-                    }
-                } finally {
-                    // Odstranit flag "v procesu" i při chybě
-                    delete_post_meta($postId, '_charging_discovery_in_progress');
-                }
+            // Zkontrolovat kvóty před spuštěním discovery
+            $quota = new Charging_Quota_Manager();
+            $canUseGoogle = $quota->can_use_google();
+            
+            if (!$canUseGoogle) {
+                // Kvóty vyčerpány - nepokračovat v discovery
+                error_log("Charging Discovery: Google API quota exhausted, skipping discovery for post $postId");
             } else {
-                // Discovery už běží, načíst stávající data
-                $googleId = get_post_meta($postId, '_charging_google_place_id', true);
+                // Zkontrolovat, zda už není discovery v procesu (cache mechanismus)
+                $discoveryInProgress = get_post_meta($postId, '_charging_discovery_in_progress', true);
+                if ($discoveryInProgress !== '1') {
+                    // Označit discovery jako v procesu
+                    update_post_meta($postId, '_charging_discovery_in_progress', '1');
+                    
+                    try {
+                        $discoveryResult = $svc->discoverForCharging($postId, true, false, true, false); // OCM disabled
+                        $googleId = $discoveryResult['google'] ?? '';
+                        
+                        // Aktualizovat metadata po discovery a zaznamenat spotřebu kvóty
+                        if ($googleId !== '') {
+                            update_post_meta($postId, '_charging_google_place_id', $googleId);
+                            $quota->record_google(1); // Zaznamenat spotřebu Google API
+                        }
+                    } finally {
+                        // Odstranit flag "v procesu" i při chybě
+                        delete_post_meta($postId, '_charging_discovery_in_progress');
+                    }
+                } else {
+                    // Discovery už běží, načíst stávající data
+                    $googleId = get_post_meta($postId, '_charging_google_place_id', true);
+                }
             }
         } else {
             // Pokud máme externí ID, zkusit aktualizaci metadat pouze pokud cache expiroval

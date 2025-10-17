@@ -834,7 +834,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   
 
   function buildRestUrlForRadius(center, includedTypesCsv = null, radiusKmOverride = null) {
-    const base = (dbMapData?.restUrl) || '/wp-json/db/v1/map';
+    const base = (window.dbMapData?.restUrl) || '/wp-json/db/v1/map';
     
     const url = new URL(base, window.location.origin);
     // Přidání oddělených lat/lng parametrů (robustnější než center="lat,lng")
