@@ -715,7 +715,10 @@ body.db-license-modal-open {
   .db-list-mode #db-map-list {
     display: block;
     position: fixed;
-    inset: 0;
+    top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px) + 60px);
+    left: 0;
+    right: 0;
+    bottom: 0;
     background: #049FE8;
     border-radius: 0;
     margin: 0;
