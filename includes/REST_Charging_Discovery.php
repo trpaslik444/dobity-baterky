@@ -116,18 +116,11 @@ class REST_Charging_Discovery {
                 $googleId = get_post_meta($postId, '_charging_google_place_id', true);
             }
         } else {
-            // Pokud máme externí ID, zkusit rychlou aktualizaci dostupnosti
-            $liveDataAvailable = get_post_meta($postId, '_charging_live_data_available', true);
-            if ($liveDataAvailable === '1') {
-                // Only refresh live availability if we have live data available
-                $svc->refreshLiveAvailabilityOnly($postId);
-            } else {
-                // If no live data available, try to refresh Google metadata only if cache is expired
-                $cacheExpires = get_post_meta($postId, '_charging_google_cache_expires', true);
-                if (!$cacheExpires || $cacheExpires < time()) {
-                    if ($googleId !== '') {
-                        $svc->refreshGoogleMetadata($postId, $googleId, false);
-                    }
+            // Pokud máme externí ID, zkusit aktualizaci metadat pouze pokud cache expiroval
+            $cacheExpires = get_post_meta($postId, '_charging_google_cache_expires', true);
+            if (!$cacheExpires || $cacheExpires < time()) {
+                if ($googleId !== '') {
+                    $svc->refreshGoogleMetadata($postId, $googleId, false);
                 }
             }
         }
