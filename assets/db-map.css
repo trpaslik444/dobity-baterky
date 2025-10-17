@@ -820,6 +820,25 @@ body.db-license-modal-open {
     gap: 1rem;
     margin-bottom: 1.5rem;
   }
+
+  /* Account section inside menu */
+  .db-account-section .db-account-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .db-account-section .db-account-user {
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .db-account-section .db-account-actions {
+    display: flex;
+    gap: 1rem;
+  }
+  .db-account-section .db-account-link {
+    color: #ffffff;
+    text-decoration: underline;
+  }
   
   .db-menu-section-title {
     font-size: 0.9rem;

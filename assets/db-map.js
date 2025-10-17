@@ -1514,13 +1514,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             </button>
             </div>
           <div class="db-menu-content">
-            <div class="db-account-section">
+            <div class="db-menu-toggle-section db-account-section">
               ${ (typeof dbMapData !== 'undefined' && dbMapData.isLoggedIn) ? `
                 <div class="db-account-item">
                   <div class="db-account-user">${dbMapData.currentUser ? String(dbMapData.currentUser) : 'Uživatel'}</div>
                   <div class="db-account-actions">
                     <a class="db-account-link" href="${dbMapData.accountUrl}" target="_self" rel="nofollow">Můj účet</a>
-                    ${ dbMapData.logoutUrl ? `<a class=\"db-account-link\" href=\"${dbMapData.logoutUrl}\" target=\"_self\" rel=\"nofollow\">Odhlásit</a>` : '' }
+                    ${ dbMapData.logoutUrl ? ('<a class="db-account-link" href="' + dbMapData.logoutUrl + '" target="_self" rel="nofollow">Odhlásit</a>') : '' }
                   </div>
                 </div>
               ` : `
