@@ -178,6 +178,11 @@ spl_autoload_register( function ( $class ) {
 // Načtení Database Optimizer
 require_once DB_PLUGIN_DIR . 'includes/Database_Optimizer.php';
 
+// Načtení On-Demand Processor
+require_once DB_PLUGIN_DIR . 'includes/Jobs/On_Demand_Processor.php';
+require_once DB_PLUGIN_DIR . 'includes/Jobs/Optimized_Worker_Manager.php';
+require_once DB_PLUGIN_DIR . 'includes/REST_On_Demand.php';
+
 // Hooky aktivace a deaktivace s bezpečnostním wrapperem
 function db_safe_activate() {
     try {
@@ -309,6 +314,14 @@ if ( file_exists( __DIR__ . '/includes/REST_Map.php' ) ) {
     }
 }
 
+// On-Demand REST API
+if ( file_exists( __DIR__ . '/includes/REST_On_Demand.php' ) ) {
+    require_once __DIR__ . '/includes/REST_On_Demand.php';
+    if ( class_exists( 'DB\REST_On_Demand' ) ) {
+        DB\REST_On_Demand::get_instance()->register();
+    }
+}
+
 
 // Feedback module (REST + frontend + admin)
 if ( file_exists( __DIR__ . '/includes/Feedback.php' ) ) {
@@ -427,6 +440,9 @@ add_action('wp_enqueue_scripts', function() {
     wp_enqueue_script( 'leaflet-markercluster', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js', array('leaflet'), '1.5.3', true );
     wp_enqueue_script( 'db-map', plugins_url( 'assets/db-map.js', DB_PLUGIN_FILE ), array('leaflet','leaflet-markercluster'), DB_PLUGIN_VERSION, true );
     
+    // On-Demand Processor
+    wp_enqueue_script( 'db-ondemand', plugins_url( 'assets/ondemand-processor.js', DB_PLUGIN_FILE ), array('jquery'), DB_PLUGIN_VERSION, true );
+    
     // Data pro JS
     wp_localize_script( 'db-map', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
@@ -459,6 +475,12 @@ add_action('wp_enqueue_scripts', function() {
         'logoutUrl' => is_user_logged_in() ? wp_logout_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ) : '',
         'loginUrl' => is_user_logged_in() ? '' : wp_login_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ),
     ) );
+    
+    // On-Demand Processor data
+    wp_localize_script( 'db-ondemand', 'wpApiSettings', array(
+        'root' => esc_url_raw( rest_url() ),
+        'nonce' => wp_create_nonce( 'wp_rest' )
+    ));
 }, 20);
 
 // Registrace capability v Members pluginu - spustí se až když je Members dostupný

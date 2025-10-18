@@ -16,15 +16,12 @@ class Database_Optimizer {
         
         // Indexy pro postmeta tabulku - klíčové pro nearby dotazy
         $meta_indexes = array(
-            // Index pro lat/lng meta klíče
-            "CREATE INDEX IF NOT EXISTS idx_postmeta_lat ON {$wpdb->postmeta} (meta_key, meta_value+0) WHERE meta_key IN ('_db_lat', '_poi_lat', '_rv_lat')",
-            "CREATE INDEX IF NOT EXISTS idx_postmeta_lng ON {$wpdb->postmeta} (meta_key, meta_value+0) WHERE meta_key IN ('_db_lng', '_poi_lng', '_rv_lng')",
-            
-            // Kompozitní indexy pro post_id + meta_key
-            "CREATE INDEX IF NOT EXISTS idx_postmeta_post_key ON {$wpdb->postmeta} (post_id, meta_key) WHERE meta_key IN ('_db_lat', '_db_lng', '_poi_lat', '_poi_lng', '_rv_lat', '_rv_lng')",
+            // Kompozitní indexy pro meta_key + meta_value (MySQL kompatibilní)
+            "CREATE INDEX IF NOT EXISTS idx_postmeta_lat_key ON {$wpdb->postmeta} (meta_key, meta_value)",
+            "CREATE INDEX IF NOT EXISTS idx_postmeta_post_key ON {$wpdb->postmeta} (post_id, meta_key)",
             
             // Index pro post_type + post_status
-            "CREATE INDEX IF NOT EXISTS idx_posts_type_status ON {$wpdb->posts} (post_type, post_status) WHERE post_type IN ('poi', 'charging_location', 'rv_spot')",
+            "CREATE INDEX IF NOT EXISTS idx_posts_type_status ON {$wpdb->posts} (post_type, post_status)",
         );
         
         foreach ($meta_indexes as $sql) {
