@@ -254,6 +254,9 @@ class Optimized_Worker_Manager {
     public function get_points_to_process(string $point_type, int $limit = 100): array {
         global $wpdb;
         
+        // Mapování meta klíčů podle typu postu
+        $meta_key = $this->get_lat_meta_key_for_type($point_type);
+        
         $sql = $wpdb->prepare("
             SELECT p.ID, p.post_title, p.post_type
             FROM {$wpdb->posts} p
@@ -264,9 +267,41 @@ class Optimized_Worker_Manager {
             AND (pm.meta_value IS NULL OR pm.meta_value = '')
             ORDER BY p.post_date DESC
             LIMIT %d
-        ", "_{$point_type}_lat", $point_type, $limit);
+        ", $meta_key, $point_type, $limit);
         
         return $wpdb->get_results($sql, ARRAY_A);
+    }
+    
+    /**
+     * Získá správný meta klíč pro lat podle typu postu
+     */
+    private function get_lat_meta_key_for_type(string $point_type): string {
+        switch ($point_type) {
+            case 'charging_location':
+                return '_db_lat';
+            case 'poi':
+                return '_poi_lat';
+            case 'rv_spot':
+                return '_rv_lat';
+            default:
+                return '_db_lat';
+        }
+    }
+    
+    /**
+     * Získá správný meta klíč pro lng podle typu postu
+     */
+    private function get_lng_meta_key_for_type(string $point_type): string {
+        switch ($point_type) {
+            case 'charging_location':
+                return '_db_lng';
+            case 'poi':
+                return '_poi_lng';
+            case 'rv_spot':
+                return '_rv_lng';
+            default:
+                return '_db_lng';
+        }
     }
     
     /**
@@ -294,8 +329,8 @@ class Optimized_Worker_Manager {
         }
         
         // Zkontrolovat souřadnice
-        $lat_key = "_{$point_type}_lat";
-        $lng_key = "_{$point_type}_lng";
+        $lat_key = $this->get_lat_meta_key_for_type($point_type);
+        $lng_key = $this->get_lng_meta_key_for_type($point_type);
         
         $lat = get_post_meta($point_id, $lat_key, true);
         $lng = get_post_meta($point_id, $lng_key, true);

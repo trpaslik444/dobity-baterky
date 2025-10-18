@@ -390,6 +390,9 @@ class On_Demand_Processor {
     public function get_points_to_process(string $point_type, int $limit = 100): array {
         global $wpdb;
         
+        // Mapování meta klíčů podle typu postu
+        $meta_key = $this->get_lat_meta_key_for_type($point_type);
+        
         $sql = $wpdb->prepare("
             SELECT p.ID, p.post_title, p.post_type, p.post_date
             FROM {$wpdb->posts} p
@@ -400,9 +403,25 @@ class On_Demand_Processor {
             AND (pm.meta_value IS NULL OR pm.meta_value = '')
             ORDER BY p.post_date DESC
             LIMIT %d
-        ", "_{$point_type}_lat", $point_type, $limit);
+        ", $meta_key, $point_type, $limit);
         
         return $wpdb->get_results($sql, ARRAY_A);
+    }
+    
+    /**
+     * Získá správný meta klíč pro lat podle typu postu
+     */
+    private function get_lat_meta_key_for_type(string $point_type): string {
+        switch ($point_type) {
+            case 'charging_location':
+                return '_db_lat';
+            case 'poi':
+                return '_poi_lat';
+            case 'rv_spot':
+                return '_rv_lat';
+            default:
+                return '_db_lat';
+        }
     }
     
     /**

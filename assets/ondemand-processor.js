@@ -91,7 +91,8 @@ class OnDemandProcessor {
             body: JSON.stringify({
                 point_id: pointId,
                 point_type: pointType,
-                priority: priority
+                priority: priority,
+                token: 'frontend-trigger'
             })
         });
         
