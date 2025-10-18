@@ -21,8 +21,8 @@ class Optimized_Worker_Manager {
     public function __construct() {
         $this->on_demand_processor = new On_Demand_Processor();
         $this->nearby_job = new Nearby_Recompute_Job();
-        $this->poi_job = new POI_Discovery_Job();
-        $this->charging_job = new Charging_Discovery_Job();
+        // $this->poi_job = new POI_Discovery_Job(); // Třída neexistuje
+        // $this->charging_job = new Charging_Discovery_Job(); // Třída neexistuje
     }
     
     /**
