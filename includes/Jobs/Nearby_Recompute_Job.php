@@ -648,7 +648,11 @@ class Nearby_Recompute_Job {
                 'error' => null,
                 'error_at' => null,
                 'retry_after_s' => null,
-                'running' => false
+                'running' => false,
+                'user_settings' => [
+                    'enabled' => true,
+                    'walking_speed' => 4.5
+                ]
             ];
             
             update_post_meta($origin_id, $meta_key, json_encode($payload));
@@ -676,19 +680,41 @@ class Nearby_Recompute_Job {
         $meta_key = 'db_isochrones_v1_' . $profile;
         $cfg = get_option('db_nearby_config', []);
         
-        $payload = [
-            'version' => 1,
-            'profile' => $profile,
-            'ranges_s' => [552, 1124, 1695],
-            'center' => null,
-            'geojson' => null,
-            'computed_at' => current_time('c'),
-            'ttl_days' => 30,
-            'error' => $error_type,
-            'error_at' => current_time('c'),
-            'retry_after_s' => $retry_after,
-            'running' => false
-        ];
+        // DŮLEŽITÉ: Zachovat stará data, pokud existují
+        $existing_cache = get_post_meta($origin_id, $meta_key, true);
+        $existing_payload = null;
+        
+        if ($existing_cache && !empty($existing_cache)) {
+            $existing_payload = is_string($existing_cache) ? json_decode($existing_cache, true) : $existing_cache;
+        }
+        
+        // Pokud máme stará data, zachovat je a jen přidat error info
+        if ($existing_payload && isset($existing_payload['geojson']) && !empty($existing_payload['geojson'])) {
+            $payload = $existing_payload;
+            $payload['error'] = $error_type;
+            $payload['error_at'] = current_time('c');
+            $payload['retry_after_s'] = $retry_after;
+            $payload['running'] = false;
+        } else {
+            // Pokud nemáme stará data, vytvořit novou strukturu s null
+            $payload = [
+                'version' => 1,
+                'profile' => $profile,
+                'ranges_s' => [552, 1124, 1695],
+                'center' => null,
+                'geojson' => null,
+                'computed_at' => current_time('c'),
+                'ttl_days' => 30,
+                'error' => $error_type,
+                'error_at' => current_time('c'),
+                'retry_after_s' => $retry_after,
+                'running' => false,
+                'user_settings' => [
+                    'enabled' => true,
+                    'walking_speed' => 4.5
+                ]
+            ];
+        }
         
         update_post_meta($origin_id, $meta_key, json_encode($payload));
     }

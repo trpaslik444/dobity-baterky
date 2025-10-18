@@ -10,6 +10,23 @@ let lockedIsochronesPayload = null;
 let lastIsochronesPayload = null;
 let isochronesUnlockButton = null;
 
+// Optimalizované cache pro nearby data a isochrony
+let optimizedNearbyCache = new Map();
+let optimizedIsochronesCache = new Map();
+let pendingRequests = new Map();
+let requestQueue = [];
+let isProcessingQueue = false;
+
+// Konfigurace optimalizací
+const OPTIMIZATION_CONFIG = {
+    nearbyCacheTimeout: 5 * 60 * 1000, // 5 minut frontend cache
+    isochronesCacheTimeout: 30 * 60 * 1000, // 30 minut frontend cache
+    maxConcurrentRequests: 3,
+    batchSize: 5,
+    retryAttempts: 2,
+    retryDelay: 1000
+};
+
 /**
  * Upravit isochrones podle frontend nastavení rychlosti chůze
  */
@@ -879,7 +896,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   async function fetchAndRenderRadius(center, includedTypesCsv = null) {
-    console.log('[DB Map] fetchAndRenderRadius called with center:', center, 'includedTypes:', includedTypesCsv);
     const previousCenter = lastSearchCenter ? { ...lastSearchCenter } : null;
 
     
@@ -891,15 +907,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Dynamický radius dle aktuálního viewportu – polovina diagonály bounds
     // (původně fixních 75 km i při přiblížení způsobovalo truncaci výsledků v hustých oblastech)
     const radiusKm = getRadiusForRequest();
-    console.log('[DB Map] fetchAndRenderRadius: radiusKm =', radiusKm);
     const url = buildRestUrlForRadius(center, includedTypesCsv, radiusKm);
-    console.log('[DB Map] fetchAndRenderRadius: URL =', url);
     
     await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
   }
   
   async function fetchAndRenderRadiusWithFixedRadius(center, includedTypesCsv = null, fixedRadiusKm = null) {
-    console.log('[DB Map] fetchAndRenderRadiusWithFixedRadius called with center:', center, 'fixedRadius:', fixedRadiusKm);
     const previousCenter = lastSearchCenter ? { ...lastSearchCenter } : null;
 
     
@@ -910,9 +923,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Použít fixní radius místo dynamického
     const radiusKm = fixedRadiusKm || FIXED_RADIUS_KM;
-    console.log('[DB Map] fetchAndRenderRadiusWithFixedRadius: radiusKm =', radiusKm);
     const url = buildRestUrlForRadius(center, includedTypesCsv, radiusKm);
-    console.log('[DB Map] fetchAndRenderRadiusWithFixedRadius: URL =', url);
     
     await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
   }
@@ -938,7 +949,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const geo = await res.json();
       const incoming = Array.isArray(geo?.features) ? geo.features : [];
-      console.log('[DB Map] fetchAndRenderRadiusInternal: received', incoming.length, 'features from API');
       // Sloučit do cache
       for (let i = 0; i < incoming.length; i++) {
         const f = incoming[i];
@@ -957,7 +967,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           // Další načítání - filtrovat podle viewportu
           features = (visibleNow && visibleNow.length > 0) ? visibleNow : (lastRenderedFeatures.length > 0 ? lastRenderedFeatures : incoming);
         }
-        console.log('[DB Map] fetchAndRenderRadiusInternal: final features count =', features.length);
         window.features = features;
         
         // Vykreslit karty po načtení dat
@@ -1185,7 +1194,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     return;
   }
      try {
-       console.log('[DB Map] Initializing map...');
        map = L.map('db-map', {
          zoomControl: true,
          dragging: true,
@@ -1195,30 +1203,25 @@ document.addEventListener('DOMContentLoaded', async function() {
          wheelDebounceTime: 20,
          wheelPxPerZoomLevel: 120
        }).setView([50.08, 14.42], 12);
-       console.log('[DB Map] Map initialized, loadMode:', loadMode);
        window.map = map; // Nastavit globální přístup pro isochrones funkce
        
       // Spustit počáteční fetch hned po inicializaci mapy
       if (loadMode === 'radius') {
-        console.log('[DB Map] Starting initial radius fetch after map init');
         setTimeout(async () => {
           const c = map.getCenter();
-          console.log('[DB Map] Initial fetch center:', c);
           try {
             // Pro počáteční načítání použít větší radius (FIXED_RADIUS_KM)
             await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
             lastSearchCenter = { lat: c.lat, lng: c.lng };
             lastSearchRadiusKm = FIXED_RADIUS_KM;
-            console.log('[DB Map] Initial radius fetch completed after map init');
           } catch (e) {
-            console.error('[DB Map] Initial radius fetch after map init failed, retrying once:', e);
+            console.error('[DB Map] Initial radius fetch failed:', e);
             try {
               await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
               lastSearchCenter = { lat: c.lat, lng: c.lng };
               lastSearchRadiusKm = FIXED_RADIUS_KM;
-              console.log('[DB Map] Initial radius fetch retry after map init succeeded');
             } catch (e2) {
-              console.error('[DB Map] Initial radius fetch retry after map init failed:', e2);
+              console.error('[DB Map] Initial radius fetch retry failed:', e2);
             }
           } finally {
             // Označit dokončení pokusu o počáteční načítání, aby viewport změny mohly obnovit fetch
@@ -2429,10 +2432,19 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }, 100);
     
-    // Také načíst nearby data pro desktop verzi (pokud je dostupná)
-    setTimeout(() => {
-      loadAndRenderNearby(feature);
-    }, 200);
+  // Také načíst nearby data pro desktop verzi (pokud je dostupná)
+  // POZOR: Toto se volá také z detail modalu, takže to zakomentujeme, aby se nevolalo dvakrát
+  // setTimeout(() => {
+  //   loadAndRenderNearby(feature);
+  // }, 200);
+  
+  // DEBUG: Přidat log pro testování
+  
+  // Zkusit načíst nearby data přímo při kliknutí
+  // POZOR: Toto se volá také z detail modalu, takže to zakomentujeme, aby se nevolalo dvakrát
+  setTimeout(() => {
+    loadAndRenderNearby(feature);
+  }, 100);
   }
   // Funkce pro načítání nearby dat pro mobile sheet (3 nejbližší body)
   async function loadNearbyForMobileSheet(containerEl, centerId, centerLat, centerLng) {
@@ -2457,7 +2469,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     const hasNearbyData = await checkNearbyDataAvailable(centerId, type);
     
     if (!hasNearbyData) {
-      containerEl.innerHTML = '<div style="text-align:center;padding:10px;color:#999;">Blízká místa nejsou k dispozici</div>';
+      containerEl.innerHTML = `
+        <div style="text-align: center; padding: 20px; color: #666;">
+          <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
+          <div>Načítání blízkých míst...</div>
+        </div>
+      `;
       return;
     }
     // Pokus o načtení s retry logikou (stejně jako původní loadNearbyForCard)
@@ -3250,46 +3267,169 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   /**
-   * Zkontrolovat, zda má bod nearby data k dispozici
+   * Zkontrolovat, zda má bod nearby data k dispozici (s cache)
    */
   async function checkNearbyDataAvailable(originId, type) {
+    const cacheKey = `nearby_check_${originId}_${type}`;
+    
+    // Zkontrolovat frontend cache
+    const cached = optimizedNearbyCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < OPTIMIZATION_CONFIG.nearbyCacheTimeout) {
+      return cached.data;
+    }
+    
     try {
-      const response = await fetch(`/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=1`, {
+      // Nejdříve zkusit získat data z on-demand status endpointu
+      const statusResponse = await fetch(`/wp-json/db/v1/ondemand/status/${originId}?type=${type}`, {
         headers: {
           'X-WP-Nonce': dbMapData?.restNonce || ''
         }
       });
       
-      if (!response.ok) {
-        return false;
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        if (statusData.status === 'completed' && statusData.items && statusData.items.length > 0) {
+          // Data jsou k dispozici
+          optimizedNearbyCache.set(cacheKey, {
+            data: true,
+            timestamp: Date.now()
+          });
+          return true;
+        }
       }
       
-      const data = await response.json();
-      return data && data.items && data.items.length > 0;
+      // Pokud data nejsou k dispozici, spustit on-demand zpracování
+      const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || ''
+        },
+        body: JSON.stringify({
+          point_id: originId,
+          point_type: type,
+          token: 'frontend-trigger'
+        })
+      });
+      
+      if (processResponse.ok) {
+        const processData = await processResponse.json();
+        const hasData = processData.status === 'completed' && processData.items && Array.isArray(processData.items) && processData.items.length > 0;
+        
+        // Uložit do frontend cache
+        optimizedNearbyCache.set(cacheKey, {
+          data: hasData,
+          timestamp: Date.now()
+        });
+        
+        // Pokud máme data, spustit fetchNearby pro zobrazení
+        if (hasData) {
+          fetchNearby(originId, type, 9).then(data => {
+            // Zobrazit isochrony pokud jsou k dispozici
+            if (data.isochrones && data.isochrones.user_settings?.enabled) {
+              const frontendSettings = JSON.parse(localStorage.getItem('db-isochrones-settings') || '{"enabled": true, "walking_speed": 4.5}');
+              const backendEnabled = data.isochrones.user_settings.enabled;
+              const frontendEnabled = frontendSettings.enabled;
+              
+              if (backendEnabled && frontendEnabled && data.isochrones.geojson && data.isochrones.geojson.features && data.isochrones.geojson.features.length > 0) {
+                const adjustedGeojson = adjustIsochronesForFrontendSpeed(data.isochrones.geojson, data.isochrones.ranges_s, frontendSettings);
+                const mergedSettings = {
+                  ...data.isochrones.user_settings,
+                  ...frontendSettings
+                };
+                renderIsochrones(adjustedGeojson, data.isochrones.ranges_s, mergedSettings, { featureId: originId });
+              }
+            }
+          });
+        }
+        
+        return hasData;
+      }
+      
+      return false;
     } catch (error) {
+      console.error('[DB Map] Nearby check error:', error);
       return false;
     }
   }
 
   /**
-   * Načíst nearby places pro detail modal s jemným pollováním
+   * Načíst nearby places pro detail modal s optimalizovaným cache
    */
   async function loadAndRenderNearby(centerFeature) {
+    const featureId = centerFeature?.properties?.id;
+        // Ochrana proti duplicitnímu volání - pokud se už zpracovává stejný feature, počkat
+        if (window.loadingNearbyForFeature === featureId) {
+          return;
+        }
+        
+        window.loadingNearbyForFeature = featureId;
+    
+    // Zkontrolovat, jestli už máme data v cache
+    const p = centerFeature.properties;
+    const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
+    const cacheKey = `nearby_${p.id}_${type}`;
+    const cached = optimizedNearbyCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < OPTIMIZATION_CONFIG.nearbyCacheTimeout) {
+      // Zobrazit cached data
+      const currentContainer = document.getElementById('nearby-pois-list');
+      if (currentContainer && cached.data.items) {
+        renderNearbyList(currentContainer, cached.data.items, { partial: cached.data.partial, progress: cached.data.progress });
+      }
+      
+      // Zobrazit cached isochrony
+      if (cached.data.isochrones) {
+        const frontendSettings = JSON.parse(localStorage.getItem('db-isochrones-settings') || '{"enabled": true, "walking_speed": 4.5}');
+        const backendEnabled = cached.data.isochrones?.user_settings?.enabled;
+        const frontendEnabled = frontendSettings.enabled;
+        
+        if (backendEnabled && frontendEnabled && cached.data.isochrones.geojson && cached.data.isochrones.geojson.features && cached.data.isochrones.geojson.features.length > 0) {
+          const adjustedGeojson = adjustIsochronesForFrontendSpeed(cached.data.isochrones.geojson, cached.data.isochrones.ranges_s, frontendSettings);
+          const mergedSettings = {
+            ...cached.data.isochrones.user_settings,
+            ...frontendSettings
+          };
+          renderIsochrones(adjustedGeojson, cached.data.isochrones.ranges_s, mergedSettings, { featureId: featureId });
+        }
+      }
+      
+      // Uvolnit lock
+      setTimeout(() => {
+        if (window.loadingNearbyForFeature === featureId) {
+          window.loadingNearbyForFeature = null;
+        }
+      }, 100);
+      return;
+    }
+    
     // Invalidate předchozí isochrones request a vyčistit mapu hned při změně výběru
     currentIsochronesRequestId++;
     const requestId = currentIsochronesRequestId;
     clearIsochrones();
-    const p = centerFeature.properties;
-    const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
+    
+    // Zkontrolovat frontend cache znovu (pro případ, že se data načetla mezitím)
+    const cached2 = optimizedNearbyCache.get(cacheKey);
+    if (cached2 && Date.now() - cached2.timestamp < OPTIMIZATION_CONFIG.nearbyCacheTimeout) {
+      const nearbyContainer = document.getElementById('nearby-pois-list');
+      if (nearbyContainer && cached2.data.items) {
+        renderNearbyList(nearbyContainer, cached2.data.items, { partial: cached2.data.partial, progress: cached2.data.progress });
+      }
+      return;
+    }
     
     // Zkontrolovat, zda má bod nearby data
     const hasNearbyData = await checkNearbyDataAvailable(p.id, type);
     
     if (!hasNearbyData) {
-      // Skrýt nearby sekci v kartě
+      // Zobrazit loading stav místo skrytí
       const nearbySection = document.querySelector(`[data-feature-id="${p.id}"]`)?.closest('.db-map-card-nearby');
       if (nearbySection) {
-        nearbySection.style.display = 'none';
+        nearbySection.innerHTML = `
+          <div style="text-align: center; padding: 20px; color: #666;">
+            <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
+            <div>Načítání blízkých míst...</div>
+          </div>
+        `;
       }
       return;
     }
@@ -3329,59 +3469,71 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const tick = async () => {
       // Pokud mezitím došlo ke změně výběru, ukončit tento cyklus
-      if (requestId !== currentIsochronesRequestId) return;
+      if (requestId !== currentIsochronesRequestId) {
+        return;
+      }
       const data = await fetchNearby(p.id, type, 9);
       
       // Získat aktuální kontejner (může se změnit)
       const currentContainer = document.getElementById('nearby-pois-list');
       
-      // Zobrazit data nebo pokračovat v načítání
+      // Zobrazit isochrones pokud jsou k dispozici (nezávisle na nearby datech)
+      const frontendSettings = JSON.parse(localStorage.getItem('db-isochrones-settings') || '{"enabled": true, "walking_speed": 4.5}');
+      const backendEnabled = data.isochrones?.user_settings?.enabled;
+      const frontendEnabled = frontendSettings.enabled;
+      
+      if (requestId === currentIsochronesRequestId && data.isochrones && backendEnabled && frontendEnabled && data.isochrones.geojson && data.isochrones.geojson.features && data.isochrones.geojson.features.length > 0) {
+        // Aplikovat frontend nastavení rychlosti chůze
+        const adjustedGeojson = adjustIsochronesForFrontendSpeed(data.isochrones.geojson, data.isochrones.ranges_s, frontendSettings);
+        const mergedSettings = {
+          ...data.isochrones.user_settings,
+          ...frontendSettings
+        };
+
+        const payload = {
+          geojson: adjustedGeojson,
+          ranges: data.isochrones.ranges_s,
+          userSettings: mergedSettings,
+          featureId: p.id
+        };
+
+        const didRender = renderIsochrones(adjustedGeojson, data.isochrones.ranges_s, mergedSettings, { featureId: p.id });
+        
+        if (didRender) {
+          lastIsochronesPayload = payload;
+          if (isochronesLocked && lockedIsochronesPayload && lockedIsochronesPayload.featureId === p.id) {
+            lockedIsochronesPayload = payload;
+          }
+        }
+
+        updateIsochronesLockButtons(p.id);
+      } else {
+        // Pokud nejsou isochrones v cache nebo jsou vypnuty, vyčistit mapu
+        if (!isochronesLocked) {
+          lastIsochronesPayload = null;
+        }
+        clearIsochrones();
+        updateIsochronesLockButtons(p.id);
+      }
+      
+      // Zobrazit nearby data nebo pokračovat v načítání
       if (requestId !== currentIsochronesRequestId) return;
       if (Array.isArray(data.items) && data.items.length > 0) {
         if (currentContainer) {
           renderNearbyList(currentContainer, data.items, { partial: data.partial, progress: data.progress });
         }
         
-        // Zobrazit isochrones pokud jsou k dispozici a povoleny (kombinace backend + frontend nastavení)
-        const frontendSettings = JSON.parse(localStorage.getItem('db-isochrones-settings') || '{"enabled": true, "walking_speed": 4.5}');
-        const backendEnabled = data.isochrones?.user_settings?.enabled;
-        const frontendEnabled = frontendSettings.enabled;
-        
-        if (requestId === currentIsochronesRequestId && data.isochrones && backendEnabled && frontendEnabled && data.isochrones.geojson && data.isochrones.geojson.features && data.isochrones.geojson.features.length > 0) {
-
-          // Aplikovat frontend nastavení rychlosti chůze
-          const adjustedGeojson = adjustIsochronesForFrontendSpeed(data.isochrones.geojson, data.isochrones.ranges_s, frontendSettings);
-          const mergedSettings = {
-            ...data.isochrones.user_settings,
-            ...frontendSettings
-          };
-
-          const payload = {
-            geojson: adjustedGeojson,
-            ranges: data.isochrones.ranges_s,
-            userSettings: mergedSettings,
-            featureId: p.id
-          };
-
-          const didRender = renderIsochrones(adjustedGeojson, data.isochrones.ranges_s, mergedSettings, { featureId: p.id });
-          if (didRender) {
-            lastIsochronesPayload = payload;
-            if (isochronesLocked && lockedIsochronesPayload && lockedIsochronesPayload.featureId === p.id) {
-              lockedIsochronesPayload = payload;
-            }
-          }
-
-          updateIsochronesLockButtons(p.id);
-        } else {
-          // Pokud nejsou isochrones v cache nebo jsou vypnuty, vyčistit mapu
-          if (!isochronesLocked) {
-            lastIsochronesPayload = null;
-          }
-          clearIsochrones();
-          updateIsochronesLockButtons(p.id);
-          if (data.isochrones && (!backendEnabled || !frontendEnabled)) {
-          }
-        }
+        // Uložit do frontend cache
+        optimizedNearbyCache.set(cacheKey, {
+          data: {
+            items: data.items,
+            isochrones: data.isochrones,
+            cached: data.cached || false,
+            partial: data.partial,
+            progress: data.progress
+          },
+          timestamp: Date.now()
+        });
         
         // Pokud máme data, ale jsou stale nebo partial, pokračuj v načítání
         if ((data.running || data.partial || data.stale) && attempts < maxAttempts) {
@@ -3417,6 +3569,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     };
     tick();
+    
+    // Uvolnit lock po dokončení
+    setTimeout(() => {
+      if (window.loadingNearbyForFeature === featureId) {
+        window.loadingNearbyForFeature = null;
+      }
+    }, 1000);
   }
 
   function toggleIsochronesForFeature(centerFeature) {
@@ -3433,9 +3592,53 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   /**
-   * Univerzální fetch funkce pro nearby data
+   * Univerzální fetch funkce pro nearby data - používá on-demand systém
    */
   async function fetchNearby(originId, type, limit) {
+    // Nejdříve zkusit získat data z on-demand status endpointu
+    try {
+      const statusResponse = await fetch(`/wp-json/db/v1/ondemand/status/${originId}?type=${type}`, {
+        headers: {
+          'X-WP-Nonce': dbMapData?.restNonce || ''
+        }
+      });
+      
+      if (statusResponse.ok) {
+        const statusData = await statusResponse.json();
+        if (statusData.status === 'completed' && statusData.items && statusData.items.length > 0) {
+          return statusData;
+        }
+      }
+    } catch (error) {
+      console.warn('[DB Map] On-demand status check failed:', error);
+    }
+    
+    // Pokud data nejsou k dispozici, spustit on-demand zpracování
+    try {
+      const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || ''
+        },
+        body: JSON.stringify({
+          point_id: originId,
+          point_type: type,
+          token: 'frontend-trigger'
+        })
+      });
+      
+      if (processResponse.ok) {
+        const processData = await processResponse.json();
+        if (processData.status === 'processing' || processData.status === 'completed') {
+          return processData;
+        }
+      }
+    } catch (error) {
+      console.warn('[DB Map] On-demand process failed:', error);
+    }
+    
+    // Fallback na starý nearby endpoint
     const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
     const res = await fetch(url);
     return await res.json();
@@ -4240,6 +4443,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Plná sekce
         loadAndRenderNearby(feature); 
       } catch(e) { 
+        console.error('[DB Map] Error in detail modal setTimeout:', e);
       }
     }, 100);
   }
@@ -5855,7 +6059,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Načíst nearby data pro každou kartu - VYPNUTO pro optimalizaci
     // setTimeout(() => {
     //   const nearbyContainers = document.querySelectorAll('.db-map-card-nearby-list');
-    // Načíst nearby data pro list cards (optimalizace - pouze pro prvních 100 položek)
+    // VYPNUTO: Načítání nearby dat pro všechny body v viewportu je neefektivní
+    // Nearby data se načítají pouze při kliknutí na konkrétní bod
+    /*
     setTimeout(() => {
       const nearbyContainers = document.querySelectorAll('.sheet-nearby-list');
       nearbyContainers.forEach((container, index) => {
@@ -5874,6 +6080,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       });
     }, 200);
+    */
     
 
   // duplicitní tvorba markerů odstraněna – markerů se vytváří jen z filtered výběru výše
@@ -5941,16 +6148,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!map) return;
       // Pokud ještě neproběhlo počáteční načítání, nefetchovat
       if (!initialLoadCompleted) {
-        console.log('[DB Map] onViewportChanged: initial load not completed yet, skipping fetch');
         return;
       }
       // 1) Minimální zoom: pod tímto zoomem nefetchovat (šetření API)
       if (map.getZoom() < MIN_FETCH_ZOOM) { 
-        console.log('[DB Map] onViewportChanged: zoom too low, skipping fetch');
         return; 
       }
       const c = map.getCenter();
-      console.log('[DB Map] onViewportChanged: triggering fetch for center:', c);
       // 2) Containment logika: fetchneme znovu až když se přiblížíme k hraně posledního okruhu
       if (lastSearchCenter && lastSearchRadiusKm) {
         const distFromLastCenter = haversineKm(lastSearchCenter, { lat: c.lat, lng: c.lng });
@@ -6058,28 +6262,23 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Event listener pro počáteční načtení mapy
   map.once('load', async function() {
-    console.log('[DB Map] map.once("load") triggered, loadMode:', loadMode);
     // V RADIUS režimu rovnou dotáhni data pro aktuální střed
     if (loadMode === 'radius') {
-      console.log('[DB Map] Starting initial radius fetch from map.once("load")');
       // Při onloadu vždy spustit radius fetch (bez ohledu na zoom)
       const c = map.getCenter();
-      console.log('[DB Map] map.once("load") center:', c);
       try {
         // Použít fixní radius pro co nejbohatší úvodní dataset
         await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
         lastSearchCenter = { lat: c.lat, lng: c.lng };
         lastSearchRadiusKm = FIXED_RADIUS_KM;
-        console.log('[DB Map] Initial radius fetch completed from map.once("load")');
       } catch(error) {
-        console.error('[DB Map] Initial radius fetch from map.once("load") failed, retrying once:', error);
+        console.error('[DB Map] Initial radius fetch failed:', error);
         try {
           await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
           lastSearchCenter = { lat: c.lat, lng: c.lng };
           lastSearchRadiusKm = FIXED_RADIUS_KM;
-          console.log('[DB Map] Initial radius fetch retry from map.once("load") succeeded');
         } catch (error2) {
-          console.error('[DB Map] Initial radius fetch retry from map.once("load") failed:', error2);
+          console.error('[DB Map] Initial radius fetch retry failed:', error2);
         } finally {
           initialLoadCompleted = true;
         }
@@ -7803,5 +8002,47 @@ document.addEventListener('DOMContentLoaded', async function() {
     clearIsochrones();
     originalCloseDetailModal();
   };
+  
+  // Cache management funkce
+  window.clearOptimizedCache = function() {
+    optimizedNearbyCache.clear();
+    optimizedIsochronesCache.clear();
+    pendingRequests.clear();
+    requestQueue.length = 0;
+  };
+  
+  window.getCacheStats = function() {
+    return {
+      nearbyCache: {
+        size: optimizedNearbyCache.size,
+        keys: Array.from(optimizedNearbyCache.keys())
+      },
+      isochronesCache: {
+        size: optimizedIsochronesCache.size,
+        keys: Array.from(optimizedIsochronesCache.keys())
+      },
+      pendingRequests: pendingRequests.size,
+      queueLength: requestQueue.length
+    };
+  };
+  
+  // Pravidelné čištění starého cache
+  setInterval(() => {
+    const now = Date.now();
+    
+    // Vyčistit staré nearby cache
+    for (const [key, value] of optimizedNearbyCache.entries()) {
+      if (now - value.timestamp > OPTIMIZATION_CONFIG.nearbyCacheTimeout) {
+        optimizedNearbyCache.delete(key);
+      }
+    }
+    
+    // Vyčistit staré isochrony cache
+    for (const [key, value] of optimizedIsochronesCache.entries()) {
+      if (now - value.timestamp > OPTIMIZATION_CONFIG.isochronesCacheTimeout) {
+        optimizedIsochronesCache.delete(key);
+      }
+    }
+  }, 60000); // Každou minutu
   
 })();

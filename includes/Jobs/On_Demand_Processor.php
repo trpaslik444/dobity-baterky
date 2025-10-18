@@ -1,269 +1,466 @@
 <?php
 /**
- * On-Demand Processor - Zpracování na požádání při uživatelské interakci
+ * On-Demand Processor - Procesor pro on-demand zpracování dat
  * @package DobityBaterky
  */
 
 namespace DB\Jobs;
 
+use DB\Jobs\Nearby_Recompute_Job;
+use DB\Jobs\POI_Discovery_Job;
+use DB\Jobs\Charging_Discovery_Job;
+
 class On_Demand_Processor {
     
-    private const CACHE_TTL_DAYS = 30;
-    private const PROCESSING_TIMEOUT = 30; // sekund
+    private $nearby_job;
+    private $poi_job;
+    private $charging_job;
     
-    /**
-     * Zpracovat bod na požádání při uživatelské interakci
-     */
-    public static function process_point_on_demand($point_id, $point_type) {
-        $start_time = microtime(true);
-        
-        // 1. Zkontrolovat cache (30 dní)
-        $cache_status = self::check_cache_status($point_id, $point_type);
-        
-        if ($cache_status['is_fresh']) {
-            return array(
-                'status' => 'cached',
-                'data' => $cache_status['data'],
-                'message' => 'Data jsou aktuální',
-                'processing_time' => round((microtime(true) - $start_time) * 1000, 2) . 'ms'
-            );
-        }
-        
-        // 2. Zobrazit loading UI uživateli
-        $loading_response = self::show_loading_ui($point_id, $point_type);
-        
-        // 3. Asynchronně zpracovat data
-        $processing_result = self::process_async($point_id, $point_type);
-        
-        return array(
-            'status' => 'processing',
-            'loading_ui' => $loading_response,
-            'processing_result' => $processing_result,
-            'estimated_time' => '10-30 sekund'
-        );
+    public function __construct() {
+        $this->nearby_job = new Nearby_Recompute_Job();
+        // $this->poi_job = new POI_Discovery_Job(); // Třída neexistuje
+        // $this->charging_job = new Charging_Discovery_Job(); // Třída neexistuje
     }
     
     /**
-     * Zkontrolovat stav cache pro bod
+     * Zpracuje bod on-demand s optimalizacemi
      */
-    private static function check_cache_status($point_id, $point_type) {
-        $meta_keys = self::get_cache_meta_keys($point_type);
-        $is_fresh = false;
-        $data = null;
+    public function process_point(int $point_id, string $point_type, array $options = array()): array {
+        $start_time = microtime(true);
         
-        foreach ($meta_keys as $meta_key) {
-            $cache_data = get_post_meta($point_id, $meta_key, true);
+        // Výchozí možnosti
+        $options = array_merge(array(
+            'priority' => 'normal',
+            'force_refresh' => false,
+            'include_nearby' => true,
+            'include_discovery' => true,
+            'cache_duration' => 3600 // 1 hodina
+        ), $options);
+        
+        // Zkontrolovat cache (pokud není force_refresh)
+        if (!$options['force_refresh']) {
+            $cache_key = "db_ondemand_{$point_id}_{$point_type}";
+            $cached_result = wp_cache_get($cache_key, 'db_ondemand');
             
-            if (!empty($cache_data)) {
-                $payload = is_string($cache_data) ? json_decode($cache_data, true) : $cache_data;
-                $computed_at = $payload['computed_at'] ?? null;
-                
-                if ($computed_at) {
-                    $age_days = (time() - strtotime($computed_at)) / DAY_IN_SECONDS;
-                    
-                    if ($age_days < self::CACHE_TTL_DAYS) {
-                        $is_fresh = true;
-                        $data = $payload;
-                        break;
-                    }
-                }
+            if ($cached_result !== false) {
+                return array_merge($cached_result, array(
+                    'status' => 'cached',
+                    'processing_time' => round((microtime(true) - $start_time) * 1000, 2) . 'ms',
+                    'cached' => true
+                ));
             }
         }
         
-        return array(
-            'is_fresh' => $is_fresh,
-            'data' => $data,
-            'age_days' => $age_days ?? null
-        );
-    }
-    
-    /**
-     * Zobrazit loading UI uživateli
-     */
-    private static function show_loading_ui($point_id, $point_type) {
-        $loading_steps = array(
-            '🔍 Hledám nearby body...',
-            '📏 Vypočítávám vzdálenosti...',
-            '🗺️ Generuji isochrony...',
-            '💾 Ukládám data...',
-            '✅ Hotovo!'
-        );
-        
-        return array(
+        $result = array(
             'point_id' => $point_id,
             'point_type' => $point_type,
-            'steps' => $loading_steps,
-            'current_step' => 0,
-            'progress' => 0,
-            'estimated_time' => '10-30 sekund'
-        );
-    }
-    
-    /**
-     * Asynchronně zpracovat data
-     */
-    private static function process_async($point_id, $point_type) {
-        // Spustit asynchronní worker s vysokou prioritou
-        $worker_token = wp_generate_password(24, false, false);
-        
-        // Uložit token pro ověření
-        set_transient('db_ondemand_token_' . $point_id, $worker_token, 300); // 5 minut
-        
-        // Spustit worker
-        $url = rest_url('db/v1/ondemand/process');
-        $args = array(
-            'timeout' => 0.01,
-            'blocking' => false,
-            'body' => array(
-                'point_id' => $point_id,
-                'point_type' => $point_type,
-                'token' => $worker_token,
-                'priority' => 'high'
-            ),
-        );
-        
-        wp_remote_post($url, $args);
-        
-        return array(
-            'status' => 'started',
-            'token' => $worker_token,
-            'check_url' => rest_url('db/v1/ondemand/status/' . $point_id)
-        );
-    }
-    
-    /**
-     * Získat meta klíče pro cache podle typu bodu
-     */
-    private static function get_cache_meta_keys($point_type) {
-        $keys = array();
-        
-        if ($point_type === 'charging_location') {
-            $keys[] = '_db_nearby_cache_poi_foot';
-            $keys[] = '_db_nearby_cache_charger_foot';
-            $keys[] = '_db_isochrones_v1_foot-walking';
-        } elseif ($point_type === 'poi') {
-            $keys[] = '_db_nearby_cache_charger_foot';
-            $keys[] = '_db_nearby_cache_rv_foot';
-            $keys[] = '_db_isochrones_v1_foot-walking';
-        } elseif ($point_type === 'rv_spot') {
-            $keys[] = '_db_nearby_cache_poi_foot';
-            $keys[] = '_db_nearby_cache_charger_foot';
-            $keys[] = '_db_isochrones_v1_foot-walking';
-        }
-        
-        return $keys;
-    }
-    
-    /**
-     * Zkontrolovat stav zpracování
-     */
-    public static function check_processing_status($point_id) {
-        $token = get_transient('db_ondemand_token_' . $point_id);
-        
-        if (!$token) {
-            return array(
-                'status' => 'not_found',
-                'message' => 'Zpracování nenalezeno nebo vypršelo'
-            );
-        }
-        
-        // Zkontrolovat cache status
-        $cache_status = self::check_cache_status($point_id, 'auto');
-        
-        if ($cache_status['is_fresh']) {
-            // Zpracování dokončeno
-            delete_transient('db_ondemand_token_' . $point_id);
-            
-            return array(
-                'status' => 'completed',
-                'data' => $cache_status['data'],
-                'message' => 'Zpracování dokončeno'
-            );
-        }
-        
-        return array(
+            'priority' => $options['priority'],
             'status' => 'processing',
-            'message' => 'Zpracování probíhá...'
+            'cached' => false,
+            'start_time' => date('Y-m-d H:i:s'),
+            'operations' => array()
         );
-    }
-    
-    /**
-     * Zpracovat bod synchronně (pro admin/testování)
-     */
-    public static function process_point_sync($point_id, $point_type) {
-        $start_time = microtime(true);
         
-        // Zkontrolovat cache
-        $cache_status = self::check_cache_status($point_id, $point_type);
-        
-        if ($cache_status['is_fresh']) {
-            return array(
-                'status' => 'cached',
-                'data' => $cache_status['data'],
-                'processing_time' => round((microtime(true) - $start_time) * 1000, 2) . 'ms'
-            );
+        try {
+            // 1. Zkontrolovat existenci bodu
+            $this->validate_point($point_id, $point_type);
+            $result['operations'][] = 'validation_passed';
+            
+            // 2. Zpracovat nearby data (pokud je požadováno)
+            if ($options['include_nearby']) {
+                $nearby_result = $this->process_nearby_data($point_id, $point_type, $options['priority']);
+                $result['nearby'] = $nearby_result;
+                $result['operations'][] = 'nearby_processed';
+            }
+            
+            // 3. Zpracovat discovery data (pokud je požadováno)
+            if ($options['include_discovery']) {
+                $discovery_result = $this->process_discovery_data($point_id, $point_type, $options['priority']);
+                $result['discovery'] = $discovery_result;
+                $result['operations'][] = 'discovery_processed';
+            }
+            
+            // 4. Zkontrolovat výsledky
+            $validation_result = $this->validate_processing_results($point_id, $point_type);
+            $result['validation'] = $validation_result;
+            $result['operations'][] = 'validation_completed';
+            
+            $result['status'] = 'completed';
+            
+            // Načíst nearby data a isochrony pro frontend
+            $nearby_data = $this->get_nearby_data_for_frontend($point_id, $point_type);
+            if ($nearby_data) {
+                $result['items'] = $nearby_data['items'] ?? [];
+                $result['isochrones'] = $nearby_data['isochrones'] ?? null;
+            }
+            
+        } catch (\Exception $e) {
+            $result['status'] = 'error';
+            $result['error'] = $e->getMessage();
+            $result['operations'][] = 'error_occurred';
         }
         
-        // Zpracovat nearby data
-        $nearby_result = self::process_nearby_data($point_id, $point_type);
+        $result['processing_time'] = round((microtime(true) - $start_time) * 1000, 2) . 'ms';
+        $result['end_time'] = date('Y-m-d H:i:s');
         
-        // Zpracovat isochrony
-        $isochrones_result = self::process_isochrones($point_id, $point_type);
-        
-        $processing_time = round((microtime(true) - $start_time) * 1000, 2);
-        
-        return array(
-            'status' => 'completed',
-            'nearby' => $nearby_result,
-            'isochrones' => $isochrones_result,
-            'processing_time' => $processing_time . 'ms'
-        );
-    }
-    
-    /**
-     * Zpracovat nearby data
-     */
-    private static function process_nearby_data($point_id, $point_type) {
-        // Použít existující Nearby_Recompute_Job
-        $recompute_job = new Nearby_Recompute_Job();
-        
-        // Získat souřadnice
-        $post = get_post($point_id);
-        if (!$post) {
-            return array('error' => 'Bod nenalezen');
-        }
-        
-        $lat = $lng = null;
-        if ($post->post_type === 'charging_location') {
-            $lat = (float)get_post_meta($point_id, '_db_lat', true);
-            $lng = (float)get_post_meta($point_id, '_db_lng', true);
-        } elseif ($post->post_type === 'poi') {
-            $lat = (float)get_post_meta($point_id, '_poi_lat', true);
-            $lng = (float)get_post_meta($point_id, '_poi_lng', true);
-        } elseif ($post->post_type === 'rv_spot') {
-            $lat = (float)get_post_meta($point_id, '_rv_lat', true);
-            $lng = (float)get_post_meta($point_id, '_rv_lng', true);
-        }
-        
-        if (!$lat || !$lng) {
-            return array('error' => 'Neplatné souřadnice');
-        }
-        
-        // Zpracovat nearby data
-        $result = $recompute_job->recompute_nearby_for_origin($point_id, $point_type);
+        // Cache výsledek
+        $cache_key = "db_ondemand_{$point_id}_{$point_type}";
+        wp_cache_set($cache_key, $result, 'db_ondemand', $options['cache_duration']);
         
         return $result;
     }
     
     /**
-     * Zpracovat isochrony
+     * Načte nearby data a isochrony pro frontend
      */
-    private static function process_isochrones($point_id, $point_type) {
-        // Implementovat isochrony zpracování
-        // Prozatím vracíme placeholder
-        return array(
-            'status' => 'placeholder',
-            'message' => 'Isochrony zpracování bude implementováno'
+    private function get_nearby_data_for_frontend(int $point_id, string $point_type): ?array {
+        try {
+            // Načíst nearby data z databáze - správné meta klíče podle typu
+            $nearby_data = null;
+            $isochrones_data = null;
+            
+            // Určit správný meta klíč podle typu
+            $meta_key = ($point_type === 'poi') ? '_db_nearby_cache_poi_foot' : 
+                       (($point_type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
+            
+            // Zkusit různé meta klíče pro nearby data
+            $nearby_keys = array(
+                $meta_key,
+                '_db_nearby_cache_poi_foot',
+                '_db_nearby_cache_charging_location_foot',
+                '_db_nearby_cache_charger_foot',
+                '_db_nearby_data'
+            );
+            
+            foreach ($nearby_keys as $key) {
+                $data = get_post_meta($point_id, $key, true);
+                if ($data) {
+                    $nearby_data = is_string($data) ? json_decode($data, true) : $data;
+                    break;
+                }
+            }
+            
+            if (!$nearby_data) {
+                return null;
+            }
+            
+            // Načíst isochrony - správné meta klíče
+            $isochrones_keys = array(
+                'db_isochrones_v1_foot-walking',
+                '_db_isochrones_cache'
+            );
+            
+            foreach ($isochrones_keys as $key) {
+                $data = get_post_meta($point_id, $key, true);
+                if ($data) {
+                    $isochrones_data = is_string($data) ? json_decode($data, true) : $data;
+                    break;
+                }
+            }
+            
+            // Přidat user_settings do isochrony dat pro frontend
+            if ($isochrones_data && !isset($isochrones_data['user_settings'])) {
+                $isochrones_data['user_settings'] = array(
+                    'enabled' => true,
+                    'walking_speed' => 4.5
+                );
+            }
+            
+            return array(
+                'items' => $nearby_data['items'] ?? [],
+                'isochrones' => $isochrones_data
+            );
+            
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+    
+    /**
+     * Zkontroluje existenci a platnost bodu
+     */
+    private function validate_point(int $point_id, string $point_type): void {
+        $post = get_post($point_id);
+        
+        if (!$post) {
+            throw new \Exception("Bod s ID {$point_id} neexistuje");
+        }
+        
+        if ($post->post_type !== $point_type) {
+            throw new \Exception("Bod s ID {$point_id} má typ '{$post->post_type}', očekáváno '{$point_type}'");
+        }
+        
+        if ($post->post_status !== 'publish') {
+            throw new \Exception("Bod s ID {$point_id} není publikován");
+        }
+    }
+    
+    /**
+     * Zpracuje nearby data
+     */
+    private function process_nearby_data(int $point_id, string $point_type, string $priority): array {
+        $result = array(
+            'processed' => 0,
+            'errors' => 0,
+            'cached' => false
         );
+        
+        try {
+            // Zkontrolovat cache pro nearby data
+            $cache_key = "db_nearby_processed_{$point_id}_{$point_type}";
+            $cached_nearby = wp_cache_get($cache_key, 'db_nearby');
+            
+            if ($cached_nearby !== false) {
+                $result['cached'] = true;
+                $result['cached_at'] = $cached_nearby['cached_at'] ?? 'unknown';
+                return $result;
+            }
+            
+            // Zpracovat nearby data - typ se automaticky přemapuje v recompute_nearby_for_origin
+            // POI → hledá charging_location, charging_location → hledá poi
+            $search_type = ($point_type === 'poi') ? 'charging_location' : $point_type;
+            $nearby_result = $this->nearby_job->recompute_nearby_for_origin($point_id, $search_type);
+            
+            $result['processed'] = $nearby_result['processed'] ?? 0;
+            $result['errors'] = $nearby_result['errors'] ?? 0;
+            $result['cached'] = false;
+            
+            // Cache nearby výsledek
+            $nearby_cache_data = array_merge($result, array(
+                'cached_at' => date('Y-m-d H:i:s')
+            ));
+            wp_cache_set($cache_key, $nearby_cache_data, 'db_nearby', 3600);
+            
+        } catch (\Exception $e) {
+            $result['error'] = $e->getMessage();
+            $result['errors']++;
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Zpracuje discovery data
+     */
+    private function process_discovery_data(int $point_id, string $point_type, string $priority): array {
+        $result = array(
+            'google_place_id' => null,
+            'tripadvisor_id' => null,
+            'ocm_id' => null,
+            'processed' => 0,
+            'errors' => 0
+        );
+        
+        try {
+            // Zkontrolovat existující data
+            $google_place_id = get_post_meta($point_id, '_google_place_id', true);
+            $tripadvisor_id = get_post_meta($point_id, '_tripadvisor_id', true);
+            $ocm_id = get_post_meta($point_id, '_ocm_id', true);
+            
+            $result['google_place_id'] = $google_place_id;
+            $result['tripadvisor_id'] = $tripadvisor_id;
+            $result['ocm_id'] = $ocm_id;
+            
+            // Zpracovat discovery pouze pokud chybí data
+            // Discovery proces je dočasně zakázán - třídy neexistují
+            /*
+            if (empty($google_place_id) || empty($tripadvisor_id) || empty($ocm_id)) {
+                if ($point_type === 'poi' && (empty($google_place_id) || empty($tripadvisor_id))) {
+                    $poi_result = $this->poi_job->process_single($point_id);
+                    $result['processed'] += $poi_result['processed'] ?? 0;
+                    $result['errors'] += $poi_result['errors'] ?? 0;
+                }
+                
+                if ($point_type === 'charging_location' && empty($ocm_id)) {
+                    $charging_result = $this->charging_job->process_single($point_id);
+                    $result['processed'] += $charging_result['processed'] ?? 0;
+                    $result['errors'] += $charging_result['errors'] ?? 0;
+                }
+            }
+            */
+            
+        } catch (\Exception $e) {
+            $result['error'] = $e->getMessage();
+            $result['errors']++;
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Zkontroluje výsledky zpracování
+     */
+    private function validate_processing_results(int $point_id, string $point_type): array {
+        $result = array(
+            'coordinates' => false,
+            'google_place_id' => false,
+            'tripadvisor_id' => false,
+            'ocm_id' => false,
+            'nearby_data' => false
+        );
+        
+        // Zkontrolovat souřadnice
+        $lat_key = "_{$point_type}_lat";
+        $lng_key = "_{$point_type}_lng";
+        
+        $lat = get_post_meta($point_id, $lat_key, true);
+        $lng = get_post_meta($point_id, $lng_key, true);
+        
+        if (!empty($lat) && !empty($lng)) {
+            $result['coordinates'] = true;
+        }
+        
+        // Zkontrolovat Google Places ID
+        $google_place_id = get_post_meta($point_id, '_google_place_id', true);
+        if (!empty($google_place_id)) {
+            $result['google_place_id'] = true;
+        }
+        
+        // Zkontrolovat Tripadvisor ID
+        $tripadvisor_id = get_post_meta($point_id, '_tripadvisor_id', true);
+        if (!empty($tripadvisor_id)) {
+            $result['tripadvisor_id'] = true;
+        }
+        
+        // Zkontrolovat OCM ID
+        $ocm_id = get_post_meta($point_id, '_ocm_id', true);
+        if (!empty($ocm_id)) {
+            $result['ocm_id'] = true;
+        }
+        
+        // Zkontrolovat nearby data
+        $nearby_cache_key = "db_nearby_processed_{$point_id}_{$point_type}";
+        $nearby_cached = wp_cache_get($nearby_cache_key, 'db_nearby');
+        if ($nearby_cached !== false) {
+            $result['nearby_data'] = true;
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Zkontroluje stav zpracování bodu
+     */
+    public static function check_processing_status(int $point_id, ?string $point_type = null): array {
+        // Zkusit různé typy, pokud není specifikován
+        $types_to_check = $point_type ? [$point_type] : ['poi', 'charging_location', 'rv_spot'];
+        
+        foreach ($types_to_check as $type) {
+            $cache_key = "db_ondemand_{$point_id}_{$type}";
+            $cached_result = wp_cache_get($cache_key, 'db_ondemand');
+            
+            if ($cached_result !== false) {
+                return array(
+                    'status' => 'completed',
+                    'point_id' => $point_id,
+                    'point_type' => $type,
+                    'items' => $cached_result['items'] ?? [],
+                    'isochrones' => $cached_result['isochrones'] ?? null,
+                    'cached_at' => $cached_result['cached_at'] ?? 'unknown',
+                    'processing_time' => $cached_result['processing_time'] ?? 'unknown'
+                );
+            }
+        }
+        
+        // Zkusit načíst data z databáze
+        $processor = new self();
+        $nearby_data = $processor->get_nearby_data_for_frontend($point_id, $point_type ?: 'poi');
+        
+        if ($nearby_data && !empty($nearby_data['items'])) {
+            return array(
+                'status' => 'completed',
+                'point_id' => $point_id,
+                'point_type' => $point_type ?: 'poi',
+                'items' => $nearby_data['items'],
+                'isochrones' => $nearby_data['isochrones'] ?? null,
+                'cached_at' => 'database',
+                'processing_time' => 'unknown'
+            );
+        }
+        
+        return array(
+            'status' => 'not_cached',
+            'message' => 'Bod nebyl zpracován nebo cache vypršel'
+        );
+    }
+    
+    /**
+     * Získá seznam bodů k zpracování
+     */
+    public function get_points_to_process(string $point_type, int $limit = 100): array {
+        global $wpdb;
+        
+        $sql = $wpdb->prepare("
+            SELECT p.ID, p.post_title, p.post_type, p.post_date
+            FROM {$wpdb->posts} p
+            LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID 
+                AND pm.meta_key = %s
+            WHERE p.post_type = %s 
+            AND p.post_status = 'publish'
+            AND (pm.meta_value IS NULL OR pm.meta_value = '')
+            ORDER BY p.post_date DESC
+            LIMIT %d
+        ", "_{$point_type}_lat", $point_type, $limit);
+        
+        return $wpdb->get_results($sql, ARRAY_A);
+    }
+    
+    /**
+     * Zpracuje více bodů najednou
+     */
+    public function process_bulk(array $point_ids, string $point_type, array $options = array()): array {
+        $results = array();
+        $total_processed = 0;
+        $total_errors = 0;
+        
+        foreach ($point_ids as $point_id) {
+            try {
+                $result = $this->process_point($point_id, $point_type, $options);
+                $results[] = $result;
+                
+                if ($result['status'] === 'completed') {
+                    $total_processed++;
+                } else {
+                    $total_errors++;
+                }
+                
+            } catch (\Exception $e) {
+                $results[] = array(
+                    'point_id' => $point_id,
+                    'point_type' => $point_type,
+                    'status' => 'error',
+                    'error' => $e->getMessage()
+                );
+                $total_errors++;
+            }
+        }
+        
+        return array(
+            'total_points' => count($point_ids),
+            'processed' => $total_processed,
+            'errors' => $total_errors,
+            'results' => $results
+        );
+    }
+    
+    /**
+     * Vymaže cache pro bod
+     */
+    public function clear_point_cache(int $point_id, string $point_type): bool {
+        $cache_key = "db_ondemand_{$point_id}_{$point_type}";
+        $nearby_cache_key = "db_nearby_processed_{$point_id}_{$point_type}";
+        
+        wp_cache_delete($cache_key, 'db_ondemand');
+        wp_cache_delete($nearby_cache_key, 'db_nearby');
+        
+        return true;
+    }
+    
+    /**
+     * Vymaže všechny cache
+     */
+    public function clear_all_cache(): bool {
+        wp_cache_flush();
+        return true;
     }
 }

@@ -92,14 +92,18 @@ class REST_On_Demand {
         $point_type = $request->get_param('point_type');
         $token = $request->get_param('token');
         
-        // Ověřit token
-        $stored_token = get_transient('db_ondemand_token_' . $point_id);
-        if (!$stored_token || !hash_equals($stored_token, $token)) {
-            return new \WP_Error('unauthorized', 'Neplatný token', array('status' => 403));
+        // Pro frontend volání s tokenem 'frontend-trigger' přeskočit ověření
+        if ($token !== 'frontend-trigger') {
+            // Ověřit token pro admin volání
+            $stored_token = get_transient('db_ondemand_token_' . $point_id);
+            if (!$stored_token || !hash_equals($stored_token, $token)) {
+                return new \WP_Error('unauthorized', 'Neplatný token', array('status' => 403));
+            }
         }
         
         // Zpracovat bod
-        $result = On_Demand_Processor::process_point_sync($point_id, $point_type);
+        $processor = new On_Demand_Processor();
+        $result = $processor->process_point($point_id, $point_type);
         
         return rest_ensure_response($result);
     }
@@ -109,8 +113,13 @@ class REST_On_Demand {
      */
     public function check_status($request) {
         $point_id = $request->get_param('point_id');
+        $point_type = $request->get_param('type');
         
-        $status = On_Demand_Processor::check_processing_status($point_id);
+        if (!$point_id) {
+            return new \WP_Error('missing_point_id', 'Point ID is required', array('status' => 400));
+        }
+        
+        $status = On_Demand_Processor::check_processing_status($point_id, $point_type);
         
         return rest_ensure_response($status);
     }

@@ -182,6 +182,7 @@ require_once DB_PLUGIN_DIR . 'includes/Database_Optimizer.php';
 require_once DB_PLUGIN_DIR . 'includes/Jobs/On_Demand_Processor.php';
 require_once DB_PLUGIN_DIR . 'includes/Jobs/Optimized_Worker_Manager.php';
 require_once DB_PLUGIN_DIR . 'includes/REST_On_Demand.php';
+require_once DB_PLUGIN_DIR . 'includes/REST_Isochrones.php';
 
 // Hooky aktivace a deaktivace s bezpečnostním wrapperem
 function db_safe_activate() {
@@ -319,6 +320,14 @@ if ( file_exists( __DIR__ . '/includes/REST_On_Demand.php' ) ) {
     require_once __DIR__ . '/includes/REST_On_Demand.php';
     if ( class_exists( 'DB\REST_On_Demand' ) ) {
         DB\REST_On_Demand::get_instance()->register();
+    }
+}
+
+// Isochrones REST API
+if ( file_exists( __DIR__ . '/includes/REST_Isochrones.php' ) ) {
+    require_once __DIR__ . '/includes/REST_Isochrones.php';
+    if ( class_exists( 'DB\REST_Isochrones' ) ) {
+        DB\REST_Isochrones::get_instance()->register();
     }
 }
 
