@@ -729,7 +729,24 @@ class Nearby_Recompute_Job {
             $lat_key = '_db_lat';
             $lng_key = '_db_lng';
         }
+
+        // Cache key pro tento dotaz
+        $cache_key = 'db_candidates_' . md5($lat . '_' . $lng . '_' . $target_type . '_' . $radiusKm . '_' . $limit);
+        $cached_result = wp_cache_get($cache_key, 'db_nearby');
         
+        if ($cached_result !== false) {
+            $this->debug_log('[Cache] Using cached candidates', [
+                'origin_lat' => $lat,
+                'origin_lng' => $lng,
+                'target_type' => $target_type,
+                'radius_km' => $radiusKm,
+                'limit' => $limit,
+                'cached_count' => count($cached_result)
+            ]);
+            return $cached_result;
+        }
+        
+        // Optimalizovaný SQL dotaz s lepšími indexy
         $sql = $wpdb->prepare("
             SELECT p.ID as id,
                    lat_pm.meta_value+0 AS lat,
@@ -742,17 +759,27 @@ class Nearby_Recompute_Job {
                        SIN(RADIANS(%f)) * SIN(RADIANS(lat_pm.meta_value+0))
                    )) AS dist_km
             FROM {$wpdb->posts} p
-            JOIN {$wpdb->postmeta} lat_pm ON lat_pm.post_id = p.ID AND lat_pm.meta_key = %s
-            JOIN {$wpdb->postmeta} lng_pm ON lng_pm.post_id = p.ID AND lng_pm.meta_key = %s
-            WHERE p.post_type = %s AND p.post_status='publish'
-            AND lat_pm.meta_value != '' AND lng_pm.meta_value != ''
+            INNER JOIN {$wpdb->postmeta} lat_pm ON lat_pm.post_id = p.ID AND lat_pm.meta_key = %s
+            INNER JOIN {$wpdb->postmeta} lng_pm ON lng_pm.post_id = p.ID AND lng_pm.meta_key = %s
+            WHERE p.post_type = %s 
+            AND p.post_status = 'publish'
+            AND lat_pm.meta_value != '' 
+            AND lng_pm.meta_value != ''
+            AND lat_pm.meta_value+0 BETWEEN %f AND %f
+            AND lng_pm.meta_value+0 BETWEEN %f AND %f
             HAVING dist_km <= %f
             ORDER BY dist_km ASC
             LIMIT %d
-        ", $lat, $lng, $lat, $lat_key, $lng_key, $target_type, $radiusKm, $limit);
+        ", $lat, $lng, $lat, $lat_key, $lng_key, $target_type, 
+            $lat - ($radiusKm / 111.0), $lat + ($radiusKm / 111.0), // Přibližný bounding box
+            $lng - ($radiusKm / (111.0 * cos(deg2rad($lat)))), $lng + ($radiusKm / (111.0 * cos(deg2rad($lat)))),
+            $radiusKm, $limit);
 
+        $start_time = microtime(true);
         $rows = $wpdb->get_results($sql, ARRAY_A);
-        return array_map(function($r){
+        $query_time = microtime(true) - $start_time;
+        
+        $result = array_map(function($r){
             return [
                 'id'   => (int)$r['id'],
                 'lat'  => (float)$r['lat'],
@@ -762,6 +789,21 @@ class Nearby_Recompute_Job {
                 'dist_km' => isset($r['dist_km']) ? (float)$r['dist_km'] : null,
             ];
         }, $rows ?: []);
+
+        // Cache výsledek na 5 minut
+        wp_cache_set($cache_key, $result, 'db_nearby', 300);
+        
+        $this->debug_log('[Query] Candidates query completed', [
+            'origin_lat' => $lat,
+            'origin_lng' => $lng,
+            'target_type' => $target_type,
+            'radius_km' => $radiusKm,
+            'limit' => $limit,
+            'query_time' => round($query_time, 4),
+            'result_count' => count($result)
+        ]);
+
+        return $result;
     }
     
     /**

@@ -21,11 +21,25 @@ if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'DB_DEBUG' ) && DB_DEBUG ) {
     error_log( "[DB DEBUG] Plugin se načítá" );
 }
 
+// Zabránit duplicitní inicializaci
+if ( defined( 'DB_PLUGIN_LOADED' ) ) {
+    return;
+}
+define( 'DB_PLUGIN_LOADED', true );
+
 // Definice konstant
-define( 'DB_PLUGIN_FILE', __FILE__ );
-define( 'DB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
-define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'DB_PLUGIN_VERSION', '1.0.8' );
+if ( ! defined( 'DB_PLUGIN_FILE' ) ) {
+    define( 'DB_PLUGIN_FILE', __FILE__ );
+}
+if ( ! defined( 'DB_PLUGIN_DIR' ) ) {
+    define( 'DB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
+}
+if ( ! defined( 'DB_PLUGIN_URL' ) ) {
+    define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
+}
+if ( ! defined( 'DB_PLUGIN_VERSION' ) ) {
+    define( 'DB_PLUGIN_VERSION', '1.0.8' );
+}
 
 // -----------------------------------------------------------------------------
 // Access helpers – jednotná kontrola přístupu k mapové appce
@@ -160,6 +174,9 @@ spl_autoload_register( function ( $class ) {
         return;
     }
 } );
+
+// Načtení Database Optimizer
+require_once DB_PLUGIN_DIR . 'includes/Database_Optimizer.php';
 
 // Hooky aktivace a deaktivace s bezpečnostním wrapperem
 function db_safe_activate() {
