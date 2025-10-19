@@ -454,6 +454,8 @@ class REST_Map {
                     'connectors' => get_post_meta($post->ID, '_db_connectors', true),
                     'konektory' => get_post_meta($post->ID, '_db_konektory', true),
                     'db_connectors' => get_post_meta($post->ID, '_db_connectors', true),
+                    'price' => get_post_meta($post->ID, '_db_price', true),
+                    'access' => get_post_meta($post->ID, '_db_access', true),
                     'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
                     // Metadata o stavu a dostupnosti z externích API
                     'business_status' => get_post_meta($post->ID, '_charging_business_status', true),
