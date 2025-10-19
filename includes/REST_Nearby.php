@@ -1053,6 +1053,7 @@ class REST_Nearby {
             if ($item['post_type'] === 'poi') {
                 error_log('[REST_NEARBY DEBUG] POI ID: ' . $post->ID . ', Title: ' . get_the_title($post));
                 error_log('[REST_NEARBY DEBUG] Icon data: ' . print_r($icon_data, true));
+                error_log('[REST_NEARBY DEBUG] SVG content length: ' . strlen($icon_data['svg_content'] ?? ''));
             }
             
             // Základní properties (stejně jako v REST_Map.php)
@@ -1090,6 +1091,14 @@ class REST_Nearby {
             
             // Zachovat původní nearby data
             $enriched_item = array_merge($item, $properties);
+            
+            // Debug pro finální data
+            if ($item['post_type'] === 'poi') {
+                error_log('[REST_NEARBY DEBUG] Final enriched item for POI ID: ' . $post->ID);
+                error_log('[REST_NEARBY DEBUG] SVG content in final data: ' . ($enriched_item['svg_content'] ?? 'EMPTY'));
+                error_log('[REST_NEARBY DEBUG] Icon slug in final data: ' . ($enriched_item['icon_slug'] ?? 'EMPTY'));
+            }
+            
             $enriched[] = $enriched_item;
         }
         
