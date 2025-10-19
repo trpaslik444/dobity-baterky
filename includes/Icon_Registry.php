@@ -31,10 +31,23 @@ class Icon_Registry {
     public function get_icon( \WP_Post $post ) {
         $type = $post->post_type;
         if ( $type === 'charging_location' ) {
-            // Pro nabíječky použijeme inline SVG bez fill a barvu dodá frontend z admin nastavení
+            // Pro nabíječky načteme ikony z databáze stejně jako u POI
+            $icon_slug = get_post_meta($post->ID, '_icon_slug', true);
+            $icon_color = get_post_meta($post->ID, '_icon_color', true);
+            
+            // Pokud máme slug, načteme SVG obsah
+            $svg_content = '';
+            if (!empty($icon_slug)) {
+                $svg_path = $this->base_path . $icon_slug . '.svg';
+                if (file_exists($svg_path)) {
+                    $svg_content = file_get_contents($svg_path);
+                }
+            }
+            
             return [
-                'slug' => '', // nevracej slug, frontend si načte no-fill SVG a obarví
-                'color' => null,
+                'slug' => $icon_slug,
+                'color' => $icon_color,
+                'svg_content' => $svg_content,
             ];
         }
         if ( $type === 'rv_spot' ) {
