@@ -100,7 +100,6 @@ class Icon_Registry {
                 }
                 if ( file_exists($svg_path) ) {
                         $svg_content = file_get_contents($svg_path);
-                        error_log('[ICON_REGISTRY DEBUG] Found SVG file: ' . $svg_path . ' for POI ID: ' . $post->ID);
                         // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
                         $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
                         $svg_content = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg_content);
@@ -124,11 +123,7 @@ class Icon_Registry {
                             // POI barva se čerpá z centrálního nastavení
                             'color' => $global_poi_color,
                         ];
-                    } else {
-                        error_log('[ICON_REGISTRY DEBUG] SVG file not found: ' . $svg_path . ' for POI ID: ' . $post->ID);
                     }
-                } else {
-                    error_log('[ICON_REGISTRY DEBUG] No icon_slug for POI ID: ' . $post->ID);
                 }
                 
                 // Pokud není SVG dekorace, vrátit defaultní barvu z centrálního nastavení

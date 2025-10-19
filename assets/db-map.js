@@ -2325,7 +2325,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Pro POI použít SVG obsah
       return props.svg_content;
     } else if (props.icon_slug && props.icon_slug.trim() !== '') {
-      // Pro ostatní typy použít icon_slug
+      // Pro POI použít icon_slug jako fallback
       const iconUrl = getIconUrl(props.icon_slug);
       return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
     } else if (props.post_type === 'charging_location') {
@@ -2500,22 +2500,12 @@ document.addEventListener('DOMContentLoaded', async function() {
           
           // Získat originální ikonu podle typu místa
           const getItemIcon = (props) => {
-            // Debug pro ikony
-            if (props.post_type === 'poi') {
-              console.log('[DEBUG] POI icon data:', {
-                id: props.id,
-                title: props.title,
-                svg_content: props.svg_content,
-                icon_slug: props.icon_slug,
-                icon_color: props.icon_color
-              });
-            }
             
             if (props.svg_content && props.svg_content.trim() !== '') {
               // Pro POI použít SVG obsah
               return props.svg_content;
             } else if (props.icon_slug && props.icon_slug.trim() !== '') {
-              // Pro ostatní typy použít icon_slug
+              // Pro POI použít icon_slug jako fallback
               const iconUrl = getIconUrl(props.icon_slug);
               return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
             } else if (props.post_type === 'charging_location') {
