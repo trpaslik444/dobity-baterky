@@ -4990,16 +4990,28 @@ document.addEventListener('DOMContentLoaded', async function() {
               } catch(_) {}
             }
             LocationService.startWatch();
+            // Spustit i HeadingService pokud je k dispozici
+            HeadingService.start();
             return;
           }
           // prompt nebo unknown – watchPosition vyvolá dialog
           LocationService.startWatch();
           // iOS 13+ vyžaduje explicitní povolení pro orientaci zařízení – vyžádej při kliknutí
           if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try { await DeviceOrientationEvent.requestPermission(); } catch(_) {}
+            try { 
+              const permission = await DeviceOrientationEvent.requestPermission();
+              if (permission === 'granted') {
+                HeadingService.start();
+              }
+            } catch(_) {}
+          } else {
+            // Pro ostatní prohlížeče spustit přímo
+            HeadingService.start();
           }
         } catch(_) {
           LocationService.startWatch();
+          // Spustit i HeadingService pokud je k dispozici
+          HeadingService.start();
         }
       });
       btn.dataset.dbListenerAttached = '1';
@@ -5041,13 +5053,18 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Aktivovat pouze na mobilech
   if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-    HeadingService.start();
+    // Nezačínat automaticky - počkat na oprávnění
+    // HeadingService.start();
+    
     HeadingService.onUpdate((deg) => {
       __dbCurrentHeading = deg;
       if (__dbHeadingMarker && typeof deg === 'number') {
         const el = __dbHeadingMarker.getElement();
         if (el) {
-          try { el.style.transform = `rotate(${deg}deg)`; } catch(_) {}
+          try { 
+            // Rotovat celý marker podle skutečného headingu
+            el.style.transform = `rotate(${deg}deg)`; 
+          } catch(_) {}
         }
       }
     });
