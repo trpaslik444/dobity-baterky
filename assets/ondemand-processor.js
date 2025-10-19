@@ -26,30 +26,36 @@ class OnDemandProcessor {
         }
         
         try {
-            // Zkontrolovat cache status
-            const cacheStatus = await this.checkCacheStatus(pointId, pointType);
-            
-            if (cacheStatus.is_fresh) {
-                console.log(`Bod ${pointId} má aktuální cache`);
-                return cacheStatus.data;
-            }
-            
             // Zobrazit loading UI
             this.showLoadingUI(pointId, pointType);
             
             // Spustit zpracování
             const result = await this.startProcessing(pointId, pointType, priority);
             
-            if (result.status === 'processing') {
-                // Sledovat stav zpracování
-                this.monitorProcessing(pointId, result.check_url);
-            } else {
-                // Zpracování dokončeno
+            // Zpracovat výsledek podle statusu
+            if (result.status === 'cached' || result.status === 'completed') {
+                // Zpracování dokončeno (buď z cache nebo nově zpracováno)
+                console.log(`Bod ${pointId} zpracován: ${result.status}`);
                 this.hideLoadingUI(pointId);
                 this.processingPoints.delete(pointId);
+                
+                // Aktualizovat UI s daty
+                if (result.items || result.nearby || result.isochrones) {
+                    this.updateUIWithData(pointId, result);
+                }
+                
+                return result;
+            } else if (result.status === 'processing') {
+                // Asynchronní zpracování (pokud by bylo implementováno)
+                this.monitorProcessing(pointId, result.check_url);
+                return result;
+            } else {
+                // Neznámý status
+                console.warn(`Neznámý status: ${result.status}`, result);
+                this.hideLoadingUI(pointId);
+                this.processingPoints.delete(pointId);
+                return result;
             }
-            
-            return result;
             
         } catch (error) {
             console.error('Chyba při zpracování bodu:', error);
@@ -282,15 +288,39 @@ class OnDemandProcessor {
      * Aktualizovat UI s novými daty
      */
     updateUIWithData(pointId, data) {
-        // Implementovat aktualizaci UI s novými daty
         console.log(`Aktualizuji UI pro bod ${pointId} s daty:`, data);
         
-        // Zde by se měla aktualizovat mapa, seznam, detaily atd.
-        // Například:
-        // - Aktualizovat nearby body na mapě
-        // - Aktualizovat isochrony
-        // - Aktualizovat seznam nearby bodů
-        // - Aktualizovat detaily bodu
+        // Zobrazit toast notifikaci
+        this.showToast(`Bod ${pointId} byl úspěšně zpracován`, 'success');
+        
+        // Aktualizovat nearby data na mapě (pokud existuje dbMap instance)
+        if (window.dbMap && data.items) {
+            console.log('Aktualizuji nearby data na mapě:', data.items);
+            // Zde by se měla volat funkce pro aktualizaci mapy
+            // window.dbMap.updateNearbyData(pointId, data.items);
+        }
+        
+        // Aktualizovat isochrony (pokud existují)
+        if (data.isochrones && window.dbMap) {
+            console.log('Aktualizuji isochrony:', data.isochrones);
+            // window.dbMap.updateIsochrones(pointId, data.isochrones);
+        }
+        
+        // Aktualizovat seznam nearby bodů
+        if (data.items && data.items.length > 0) {
+            console.log(`Našeno ${data.items.length} nearby bodů`);
+            // Zde by se měla aktualizovat seznam nearby bodů
+        }
+        
+        // Dispatch custom event pro ostatní komponenty
+        const event = new CustomEvent('ondemand-completed', {
+            detail: {
+                pointId: pointId,
+                data: data,
+                status: data.status
+            }
+        });
+        document.dispatchEvent(event);
     }
     
     /**

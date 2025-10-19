@@ -3299,6 +3299,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       // Pokud data nejsou k dispozici, spustit on-demand zpracování
+      // Nejdříve získat token
+      const tokenResponse = await fetch('/wp-json/db/v1/ondemand/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || ''
+        },
+        body: JSON.stringify({
+          point_id: originId
+        })
+      });
+      
+      if (!tokenResponse.ok) {
+        throw new Error(`Token generation failed: ${tokenResponse.status}`);
+      }
+      
+      const tokenData = await tokenResponse.json();
+      
       const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
         method: 'POST',
         headers: {
@@ -3308,7 +3326,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         body: JSON.stringify({
           point_id: originId,
           point_type: type,
-          token: 'frontend-trigger'
+          token: tokenData.token
         })
       });
       
