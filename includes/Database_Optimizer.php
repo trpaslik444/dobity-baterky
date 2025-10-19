@@ -17,17 +17,34 @@ class Database_Optimizer {
         // Indexy pro postmeta tabulku - klíčové pro nearby dotazy
         $meta_indexes = array(
             // Kompozitní indexy pro meta_key + meta_value (MySQL kompatibilní)
-            "CREATE INDEX IF NOT EXISTS idx_postmeta_lat_key ON {$wpdb->postmeta} (meta_key, meta_value)",
-            "CREATE INDEX IF NOT EXISTS idx_postmeta_post_key ON {$wpdb->postmeta} (post_id, meta_key)",
-            
-            // Index pro post_type + post_status
-            "CREATE INDEX IF NOT EXISTS idx_posts_type_status ON {$wpdb->posts} (post_type, post_status)",
+            // meta_value je LONGTEXT, takže potřebujeme prefix délku (20 znaků pro souřadnice)
+            array(
+                'name' => 'idx_postmeta_lat_key',
+                'table' => $wpdb->postmeta,
+                'sql' => "CREATE INDEX idx_postmeta_lat_key ON {$wpdb->postmeta} (meta_key, meta_value(20))"
+            ),
+            array(
+                'name' => 'idx_postmeta_post_key', 
+                'table' => $wpdb->postmeta,
+                'sql' => "CREATE INDEX idx_postmeta_post_key ON {$wpdb->postmeta} (post_id, meta_key)"
+            ),
+            array(
+                'name' => 'idx_posts_type_status',
+                'table' => $wpdb->posts,
+                'sql' => "CREATE INDEX idx_posts_type_status ON {$wpdb->posts} (post_type, post_status)"
+            ),
         );
         
-        foreach ($meta_indexes as $sql) {
-            $result = $wpdb->query($sql);
+        foreach ($meta_indexes as $index) {
+            // Zkontrolovat, zda index už existuje
+            $existing_indexes = $wpdb->get_results($wpdb->prepare("SHOW INDEX FROM %s WHERE Key_name = %s", $index['table'], $index['name']));
+            if (!empty($existing_indexes)) {
+                continue; // Index už existuje, přeskočit
+            }
+            
+            $result = $wpdb->query($index['sql']);
             if ($result === false) {
-                $errors[] = "Chyba při vytváření indexu: " . $wpdb->last_error;
+                $errors[] = "Chyba při vytváření indexu {$index['name']}: " . $wpdb->last_error;
             } else {
                 $indexes_created++;
             }
