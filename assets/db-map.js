@@ -1205,10 +1205,56 @@ document.addEventListener('DOMContentLoaded', async function() {
        }).setView([50.08, 14.42], 12);
        window.map = map; // Nastavit globální přístup pro isochrones funkce
        
+      // Pokusit se získat polohu uživatele a centrovat na ni
+      const tryGetUserLocation = async () => {
+        try {
+          // Zkontrolovat, zda je geolokace dostupná
+          if (!navigator.geolocation) return null;
+          
+          // Zkusit získat poslední uloženou polohu z LocationService
+          const lastLoc = LocationService.getLast();
+          if (lastLoc && lastLoc.lat && lastLoc.lng) {
+            // Zkontrolovat, zda není příliš stará (max 1 hodina)
+            if (lastLoc.ts && (Date.now() - lastLoc.ts) < 3600000) {
+              return [lastLoc.lat, lastLoc.lng];
+            }
+          }
+          
+          // Pokusit se získat aktuální polohu
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+              resolve, 
+              reject, 
+              { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+            );
+          });
+          
+          if (pos && pos.coords) {
+            return [pos.coords.latitude, pos.coords.longitude];
+          }
+        } catch (err) {
+          // Tiše selhat - použije se defaultní pozice
+          console.debug('[DB Map] Geolocation not available or denied:', err.message);
+        }
+        return null;
+      };
+      
       // Spustit počáteční fetch hned po inicializaci mapy
       if (loadMode === 'radius') {
         setTimeout(async () => {
-          const c = map.getCenter();
+          // Zkusit získat polohu uživatele
+          const userLocation = await tryGetUserLocation();
+          
+          let c;
+          if (userLocation) {
+            // Centrovat na polohu uživatele
+            map.setView(userLocation, 13, { animate: false });
+            c = map.getCenter();
+          } else {
+            // Použít defaultní centrum
+            c = map.getCenter();
+          }
+          
           try {
             // Pro počáteční načítání použít větší radius (FIXED_RADIUS_KM)
             await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
