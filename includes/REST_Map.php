@@ -453,6 +453,7 @@ class REST_Map {
                     'speed' => get_post_meta($post->ID, '_db_speed', true),
                     'connectors' => get_post_meta($post->ID, '_db_connectors', true),
                     'konektory' => get_post_meta($post->ID, '_db_konektory', true),
+                    'db_connectors' => get_post_meta($post->ID, '_db_connectors', true),
                     'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
                     // Metadata o stavu a dostupnosti z externích API
                     'business_status' => get_post_meta($post->ID, '_charging_business_status', true),
@@ -650,6 +651,7 @@ class REST_Map {
                                 }
                                 $properties['connectors'] = $meta_connectors;
                                 $properties['konektory'] = $meta_connectors;
+                                $properties['db_connectors'] = $meta_connectors;
                             } else {
                                 // Pokud je string, zkusit parsovat jako JSON
                                 $parsed = json_decode($meta_connectors, true);
@@ -662,6 +664,7 @@ class REST_Map {
                                     }
                                     $properties['connectors'] = $parsed;
                                     $properties['konektory'] = $parsed;
+                                    $properties['db_connectors'] = $parsed;
                                 }
                             }
                         }
@@ -680,6 +683,7 @@ class REST_Map {
                                 }
                                 $properties['connectors'] = $ocm_connectors;
                                 $properties['konektory'] = $ocm_connectors;
+                                $properties['db_connectors'] = $ocm_connectors;
                             }
                         }
                         
@@ -690,6 +694,7 @@ class REST_Map {
                             if (!empty($connectors_meta) && is_array($connectors_meta)) {
                                 $properties['connectors'] = $connectors_meta;
                                 $properties['konektory'] = $connectors_meta;
+                                $properties['db_connectors'] = $connectors_meta;
                             }
                         }
                         
@@ -700,6 +705,7 @@ class REST_Map {
                             if (!empty($mpo_connectors) && is_array($mpo_connectors)) {
                                 $properties['connectors'] = $mpo_connectors;
                                 $properties['konektory'] = $mpo_connectors;
+                                $properties['db_connectors'] = $mpo_connectors;
                             }
                         }
                     }

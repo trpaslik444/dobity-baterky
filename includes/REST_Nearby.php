@@ -1062,6 +1062,7 @@ class REST_Nearby {
                 'speed' => get_post_meta($post->ID, '_db_speed', true),
                 'connectors' => get_post_meta($post->ID, '_db_connectors', true),
                 'konektory' => get_post_meta($post->ID, '_db_konektory', true),
+                'db_connectors' => get_post_meta($post->ID, '_db_connectors', true),
                 'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
                 'image' => get_post_meta($post->ID, '_db_image', true),
                 'address' => get_post_meta($post->ID, '_db_address', true),
