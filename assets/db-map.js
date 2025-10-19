@@ -2321,10 +2321,10 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Získat originální ikonu pro typ bodu
   const getTypeIcon = (props) => {
-    if (props.svg_content) {
+    if (props.svg_content && props.svg_content.trim() !== '') {
       // Pro POI použít SVG obsah
       return props.svg_content;
-    } else if (props.icon_slug) {
+    } else if (props.icon_slug && props.icon_slug.trim() !== '') {
       // Pro ostatní typy použít icon_slug
       const iconUrl = getIconUrl(props.icon_slug);
       return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
@@ -2334,6 +2334,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     } else if (props.post_type === 'rv_spot') {
       // Fallback pro RV
       return '🚐';
+    } else if (props.post_type === 'poi') {
+      // Fallback pro POI - použít generickou ikonu podniku
+      return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+      </svg>`;
     }
     return '📍';
   };
