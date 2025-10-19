@@ -41,6 +41,42 @@ class Icon_Registry {
                 $svg_path = $this->base_path . $icon_slug . '.svg';
                 if (file_exists($svg_path)) {
                     $svg_content = file_get_contents($svg_path);
+                    // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
+                    $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
+                    $svg_content = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg_content);
+                    $svg_content = preg_replace('/<svg /', '<svg width="100%" height="100%" style="display:block;" ', $svg_content, 1);
+                    // Nastavit barvu podle globálního nastavení pro všechny charging locations
+                    $icon_fill = get_option('db_charger_icon_color', '#049FE8');
+                    if (!is_string($icon_fill) || !preg_match('/^#[0-9a-fA-F]{6}$/', $icon_fill)) {
+                        $icon_fill = '#049FE8';
+                    }
+                    $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_fill . '"', $svg_content);
+                    $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_fill . '"', $svg_content);
+                    // Pokud SVG nemá fill/stroke atributy, přidáme je
+                    if (strpos($svg_content, 'fill=') === false) {
+                        $svg_content = preg_replace('/<svg([^>]*)>/', '<svg$1 fill="' . $icon_fill . '">', $svg_content);
+                    }
+                }
+            } else {
+                // Fallback pro charging locations bez icon_slug - načíst defaultní charger ikonu
+                $charger_svg_path = $this->base_path . 'charger ivon no fill.svg';
+                if (file_exists($charger_svg_path)) {
+                    $svg_content = file_get_contents($charger_svg_path);
+                    // Úprava SVG: odstranění width/height a přidání width="100%" height="100%" style="display:block;"
+                    $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
+                    $svg_content = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg_content);
+                    $svg_content = preg_replace('/<svg /', '<svg width="100%" height="100%" style="display:block;" ', $svg_content, 1);
+                    // Nastavit barvu podle globálního nastavení
+                    $icon_fill = get_option('db_charger_icon_color', '#049FE8');
+                    if (!is_string($icon_fill) || !preg_match('/^#[0-9a-fA-F]{6}$/', $icon_fill)) {
+                        $icon_fill = '#049FE8';
+                    }
+                    $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_fill . '"', $svg_content);
+                    $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_fill . '"', $svg_content);
+                    // Pokud SVG nemá fill/stroke atributy, přidáme je
+                    if (strpos($svg_content, 'fill=') === false) {
+                        $svg_content = preg_replace('/<svg([^>]*)>/', '<svg$1 fill="' . $icon_fill . '">', $svg_content);
+                    }
                 }
             }
             
