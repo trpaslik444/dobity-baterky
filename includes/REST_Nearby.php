@@ -1051,6 +1051,22 @@ class REST_Nearby {
             
             
             // Základní properties (stejně jako v REST_Map.php)
+            $connectors = get_post_meta($post->ID, '_db_connectors', true);
+            $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+            $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
+            
+            // Přidat výkony do konektorů
+            if (is_array($connectors) && !empty($connectors)) {
+                foreach ($connectors as &$connector) {
+                    if (isset($charger_powers[$connector['type']])) {
+                        $connector['power'] = $charger_powers[$connector['type']];
+                    }
+                    if (isset($charger_counts[$connector['type']])) {
+                        $connector['quantity'] = $charger_counts[$connector['type']];
+                    }
+                }
+            }
+            
             $properties = [
                 'id' => $post->ID,
                 'post_type' => $item['post_type'],
@@ -1060,9 +1076,9 @@ class REST_Nearby {
                 'svg_content' => $icon_data['svg_content'] ?? '',
                 'provider' => get_post_meta($post->ID, '_db_provider', true),
                 'speed' => get_post_meta($post->ID, '_db_speed', true),
-                'connectors' => get_post_meta($post->ID, '_db_connectors', true),
-                'konektory' => get_post_meta($post->ID, '_db_konektory', true),
-                'db_connectors' => get_post_meta($post->ID, '_db_connectors', true),
+                'connectors' => $connectors,
+                'konektory' => $connectors,
+                'db_connectors' => $connectors,
                 'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
                 'image' => get_post_meta($post->ID, '_db_image', true),
                 'address' => get_post_meta($post->ID, '_db_address', true),

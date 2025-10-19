@@ -639,14 +639,18 @@ class REST_Map {
                     if (empty($properties['connectors'])) {
                         $meta_connectors = get_post_meta($post->ID, '_db_connectors', true);
                         $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+                        $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
                         
                         
                         if (!empty($meta_connectors)) {
                             if (is_array($meta_connectors)) {
-                                // Přidat počty z _db_charger_counts
+                                // Přidat počty a výkony z databáze
                                 foreach ($meta_connectors as &$connector) {
                                     if (isset($charger_counts[$connector['type']])) {
                                         $connector['quantity'] = $charger_counts[$connector['type']];
+                                    }
+                                    if (isset($charger_powers[$connector['type']])) {
+                                        $connector['power'] = $charger_powers[$connector['type']];
                                     }
                                 }
                                 $properties['connectors'] = $meta_connectors;
@@ -656,10 +660,13 @@ class REST_Map {
                                 // Pokud je string, zkusit parsovat jako JSON
                                 $parsed = json_decode($meta_connectors, true);
                                 if (is_array($parsed)) {
-                                    // Přidat počty z _db_charger_counts
+                                    // Přidat počty a výkony z databáze
                                     foreach ($parsed as &$connector) {
                                         if (isset($charger_counts[$connector['type']])) {
                                             $connector['quantity'] = $charger_counts[$connector['type']];
+                                        }
+                                        if (isset($charger_powers[$connector['type']])) {
+                                            $connector['power'] = $charger_powers[$connector['type']];
                                         }
                                     }
                                     $properties['connectors'] = $parsed;
@@ -673,12 +680,16 @@ class REST_Map {
                         if (empty($properties['connectors'])) {
                             $ocm_connectors = get_post_meta($post->ID, '_ocm_connectors', true);
                             $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+                            $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
                             
                             if (!empty($ocm_connectors) && is_array($ocm_connectors)) {
-                                // Přidat počty z _db_charger_counts
+                                // Přidat počty a výkony z databáze
                                 foreach ($ocm_connectors as &$connector) {
                                     if (isset($charger_counts[$connector['type']])) {
                                         $connector['quantity'] = $charger_counts[$connector['type']];
+                                    }
+                                    if (isset($charger_powers[$connector['type']])) {
+                                        $connector['power'] = $charger_powers[$connector['type']];
                                     }
                                 }
                                 $properties['connectors'] = $ocm_connectors;
