@@ -2431,6 +2431,31 @@ document.addEventListener('DOMContentLoaded', async function() {
       map.setView([lat, lng], map.getZoom(), { animate: true, duration: 0.5 });
     }
     
+    // Pokud je to charging_location, načíst rozšířená data asynchronně
+    if (p.post_type === 'charging_location') {
+      const needsChargingEnrich = shouldFetchChargingDetails(p);
+      if (needsChargingEnrich) {
+        // Načíst data na pozadí a aktualizovat UI
+        enrichChargingFeature(feature).then(enrichedCharging => {
+          if (enrichedCharging && enrichedCharging !== feature) {
+            // Aktualizovat cache
+            featureCache.set(enrichedCharging.properties.id, enrichedCharging);
+            
+            // Aktualizovat konektory v mobile sheet
+            const connectorsSection = mobileSheet.querySelector('.sheet-connectors');
+            if (connectorsSection) {
+              const newConnectorsSection = generateMobileConnectorsSection(enrichedCharging.properties);
+              if (newConnectorsSection) {
+                connectorsSection.outerHTML = newConnectorsSection;
+              }
+            }
+          }
+        }).catch(err => {
+          // Silent fail - pokračovat s původními daty
+        });
+      }
+    }
+    
     // Načíst nearby data pro mobilní sheet
     setTimeout(() => {
       const nearbyContainer = mobileSheet.querySelector('.sheet-nearby-list');
