@@ -21,11 +21,25 @@ if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'DB_DEBUG' ) && DB_DEBUG ) {
     error_log( "[DB DEBUG] Plugin se načítá" );
 }
 
+// Zabránit duplicitní inicializaci
+if ( defined( 'DB_PLUGIN_LOADED' ) ) {
+    return;
+}
+define( 'DB_PLUGIN_LOADED', true );
+
 // Definice konstant
-define( 'DB_PLUGIN_FILE', __FILE__ );
-define( 'DB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
-define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-define( 'DB_PLUGIN_VERSION', '2.0.1' );
+if ( ! defined( 'DB_PLUGIN_FILE' ) ) {
+    define( 'DB_PLUGIN_FILE', __FILE__ );
+}
+if ( ! defined( 'DB_PLUGIN_DIR' ) ) {
+    define( 'DB_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
+}
+if ( ! defined( 'DB_PLUGIN_URL' ) ) {
+    define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
+}
+if ( ! defined( 'DB_PLUGIN_VERSION' ) ) {
+    define( 'DB_PLUGIN_VERSION', '2.0.1' );
+}
 
 // -----------------------------------------------------------------------------
 // Access helpers – jednotná kontrola přístupu k mapové appce
@@ -161,6 +175,15 @@ spl_autoload_register( function ( $class ) {
     }
 } );
 
+// Načtení Database Optimizer
+require_once DB_PLUGIN_DIR . 'includes/Database_Optimizer.php';
+
+// Načtení On-Demand Processor
+require_once DB_PLUGIN_DIR . 'includes/Jobs/On_Demand_Processor.php';
+require_once DB_PLUGIN_DIR . 'includes/Jobs/Optimized_Worker_Manager.php';
+require_once DB_PLUGIN_DIR . 'includes/REST_On_Demand.php';
+require_once DB_PLUGIN_DIR . 'includes/REST_Isochrones.php';
+
 // Hooky aktivace a deaktivace s bezpečnostním wrapperem
 function db_safe_activate() {
     try {
@@ -292,6 +315,22 @@ if ( file_exists( __DIR__ . '/includes/REST_Map.php' ) ) {
     }
 }
 
+// On-Demand REST API
+if ( file_exists( __DIR__ . '/includes/REST_On_Demand.php' ) ) {
+    require_once __DIR__ . '/includes/REST_On_Demand.php';
+    if ( class_exists( 'DB\REST_On_Demand' ) ) {
+        DB\REST_On_Demand::get_instance()->register();
+    }
+}
+
+// Isochrones REST API
+if ( file_exists( __DIR__ . '/includes/REST_Isochrones.php' ) ) {
+    require_once __DIR__ . '/includes/REST_Isochrones.php';
+    if ( class_exists( 'DB\REST_Isochrones' ) ) {
+        DB\REST_Isochrones::get_instance()->register();
+    }
+}
+
 
 // Feedback module (REST + frontend + admin)
 if ( file_exists( __DIR__ . '/includes/Feedback.php' ) ) {
@@ -410,6 +449,9 @@ add_action('wp_enqueue_scripts', function() {
     wp_enqueue_script( 'leaflet-markercluster', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js', array('leaflet'), '1.5.3', true );
     wp_enqueue_script( 'db-map', plugins_url( 'assets/db-map.js', DB_PLUGIN_FILE ), array('leaflet','leaflet-markercluster'), DB_PLUGIN_VERSION, true );
     
+    // On-Demand Processor
+    wp_enqueue_script( 'db-ondemand', plugins_url( 'assets/ondemand-processor.js', DB_PLUGIN_FILE ), array('jquery'), DB_PLUGIN_VERSION, true );
+    
     // Data pro JS
     wp_localize_script( 'db-map', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
@@ -435,7 +477,19 @@ add_action('wp_enqueue_scripts', function() {
         'rvColor' => get_option('db_rv_color', '#FCE67D'),
         // Barva ikony nabíječky uvnitř pinu (bez vnitřního fill ve SVG)
         'chargerIconColor' => get_option('db_charger_icon_color', '#ffffff'),
+        // Account / user info for frontend menu
+        'isLoggedIn' => is_user_logged_in(),
+        'currentUser' => is_user_logged_in() ? wp_get_current_user()->display_name : '',
+        'accountUrl' => is_user_logged_in() ? admin_url('profile.php') : wp_login_url(),
+        'logoutUrl' => is_user_logged_in() ? wp_logout_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ) : '',
+        'loginUrl' => is_user_logged_in() ? '' : wp_login_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ),
     ) );
+    
+    // On-Demand Processor data
+    wp_localize_script( 'db-ondemand', 'wpApiSettings', array(
+        'root' => esc_url_raw( rest_url() ),
+        'nonce' => wp_create_nonce( 'wp_rest' )
+    ));
 }, 20);
 
 // Registrace capability v Members pluginu - spustí se až když je Members dostupný

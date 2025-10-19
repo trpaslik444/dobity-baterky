@@ -648,7 +648,11 @@ class Nearby_Recompute_Job {
                 'error' => null,
                 'error_at' => null,
                 'retry_after_s' => null,
-                'running' => false
+                'running' => false,
+                'user_settings' => [
+                    'enabled' => true,
+                    'walking_speed' => 4.5
+                ]
             ];
             
             update_post_meta($origin_id, $meta_key, json_encode($payload));
@@ -676,19 +680,41 @@ class Nearby_Recompute_Job {
         $meta_key = 'db_isochrones_v1_' . $profile;
         $cfg = get_option('db_nearby_config', []);
         
-        $payload = [
-            'version' => 1,
-            'profile' => $profile,
-            'ranges_s' => [552, 1124, 1695],
-            'center' => null,
-            'geojson' => null,
-            'computed_at' => current_time('c'),
-            'ttl_days' => 30,
-            'error' => $error_type,
-            'error_at' => current_time('c'),
-            'retry_after_s' => $retry_after,
-            'running' => false
-        ];
+        // DŮLEŽITÉ: Zachovat stará data, pokud existují
+        $existing_cache = get_post_meta($origin_id, $meta_key, true);
+        $existing_payload = null;
+        
+        if ($existing_cache && !empty($existing_cache)) {
+            $existing_payload = is_string($existing_cache) ? json_decode($existing_cache, true) : $existing_cache;
+        }
+        
+        // Pokud máme stará data, zachovat je a jen přidat error info
+        if ($existing_payload && isset($existing_payload['geojson']) && !empty($existing_payload['geojson'])) {
+            $payload = $existing_payload;
+            $payload['error'] = $error_type;
+            $payload['error_at'] = current_time('c');
+            $payload['retry_after_s'] = $retry_after;
+            $payload['running'] = false;
+        } else {
+            // Pokud nemáme stará data, vytvořit novou strukturu s null
+            $payload = [
+                'version' => 1,
+                'profile' => $profile,
+                'ranges_s' => [552, 1124, 1695],
+                'center' => null,
+                'geojson' => null,
+                'computed_at' => current_time('c'),
+                'ttl_days' => 30,
+                'error' => $error_type,
+                'error_at' => current_time('c'),
+                'retry_after_s' => $retry_after,
+                'running' => false,
+                'user_settings' => [
+                    'enabled' => true,
+                    'walking_speed' => 4.5
+                ]
+            ];
+        }
         
         update_post_meta($origin_id, $meta_key, json_encode($payload));
     }
@@ -729,7 +755,24 @@ class Nearby_Recompute_Job {
             $lat_key = '_db_lat';
             $lng_key = '_db_lng';
         }
+
+        // Cache key pro tento dotaz
+        $cache_key = 'db_candidates_' . md5($lat . '_' . $lng . '_' . $target_type . '_' . $radiusKm . '_' . $limit);
+        $cached_result = wp_cache_get($cache_key, 'db_nearby');
         
+        if ($cached_result !== false) {
+            $this->debug_log('[Cache] Using cached candidates', [
+                'origin_lat' => $lat,
+                'origin_lng' => $lng,
+                'target_type' => $target_type,
+                'radius_km' => $radiusKm,
+                'limit' => $limit,
+                'cached_count' => count($cached_result)
+            ]);
+            return $cached_result;
+        }
+        
+        // Optimalizovaný SQL dotaz s lepšími indexy
         $sql = $wpdb->prepare("
             SELECT p.ID as id,
                    lat_pm.meta_value+0 AS lat,
@@ -742,17 +785,27 @@ class Nearby_Recompute_Job {
                        SIN(RADIANS(%f)) * SIN(RADIANS(lat_pm.meta_value+0))
                    )) AS dist_km
             FROM {$wpdb->posts} p
-            JOIN {$wpdb->postmeta} lat_pm ON lat_pm.post_id = p.ID AND lat_pm.meta_key = %s
-            JOIN {$wpdb->postmeta} lng_pm ON lng_pm.post_id = p.ID AND lng_pm.meta_key = %s
-            WHERE p.post_type = %s AND p.post_status='publish'
-            AND lat_pm.meta_value != '' AND lng_pm.meta_value != ''
+            INNER JOIN {$wpdb->postmeta} lat_pm ON lat_pm.post_id = p.ID AND lat_pm.meta_key = %s
+            INNER JOIN {$wpdb->postmeta} lng_pm ON lng_pm.post_id = p.ID AND lng_pm.meta_key = %s
+            WHERE p.post_type = %s 
+            AND p.post_status = 'publish'
+            AND lat_pm.meta_value != '' 
+            AND lng_pm.meta_value != ''
+            AND lat_pm.meta_value+0 BETWEEN %f AND %f
+            AND lng_pm.meta_value+0 BETWEEN %f AND %f
             HAVING dist_km <= %f
             ORDER BY dist_km ASC
             LIMIT %d
-        ", $lat, $lng, $lat, $lat_key, $lng_key, $target_type, $radiusKm, $limit);
+        ", $lat, $lng, $lat, $lat_key, $lng_key, $target_type, 
+            $lat - ($radiusKm / 111.0), $lat + ($radiusKm / 111.0), // Přibližný bounding box
+            $lng - ($radiusKm / (111.0 * cos(deg2rad($lat)))), $lng + ($radiusKm / (111.0 * cos(deg2rad($lat)))),
+            $radiusKm, $limit);
 
+        $start_time = microtime(true);
         $rows = $wpdb->get_results($sql, ARRAY_A);
-        return array_map(function($r){
+        $query_time = microtime(true) - $start_time;
+        
+        $result = array_map(function($r){
             return [
                 'id'   => (int)$r['id'],
                 'lat'  => (float)$r['lat'],
@@ -762,6 +815,21 @@ class Nearby_Recompute_Job {
                 'dist_km' => isset($r['dist_km']) ? (float)$r['dist_km'] : null,
             ];
         }, $rows ?: []);
+
+        // Cache výsledek na 5 minut
+        wp_cache_set($cache_key, $result, 'db_nearby', 300);
+        
+        $this->debug_log('[Query] Candidates query completed', [
+            'origin_lat' => $lat,
+            'origin_lng' => $lng,
+            'target_type' => $target_type,
+            'radius_km' => $radiusKm,
+            'limit' => $limit,
+            'query_time' => round($query_time, 4),
+            'result_count' => count($result)
+        ]);
+
+        return $result;
     }
     
     /**

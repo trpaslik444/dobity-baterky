@@ -200,6 +200,14 @@ class REST_Nearby {
         $type      = $request->get_param('type'); // 'poi' | 'charging_location' | 'rv_spot'
         $limit     = max(1, (int)$request->get_param('limit'));
 
+        // Cache key pro tento požadavek
+        $cache_key = 'db_nearby_response_' . $origin_id . '_' . $type . '_' . $limit;
+        $cached_response = wp_cache_get($cache_key, 'db_nearby');
+        
+        if ($cached_response !== false) {
+            return rest_ensure_response($cached_response);
+        }
+
         $meta_key = ($type === 'poi') ? '_db_nearby_cache_poi_foot' : (($type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
 
         $cache     = get_post_meta($origin_id, $meta_key, true);
@@ -317,7 +325,7 @@ class REST_Nearby {
             }
         }
 
-        return rest_ensure_response([
+        $response = [
             'origin_id' => $origin_id,
             'type'      => $type,
             'stale'     => $stale,
@@ -332,7 +340,12 @@ class REST_Nearby {
             'next_retry_at' => $next_retry_at,
             'isochrones' => $isochrones_data,
             'version'   => 4
-        ]);
+        ];
+
+        // Cache odpověď na 2 minuty
+        wp_cache_set($cache_key, $response, 'db_nearby', 120);
+
+        return rest_ensure_response($response);
     }
 
     /**

@@ -640,6 +640,13 @@ body.db-license-modal-open {
   margin-bottom: 0.3em;
 }
 
+/* Skrýt sort dropdown v mobile view */
+@media (max-width: 900px) {
+  .db-map-list-sort-wrap {
+    display: none;
+  }
+}
+
 .db-map-card:first-of-type {
   margin-top: 0.3rem;
 }
@@ -714,12 +721,17 @@ body.db-license-modal-open {
     margin: 0;
     padding-top: 0.5rem;
     box-shadow: none;
-    z-index: 10001;
+    z-index: 10000;
   }
   .db-list-mode .db-map-topbar { display: none; }
   
   /* Přidání padding-top pro kompenzaci fixed topbar */
   .db-map-root { padding-top: 4rem; }
+  
+  /* První karta v listu musí začínat pod headerem */
+  .db-list-mode #db-map-list .db-map-card:first-child {
+    margin-top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px) + 60px);
+  }
   
   /* Menu režim - mapa/list se odsunou do strany */
   .db-menu-open .db-map-root {
@@ -820,6 +832,54 @@ body.db-license-modal-open {
     gap: 1rem;
     margin-bottom: 1.5rem;
   }
+
+  /* Account section inside menu */
+  .db-account-section .db-account-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .db-account-section .db-account-user {
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .db-account-section .db-account-actions {
+    display: flex;
+    gap: 1rem;
+  }
+  .db-account-section .db-account-link {
+    color: #ffffff;
+    text-decoration: underline;
+  }
+
+  /* Živá poloha – pulzující tečka */
+  .db-live-loc {
+    box-shadow: 0 0 0 0 rgba(4,159,232,0.7);
+    animation: db-pulse 2s infinite;
+  }
+  @keyframes db-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(4,159,232,0.5); }
+    70% { box-shadow: 0 0 0 14px rgba(4,159,232,0); }
+    100% { box-shadow: 0 0 0 0 rgba(4,159,232,0); }
+  }
+
+  /* Heading arrow at user location */
+  /* Heading container (larger, with FOV fan and dot) */
+  .db-heading-container { width: 120px; height: 120px; transform-origin: 60px 60px; }
+  .db-heading-wrapper { position: relative; width: 120px; height: 120px; transform-origin: 60px 60px; }
+  /* Field of view fan */
+  .db-heading-fov {
+    position: absolute; left: 0; top: 0; width: 120px; height: 120px; border-radius: 50%;
+    /* Širší výseč, centrovaná kolem směru (rotační kompenzace -40deg pro symetrii) */
+    background: conic-gradient(rgba(4,159,232,0.36) 0deg 80deg, rgba(4,159,232,0) 80deg 360deg);
+    transform: rotate(-40deg);
+    -webkit-mask: radial-gradient(circle at 50% 50%, transparent 14px, #000 14px);
+            mask: radial-gradient(circle at 50% 50%, transparent 14px, #000 14px);
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.25));
+  }
+  /* Outer white ring + inner blue dot */
+  .db-live-dot { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%; background: #ffffff; box-shadow: 0 8px 16px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; }
+  .db-live-dot > span { display:block; width: 14px; height: 14px; border-radius: 50%; background: #049FE8; }
   
   .db-menu-section-title {
     font-size: 0.9rem;
@@ -1288,7 +1348,7 @@ body.has-attribution #db-mobile-sheet.open {
 }
 
 /* List režim – header s ovládáním */
-#db-list-header { position: sticky; top: 0; z-index: 10002; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #049FE8; }
+#db-list-header { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px)); z-index: 10002; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #049FE8; }
 #db-list-header .db-map-topbar-btn { margin-left: 0; }
 .db-map-topbar-btn.active { background: #FF8DAA; color: #fff; transform: scale(1.05); }
 

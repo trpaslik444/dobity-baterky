@@ -38,6 +38,13 @@ class Nearby_Worker {
             return false;
         }
 
+        // Rate limiting - maximálně 1 požadavek za 30 sekund
+        $rate_limit_key = 'db_nearby_worker_rate_limit';
+        if (get_transient($rate_limit_key)) {
+            return false;
+        }
+        set_transient($rate_limit_key, 1, 30);
+
         $token = self::ensure_token();
         $url = rest_url('db/v1/nearby/worker');
 

@@ -1,0 +1,524 @@
+/**
+ * Optimized Admin CSS - Styly pro optimalizované admin rozhraní
+ * @package DobityBaterky
+ */
+
+/* Hlavní kontejner */
+.db-ondemand-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Statistiky */
+.db-ondemand-stats {
+    margin: 20px 0;
+}
+
+.db-stat-box {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 2px 4px rgba(0,0,0,.04);
+    margin-bottom: 20px;
+    transition: box-shadow 0.3s ease;
+}
+
+.db-stat-box:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,.08);
+}
+
+.db-stat-box h3 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    color: #1d2327;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.db-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-top: 16px;
+}
+
+.db-stat-item {
+    text-align: center;
+    padding: 20px;
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+    transition: all 0.3s ease;
+}
+
+.db-stat-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,.1);
+}
+
+.db-stat-number {
+    display: block;
+    font-size: 2.5em;
+    font-weight: 700;
+    color: #0073aa;
+    line-height: 1;
+    margin-bottom: 8px;
+}
+
+.db-stat-label {
+    display: block;
+    font-size: 14px;
+    color: #6c757d;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Akce */
+.db-ondemand-actions {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+}
+
+.db-ondemand-actions h2 {
+    margin: 0 0 16px 0;
+    font-size: 18px;
+    color: #1d2327;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.db-action-buttons {
+    display: flex;
+    gap: 12px;
+    margin: 16px 0;
+    flex-wrap: wrap;
+}
+
+.db-action-buttons .button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    border: 1px solid transparent;
+}
+
+.db-action-buttons .button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+}
+
+.db-action-buttons .button-primary {
+    background: linear-gradient(135deg, #0073aa 0%, #005a87 100%);
+    color: #fff;
+    border-color: #0073aa;
+}
+
+.db-action-buttons .button-primary:hover {
+    background: linear-gradient(135deg, #005a87 0%, #004066 100%);
+    border-color: #005a87;
+}
+
+.db-action-buttons .button:not(.button-primary) {
+    background: #fff;
+    color: #1d2327;
+    border-color: #ccd0d4;
+}
+
+.db-action-buttons .button:not(.button-primary):hover {
+    background: #f8f9fa;
+    border-color: #0073aa;
+    color: #0073aa;
+}
+
+/* Test formulář */
+.db-ondemand-test {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+}
+
+.db-ondemand-test h2 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    color: #1d2327;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.db-ondemand-test .form-table {
+    margin: 0;
+}
+
+.db-ondemand-test .form-table th {
+    width: 150px;
+    padding: 12px 0;
+    vertical-align: top;
+}
+
+.db-ondemand-test .form-table td {
+    padding: 12px 0;
+}
+
+.db-ondemand-test .regular-text {
+    width: 100%;
+    max-width: 300px;
+    padding: 8px 12px;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.db-ondemand-test .regular-text:focus {
+    border-color: #0073aa;
+    box-shadow: 0 0 0 2px rgba(0,115,170,.2);
+    outline: none;
+}
+
+.db-ondemand-test select {
+    width: 100%;
+    max-width: 300px;
+    padding: 8px 12px;
+    border: 1px solid #ccd0d4;
+    border-radius: 4px;
+    font-size: 14px;
+    background: #fff;
+}
+
+.db-ondemand-test select:focus {
+    border-color: #0073aa;
+    box-shadow: 0 0 0 2px rgba(0,115,170,.2);
+    outline: none;
+}
+
+.db-ondemand-test .description {
+    font-size: 12px;
+    color: #6c757d;
+    margin-top: 4px;
+}
+
+.db-ondemand-test .submit {
+    margin: 20px 0 0 0;
+}
+
+/* Hromadné zpracování */
+.db-ondemand-bulk {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+}
+
+.db-ondemand-bulk h2 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    color: #1d2327;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Výsledky */
+.db-ondemand-test-result,
+.db-ondemand-bulk-result {
+    margin-top: 20px;
+}
+
+.db-ondemand-test-result .notice,
+.db-ondemand-bulk-result .notice {
+    margin: 0;
+    padding: 16px;
+    border-radius: 6px;
+    border-left: 4px solid;
+}
+
+.db-ondemand-test-result .notice-success,
+.db-ondemand-bulk-result .notice-success {
+    background: #d4edda;
+    border-left-color: #28a745;
+    color: #155724;
+}
+
+.db-ondemand-test-result .notice-error,
+.db-ondemand-bulk-result .notice-error {
+    background: #f8d7da;
+    border-left-color: #dc3545;
+    color: #721c24;
+}
+
+.db-ondemand-test-result .notice-info,
+.db-ondemand-bulk-result .notice-info {
+    background: #d1ecf1;
+    border-left-color: #17a2b8;
+    color: #0c5460;
+}
+
+/* Status badges */
+.db-status-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.db-status-completed {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.db-status-processing {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeaa7;
+}
+
+.db-status-error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.db-status-cached {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+.db-status-not-found {
+    background: #e2e3e5;
+    color: #6c757d;
+    border: 1px solid #d6d8db;
+}
+
+/* Cache management */
+.db-cache-stats {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+}
+
+.db-cache-stats h2 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    color: #1d2327;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.db-cache-stats .form-table {
+    margin: 0;
+}
+
+.db-cache-stats .form-table th {
+    width: 200px;
+    padding: 12px 0;
+    font-weight: 600;
+    color: #1d2327;
+}
+
+.db-cache-stats .form-table td {
+    padding: 12px 0;
+    color: #6c757d;
+}
+
+/* Database optimization */
+.db-optimization-actions {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+}
+
+.db-optimization-actions h2 {
+    margin: 0 0 20px 0;
+    font-size: 18px;
+    color: #1d2327;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.db-optimization-results {
+    margin-top: 20px;
+}
+
+.db-optimization-results .notice {
+    margin: 0;
+    padding: 16px;
+    border-radius: 6px;
+    border-left: 4px solid;
+}
+
+.db-optimization-results .notice-success {
+    background: #d4edda;
+    border-left-color: #28a745;
+    color: #155724;
+}
+
+.db-optimization-results .notice-error {
+    background: #f8d7da;
+    border-left-color: #dc3545;
+    color: #721c24;
+}
+
+/* Processing logs */
+.db-logs-content {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+    min-height: 200px;
+}
+
+/* Legacy admin */
+.db-legacy-admin-content {
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+}
+
+.db-legacy-admin-content .notice-warning {
+    margin: 0 0 20px 0;
+    padding: 16px;
+    border-radius: 6px;
+    border-left: 4px solid #ffc107;
+    background: #fff3cd;
+    color: #856404;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .db-stat-grid {
+        grid-template-columns: 1fr;
+        gap: 16px;
+    }
+    
+    .db-action-buttons {
+        flex-direction: column;
+    }
+    
+    .db-action-buttons .button {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .db-ondemand-test .form-table th,
+    .db-ondemand-test .form-table td {
+        display: block;
+        width: 100%;
+        padding: 8px 0;
+    }
+    
+    .db-ondemand-test .regular-text,
+    .db-ondemand-test select {
+        max-width: 100%;
+    }
+}
+
+/* Animace */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.db-ondemand-container > * {
+    animation: fadeIn 0.5s ease-out;
+}
+
+/* Loading states */
+.db-loading {
+    position: relative;
+    pointer-events: none;
+}
+
+.db-loading::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #0073aa;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .db-stat-box,
+    .db-ondemand-actions,
+    .db-ondemand-test,
+    .db-ondemand-bulk,
+    .db-cache-stats,
+    .db-optimization-actions,
+    .db-logs-content,
+    .db-legacy-admin-content {
+        background: #1e1e1e;
+        border-color: #3c434a;
+        color: #f0f0f1;
+    }
+    
+    .db-stat-item {
+        background: linear-gradient(135deg, #2c2c2c 0%, #3c434a 100%);
+        border-color: #3c434a;
+    }
+    
+    .db-stat-number {
+        color: #72aee6;
+    }
+    
+    .db-stat-label {
+        color: #a7aaad;
+    }
+    
+    .db-ondemand-test .regular-text,
+    .db-ondemand-test select {
+        background: #2c2c2c;
+        border-color: #3c434a;
+        color: #f0f0f1;
+    }
+    
+    .db-ondemand-test .regular-text:focus,
+    .db-ondemand-test select:focus {
+        border-color: #72aee6;
+        box-shadow: 0 0 0 2px rgba(114,174,230,.2);
+    }
+}
