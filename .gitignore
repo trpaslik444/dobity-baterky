@@ -4,3 +4,8 @@ dobity-baterky-FINAL.zip
 *.log
 logs/
 staging-debug.log
+
+# Production logs - contain sensitive data
+downloaded logs from production/
+production-logs/
+*.csv

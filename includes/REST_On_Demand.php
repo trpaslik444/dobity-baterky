@@ -53,7 +53,7 @@ class REST_On_Demand {
         register_rest_route('db/v1', '/ondemand/status/(?P<point_id>\d+)', array(
             'methods' => 'GET',
             'callback' => array($this, 'check_status'),
-            'permission_callback' => '__return_true',
+            'permission_callback' => array($this, 'check_ondemand_permission'),
             'args' => array(
                 'point_id' => array(
                     'required' => true,
