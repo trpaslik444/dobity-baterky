@@ -10,6 +10,7 @@ use DB\Jobs\On_Demand_Processor;
 use DB\Jobs\Nearby_Recompute_Job;
 use DB\Jobs\POI_Discovery_Job;
 use DB\Jobs\Charging_Discovery_Job;
+use DB\Database_Optimizer;
 
 class Optimized_Worker_Manager {
     
@@ -346,6 +347,70 @@ class Optimized_Worker_Manager {
             'status' => 'ready',
             'coordinates' => "{$lat}, {$lng}",
             'last_modified' => $post->post_modified
+        );
+    }
+    
+    /**
+     * Optimalizuje databázi podle zadané operace
+     */
+    public function optimize_database(string $operation = 'create_indexes'): array {
+        switch ($operation) {
+            case 'create_indexes':
+                return Database_Optimizer::create_indexes();
+                
+            case 'cleanup_cache':
+                $deleted = Database_Optimizer::cleanup_old_cache();
+                return array(
+                    'deleted_records' => $deleted,
+                    'message' => "Smazáno {$deleted} starých záznamů z cache"
+                );
+                
+            case 'get_stats':
+                return Database_Optimizer::get_performance_stats();
+                
+            default:
+                return array(
+                    'error' => "Neznámá operace: {$operation}",
+                    'available_operations' => array('create_indexes', 'cleanup_cache', 'get_stats')
+                );
+        }
+    }
+    
+    /**
+     * Zpracuje více bodů najednou
+     */
+    public function process_bulk(array $point_ids, string $point_type, array $options = array()): array {
+        $results = array();
+        $total_processed = 0;
+        $total_errors = 0;
+        
+        foreach ($point_ids as $point_id) {
+            try {
+                $result = $this->process_on_demand($point_id, $point_type, $options['priority'] ?? 'normal');
+                $results[] = $result;
+                
+                if ($result['status'] === 'completed') {
+                    $total_processed++;
+                } else {
+                    $total_errors++;
+                }
+                
+            } catch (\Exception $e) {
+                $results[] = array(
+                    'point_id' => $point_id,
+                    'point_type' => $point_type,
+                    'status' => 'error',
+                    'error' => $e->getMessage()
+                );
+                $total_errors++;
+            }
+        }
+        
+        return array(
+            'total_points' => count($point_ids),
+            'processed' => $total_processed,
+            'errors' => $total_errors,
+            'results' => $results
         );
     }
 }
