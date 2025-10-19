@@ -968,7 +968,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           features = (visibleNow && visibleNow.length > 0) ? visibleNow : (lastRenderedFeatures.length > 0 ? lastRenderedFeatures : incoming);
         }
         window.features = features;
-        
+        populateFilterOptions();
+
         // Vykreslit karty po načtení dat
         renderCards('', null, false);
 
@@ -1000,6 +1001,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               
               features = filteredFeatures;
               window.features = features;
+              populateFilterOptions();
           }
         } catch (fallbackErr) {
         }
@@ -1043,6 +1045,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       features = Array.isArray(data?.features) ? data.features : [];
+      populateFilterOptions();
 
 
       if (typeof clearMarkers === 'function') clearMarkers();
@@ -1858,6 +1861,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       <label style="display:flex;align-items:center;gap:.4em;"><input type="checkbox" id="db-filter-ac" checked /> AC</label>
     </div>
     <div style="margin-top:.6em;">
+      <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Cena</div>
+      <label style="display:flex;align-items:center;gap:.4em;">
+        <input type="checkbox" id="db-filter-free" /> Jen zdarma
+      </label>
+    </div>
+    <div style="margin-top:.6em;">
       <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Výkon (kW)</div>
       <div style="position:relative;height:40px;margin:10px 0;">
         <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:#e5e7eb;border-radius:2px;transform:translateY(-50%);"></div>
@@ -1875,15 +1884,15 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     <div style="margin-top:.8em;">
       <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Typ konektoru</div>
-      <div id="db-filter-connector" style="width:100%;max-height:120px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;"></div>
+      <div id="db-filter-connector" style="width:100%;max-height:140px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
     </div>
-    <div style="margin-top:.8em;opacity:.6;">
+    <div style="margin-top:.8em;">
       <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Amenity v okolí</div>
-      <div id="db-filter-amenity" style="width:100%;max-height:120px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;opacity:0.6;" disabled title="Připravujeme"></div>
+      <div id="db-filter-amenity" style="width:100%;max-height:160px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
     </div>
-    <div style="margin-top:.8em;opacity:.6;">
+    <div style="margin-top:.8em;">
       <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Přístup</div>
-      <div id="db-filter-access" style="width:100%;max-height:120px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;opacity:0.6;" disabled title="Připravujeme"></div>
+      <div id="db-filter-access" style="width:100%;max-height:140px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;display:flex;flex-wrap:wrap;gap:6px;"></div>
     </div>
     <div style="display:flex;gap:.5em;margin-top:.8em;justify-content:space-between;padding-bottom:8px;">
       <button type="button" id="db-filter-reset" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;padding:.4em .8em;cursor:pointer;">Vymazat</button>
@@ -1954,6 +1963,21 @@ document.addEventListener('DOMContentLoaded', async function() {
       select.appendChild(opt);
     });
   }
+  function applyConnectorIconStyles(iconEl, isSelected) {
+    if (!iconEl) return;
+    if (isSelected) {
+      iconEl.classList.add('selected');
+      iconEl.style.background = '#FF6A4B';
+      iconEl.style.borderColor = '#FF6A4B';
+      iconEl.style.color = '#fff';
+    } else {
+      iconEl.classList.remove('selected');
+      iconEl.style.background = 'transparent';
+      iconEl.style.borderColor = '#e5e7eb';
+      iconEl.style.color = '#666';
+    }
+  }
+
   function fillConnectorIcons(container, values) {
     if (!container) return;
     container.innerHTML = '';
@@ -1961,28 +1985,117 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!v) return;
       const iconDiv = document.createElement('div');
       iconDiv.className = 'db-connector-icon';
-      iconDiv.dataset.value = String(v);
+      const normalizedValue = String(v).toLowerCase();
+      iconDiv.dataset.value = normalizedValue;
       iconDiv.style.cssText = 'display:inline-block;width:32px;height:32px;margin:4px;border:2px solid #e5e7eb;border-radius:6px;cursor:pointer;transition:all 0.2s;background:transparent;';
       iconDiv.title = String(v);
       // Zde by se načetla ikona konektoru z adminu
       iconDiv.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:12px;color:#666;">${String(v).substring(0,3)}</div>`;
       iconDiv.addEventListener('click', () => {
-        iconDiv.classList.toggle('selected');
-        if (iconDiv.classList.contains('selected')) {
-          iconDiv.style.background = '#FF6A4B';
-          iconDiv.style.borderColor = '#FF6A4B';
-          iconDiv.style.color = '#fff';
-        } else {
-          iconDiv.style.background = 'transparent';
-          iconDiv.style.borderColor = '#e5e7eb';
-          iconDiv.style.color = '#666';
-        }
+        const isSelected = !iconDiv.classList.contains('selected');
+        applyConnectorIconStyles(iconDiv, isSelected);
         // Aktualizovat filterState
-        filterState.connectors = new Set(Array.from(container.querySelectorAll('.selected')).map(el => el.dataset.value));
+        const selected = Array.from(container.querySelectorAll('.selected')).map(el => String(el.dataset.value || '').toLowerCase());
+        filterState.connectors = new Set(selected);
         renderCards('', null, false);
       });
+      if (filterState.connectors.has(normalizedValue)) {
+        applyConnectorIconStyles(iconDiv, true);
+      }
       container.appendChild(iconDiv);
     });
+  }
+
+  function humanizeLabel(value) {
+    if (!value) return '';
+    const cleaned = String(value).replace(/[_-]+/g, ' ').trim();
+    if (!cleaned) return '';
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+
+  function formatAccessLabel(value) {
+    const normalized = String(value || '').toLowerCase();
+    const map = {
+      'public': 'Veřejný',
+      'public 24/7': 'Veřejný 24/7',
+      'private': 'Soukromý',
+      'restricted': 'Omezený',
+      'customers': 'Pro zákazníky',
+      'residents': 'Pro rezidenty',
+      'guests': 'Pro hosty',
+    };
+    if (map[normalized]) {
+      return map[normalized];
+    }
+    return humanizeLabel(value);
+  }
+
+  function fillSelectablePills(container, entries, stateKey, emptyLabel = 'Žádné možnosti') {
+    if (!container) return;
+    const stateSet = filterState[stateKey];
+    if (!(stateSet instanceof Set)) {
+      return;
+    }
+    container.innerHTML = '';
+
+    if (!entries || entries.length === 0) {
+      const placeholder = document.createElement('div');
+      placeholder.style.cssText = 'font-size:0.82em;color:#888;';
+      placeholder.textContent = emptyLabel;
+      container.appendChild(placeholder);
+      return;
+    }
+
+    const sortedEntries = entries.slice().sort((a, b) => a.label.localeCompare(b.label, 'cs', { sensitivity: 'base' }));
+
+    sortedEntries.forEach(({ value, label }) => {
+      const normalized = String(value).toLowerCase();
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.dataset.value = normalized;
+      pill.textContent = label;
+      pill.style.cssText = 'border:1px solid #e5e7eb;border-radius:999px;padding:4px 10px;font-size:0.82em;background:#fff;color:#444;cursor:pointer;transition:all 0.2s;';
+
+      if (stateSet.has(normalized)) {
+        pill.classList.add('selected');
+        pill.style.background = '#049FE8';
+        pill.style.borderColor = '#049FE8';
+        pill.style.color = '#fff';
+      }
+
+      pill.addEventListener('click', () => {
+        if (stateSet.has(normalized)) {
+          stateSet.delete(normalized);
+          pill.classList.remove('selected');
+          pill.style.background = '#fff';
+          pill.style.borderColor = '#e5e7eb';
+          pill.style.color = '#444';
+        } else {
+          stateSet.add(normalized);
+          pill.classList.add('selected');
+          pill.style.background = '#049FE8';
+          pill.style.borderColor = '#049FE8';
+          pill.style.color = '#fff';
+        }
+        renderCards('', null, false);
+      });
+
+      container.appendChild(pill);
+    });
+  }
+
+  function pruneSelectionSet(currentSet, allowedValues) {
+    if (!(currentSet instanceof Set)) {
+      return new Set();
+    }
+    const next = new Set();
+    currentSet.forEach((value) => {
+      const normalized = String(value || '').toLowerCase();
+      if (allowedValues.has(normalized)) {
+        next.add(normalized);
+      }
+    });
+    return next;
   }
 
   function normalizeConnectorType(str) {
@@ -2026,72 +2139,146 @@ document.addEventListener('DOMContentLoaded', async function() {
     return maxKw || 0;
   }
   function populateFilterOptions() {
-    
+
     const connectorSet = new Set();
-    let minPower = 0;
-    let maxPower = 400;
-    
-    
-    
+    const amenityMap = new Map();
+    const accessSet = new Set();
+    let minPower = Infinity;
+    let maxPower = 0;
+    let powerFound = false;
+
     features.forEach(f => {
       const p = f.properties || {};
       if (p.post_type === 'charging_location') {
         const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
         arr.forEach(c => { const key = getConnectorTypeKey(c); if (key) connectorSet.add(key); });
-        
-        // Najít min/max výkon pro dynamický rozsah
+
         const power = getStationMaxKw(p);
-        if (power > 0) {
+        if (power > 0 || power === 0) {
+          powerFound = powerFound || (power > 0);
           minPower = Math.min(minPower, power);
           maxPower = Math.max(maxPower, power);
         }
+
+        if (Array.isArray(p.amenities)) {
+          p.amenities.forEach((amenity) => {
+            const slug = String((amenity && (amenity.slug || amenity.name || amenity)) || '').toLowerCase();
+            if (!slug) return;
+            const label = (amenity && amenity.name) ? amenity.name : humanizeLabel(slug);
+            if (!amenityMap.has(slug)) {
+              amenityMap.set(slug, label);
+            }
+          });
+        }
+
+        const accessRaw = (p.access || p.charging_access || '').toString().trim();
+        if (accessRaw) {
+          accessSet.add(accessRaw.toLowerCase());
+        }
       }
     });
-    
-    
-    
-    // Aktualizovat rozsah jezdce podle dat
+
+    if (!Number.isFinite(minPower) || !Number.isFinite(maxPower) || minPower === Infinity) {
+      minPower = 0;
+      maxPower = 400;
+    } else {
+      if (!powerFound && minPower === maxPower) {
+        minPower = 0;
+      }
+      minPower = Math.max(0, Math.floor(minPower));
+      maxPower = Math.ceil(maxPower);
+      if (maxPower <= minPower) {
+        maxPower = minPower;
+      }
+    }
+
+    // Prune selections to available options
+    filterState.connectors = pruneSelectionSet(filterState.connectors, connectorSet);
+    const amenityAllowed = new Set(amenityMap.keys());
+    filterState.amenities = pruneSelectionSet(filterState.amenities, amenityAllowed);
+    filterState.access = pruneSelectionSet(filterState.access, accessSet);
+
     updatePowerRange(minPower, maxPower);
-    
+
     const connectorContainer = document.getElementById('db-filter-connector');
-    
-    
-    
     fillConnectorIcons(connectorContainer, connectorSet);
+
+    const amenityContainer = document.getElementById('db-filter-amenity');
+    const amenityEntries = Array.from(amenityMap.entries()).map(([slug, label]) => ({ value: slug, label: label || humanizeLabel(slug) }));
+    fillSelectablePills(amenityContainer, amenityEntries, 'amenities', 'Zatím žádné amenity');
+
+    const accessContainer = document.getElementById('db-filter-access');
+    const accessEntries = Array.from(accessSet).map(value => ({ value, label: formatAccessLabel(value) }));
+    fillSelectablePills(accessContainer, accessEntries, 'access', 'Zatím žádná data o přístupu');
   }
-  
+
   function updatePowerRange(minPower, maxPower) {
     const pMinR = document.getElementById('db-power-min');
     const pMaxR = document.getElementById('db-power-max');
     const pMinValue = document.getElementById('db-power-min-value');
     const pMaxValue = document.getElementById('db-power-max-value');
-    
+
+    const resolvedMin = Math.floor(minPower);
+    const resolvedMax = Math.ceil(maxPower);
+    powerBounds = {
+      min: resolvedMin,
+      max: resolvedMax,
+    };
+
     if (pMinR && pMaxR) {
-      // Nastavit min/max hodnoty jezdce
-      pMinR.min = Math.floor(minPower);
-      pMaxR.min = Math.floor(minPower);
-      pMinR.max = Math.ceil(maxPower);
-      pMaxR.max = Math.ceil(maxPower);
-      
-      // Nastavit výchozí hodnoty
-      pMinR.value = Math.floor(minPower);
-      pMaxR.value = Math.ceil(maxPower);
-      
-      // Aktualizovat filterState
-      filterState.powerMin = Math.floor(minPower);
-      filterState.powerMax = Math.ceil(maxPower);
-      
-      // Aktualizovat zobrazení
-      if (pMinValue) pMinValue.textContent = `${Math.floor(minPower)} kW`;
-      if (pMaxValue) pMaxValue.textContent = `${Math.ceil(maxPower)} kW`;
-      
-      // Aktualizovat vizuální vyplnění
+      pMinR.min = resolvedMin;
+      pMaxR.min = resolvedMin;
+      pMinR.max = resolvedMax;
+      pMaxR.max = resolvedMax;
+
+      let currentMin = filterState.powerMin;
+      let currentMax = filterState.powerMax;
+
+      if (!powerBoundsInitialized) {
+        currentMin = resolvedMin;
+        currentMax = resolvedMax;
+      }
+
+      currentMin = Math.min(Math.max(currentMin, resolvedMin), resolvedMax);
+      currentMax = Math.min(Math.max(currentMax, resolvedMin), resolvedMax);
+
+      if (currentMin > currentMax) {
+        if (powerBoundsInitialized) {
+          currentMin = resolvedMin;
+          currentMax = resolvedMax;
+        } else {
+          currentMin = resolvedMin;
+          currentMax = resolvedMax;
+        }
+      }
+
+      filterState.powerMin = currentMin;
+      filterState.powerMax = currentMax;
+
+      pMinR.value = String(currentMin);
+      pMaxR.value = String(currentMax);
+
+      if (pMinValue) pMinValue.textContent = `${currentMin} kW`;
+      if (pMaxValue) pMaxValue.textContent = `${currentMax} kW`;
+
       const pRangeFill = document.getElementById('db-power-range-fill');
       if (pRangeFill) {
-        pRangeFill.style.left = '0%';
-        pRangeFill.style.width = '100%';
+        if (powerBounds.max === powerBounds.min) {
+          pRangeFill.style.left = '0%';
+          pRangeFill.style.width = '100%';
+        } else {
+          const rangeSize = Math.max(powerBounds.max - powerBounds.min, 1);
+          const leftPercent = ((currentMin - powerBounds.min) / rangeSize) * 100;
+          const rightPercent = ((currentMax - powerBounds.min) / rangeSize) * 100;
+          const clampedLeft = Math.min(Math.max(leftPercent, 0), 100);
+          const clampedRight = Math.min(Math.max(rightPercent, clampedLeft), 100);
+          pRangeFill.style.left = `${clampedLeft}%`;
+          pRangeFill.style.width = `${clampedRight - clampedLeft}%`;
+        }
       }
     }
+
+    powerBoundsInitialized = true;
   }
   function readMulti(selectId) {
     const el = document.getElementById(selectId);
@@ -2101,8 +2288,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     return s;
   }
   function attachFilterHandlers() {
+    if (filterHandlersAttached) {
+      return;
+    }
+    filterHandlersAttached = true;
     const acEl = document.getElementById('db-filter-ac');
     const dcEl = document.getElementById('db-filter-dc');
+    const freeEl = document.getElementById('db-filter-free');
     const pMinR = document.getElementById('db-power-min');
     const pMaxR = document.getElementById('db-power-max');
     const pMinValue = document.getElementById('db-power-min-value');
@@ -2112,48 +2304,83 @@ document.addEventListener('DOMContentLoaded', async function() {
     const applyBtn = document.getElementById('db-filter-apply');
 
     // Jezdec s vizuálním vyplněním
-    function updatePowerSlider() {
-      const minVal = parseInt(pMinR.value || '0', 10);
-      const maxVal = parseInt(pMaxR.value || '400', 10);
-      
-      // Aktualizovat vizuální vyplnění jezdce
-      if (pRangeFill) {
-        const minPercent = (minVal / 400) * 100;
-        const maxPercent = (maxVal / 400) * 100;
-        pRangeFill.style.left = `${minPercent}%`;
-        pRangeFill.style.width = `${maxPercent - minPercent}%`;
+    let lastSliderChanged = null;
+    function updatePowerSlider(triggerRender = true) {
+      if (!pMinR || !pMaxR) return;
+      let minVal = parseInt(pMinR.value || `${powerBounds.min}`, 10);
+      let maxVal = parseInt(pMaxR.value || `${powerBounds.max}`, 10);
+
+      if (!Number.isFinite(minVal)) minVal = powerBounds.min;
+      if (!Number.isFinite(maxVal)) maxVal = powerBounds.max;
+
+      minVal = Math.min(Math.max(minVal, powerBounds.min), powerBounds.max);
+      maxVal = Math.min(Math.max(maxVal, powerBounds.min), powerBounds.max);
+
+      if (minVal > maxVal) {
+        if (lastSliderChanged === 'min') {
+          maxVal = minVal;
+          pMaxR.value = String(maxVal);
+        } else if (lastSliderChanged === 'max') {
+          minVal = maxVal;
+          pMinR.value = String(minVal);
+        } else {
+          const newMin = Math.min(minVal, maxVal);
+          const newMax = Math.max(minVal, maxVal);
+          minVal = newMin;
+          maxVal = newMax;
+          pMinR.value = String(minVal);
+          pMaxR.value = String(maxVal);
+        }
       }
-      
-      // Aktualizovat hodnoty
-      if (pMinValue) pMinValue.textContent = `${minVal} kW`;
-      if (pMaxValue) pMaxValue.textContent = `${maxVal} kW`;
-      
-      // Aktualizovat filterState
+
       filterState.powerMin = minVal;
       filterState.powerMax = maxVal;
-      
-      // Překreslit karty
-      if (typeof renderCards === 'function') {
+
+      if (pMinValue) pMinValue.textContent = `${minVal} kW`;
+      if (pMaxValue) pMaxValue.textContent = `${maxVal} kW`;
+
+      if (pRangeFill) {
+        if (powerBounds.max === powerBounds.min) {
+          pRangeFill.style.left = '0%';
+          pRangeFill.style.width = '100%';
+        } else {
+          const rangeSize = Math.max(powerBounds.max - powerBounds.min, 1);
+          const leftPercent = ((minVal - powerBounds.min) / rangeSize) * 100;
+          const rightPercent = ((maxVal - powerBounds.min) / rangeSize) * 100;
+          const clampedLeft = Math.min(Math.max(leftPercent, 0), 100);
+          const clampedRight = Math.min(Math.max(rightPercent, clampedLeft), 100);
+          pRangeFill.style.left = `${clampedLeft}%`;
+          pRangeFill.style.width = `${clampedRight - clampedLeft}%`;
+        }
+      }
+
+      if (triggerRender && typeof renderCards === 'function') {
         renderCards('', null, false);
       }
     }
 
-    if (acEl) acEl.addEventListener('change', () => { 
-      filterState.ac = !!acEl.checked; 
+    if (acEl) acEl.addEventListener('change', () => {
+      filterState.ac = !!acEl.checked;
       if (typeof renderCards === 'function') {
-        renderCards('', null, false); 
+        renderCards('', null, false);
       }
     });
-    if (dcEl) dcEl.addEventListener('change', () => { 
-      filterState.dc = !!dcEl.checked; 
+    if (dcEl) dcEl.addEventListener('change', () => {
+      filterState.dc = !!dcEl.checked;
       if (typeof renderCards === 'function') {
-        renderCards('', null, false); 
+        renderCards('', null, false);
       }
     });
-    
-    if (pMinR) pMinR.addEventListener('input', updatePowerSlider);
-    if (pMaxR) pMaxR.addEventListener('input', updatePowerSlider);
-    
+    if (freeEl) freeEl.addEventListener('change', () => {
+      filterState.freeOnly = !!freeEl.checked;
+      if (typeof renderCards === 'function') {
+        renderCards('', null, false);
+      }
+    });
+
+    if (pMinR) pMinR.addEventListener('input', () => { lastSliderChanged = 'min'; updatePowerSlider(true); });
+    if (pMaxR) pMaxR.addEventListener('input', () => { lastSliderChanged = 'max'; updatePowerSlider(true); });
+
     // Zabránit posuvání mapy při používání posuvníků
     if (pMinR) {
       pMinR.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
@@ -2172,32 +2399,56 @@ document.addEventListener('DOMContentLoaded', async function() {
       pMaxR.addEventListener('mousemove', function(e) { e.stopPropagation(); });
       pMaxR.addEventListener('mouseup', function(e) { e.stopPropagation(); });
     }
-    
+
     if (resetBtn) resetBtn.addEventListener('click', () => {
       filterState.ac = true; filterState.dc = true;
-      filterState.powerMin = 0; filterState.powerMax = 400;
+      filterState.freeOnly = false;
+      filterState.powerMin = powerBounds.min;
+      filterState.powerMax = powerBounds.max;
       filterState.connectors = new Set();
-      
-      if (acEl) acEl.checked = true; 
+      filterState.amenities = new Set();
+      filterState.access = new Set();
+
+      if (acEl) acEl.checked = true;
       if (dcEl) dcEl.checked = true;
-      
-      if (pMinR && pMaxR) { 
-        pMinR.value = '0'; 
-        pMaxR.value = '400'; 
-        updatePowerSlider();
+      if (freeEl) freeEl.checked = false;
+
+      if (pMinR && pMaxR) {
+        pMinR.value = String(powerBounds.min);
+        pMaxR.value = String(powerBounds.max);
+        updatePowerSlider(false);
       }
-      
+
       // Resetovat connector ikony
       const connectorContainer = document.getElementById('db-filter-connector');
       if (connectorContainer) {
         Array.from(connectorContainer.querySelectorAll('.db-connector-icon')).forEach(el => {
-          el.classList.remove('selected');
-          el.style.background = 'transparent';
-          el.style.borderColor = '#e5e7eb';
-          el.style.color = '#666';
+          applyConnectorIconStyles(el, false);
         });
       }
-      
+
+      // Resetovat amenity a access volby
+      const amenityContainer = document.getElementById('db-filter-amenity');
+      if (amenityContainer) {
+        Array.from(amenityContainer.querySelectorAll('button.selected')).forEach(el => {
+          el.classList.remove('selected');
+          el.style.background = '#fff';
+          el.style.borderColor = '#e5e7eb';
+          el.style.color = '#444';
+        });
+      }
+      const accessContainer = document.getElementById('db-filter-access');
+      if (accessContainer) {
+        Array.from(accessContainer.querySelectorAll('button.selected')).forEach(el => {
+          el.classList.remove('selected');
+          el.style.background = '#fff';
+          el.style.borderColor = '#e5e7eb';
+          el.style.color = '#444';
+        });
+      }
+
+      populateFilterOptions();
+
       if (typeof renderCards === 'function') {
         renderCards('', null, false);
       }
@@ -2208,16 +2459,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         renderCards('', null, false); 
       }
     });
-    
 
-    
+
+
     // Inicializace jezdce
     if (pMinR && pMaxR) {
-      updatePowerSlider();
+      updatePowerSlider(false);
     }
-    
+
 
   }
+
+  attachFilterHandlers();
 
   // Mobilní bottom sheet pro detail - nový design jako plovoucí karta
   let mobileSheet = document.getElementById('db-mobile-sheet');
@@ -5123,7 +5376,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     connectors: new Set(),
     amenities: new Set(),
     access: new Set(),
+    freeOnly: false,
   };
+
+  let powerBounds = { min: 0, max: 400 };
+  let powerBoundsInitialized = false;
+  let filterHandlersAttached = false;
   
   // Funkce pro počáteční načtení bodů - používá stávající data z mapy
   async function loadInitialPoints() {
@@ -5141,6 +5399,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     } catch (error) {
       features = [];
       window.features = features;
+      populateFilterOptions();
     }
   }
   
@@ -5724,6 +5983,38 @@ document.addEventListener('DOMContentLoaded', async function() {
         const keys = new Set(arr.map(getConnectorTypeKey));
         let ok = false; filterState.connectors.forEach(sel => { if (keys.has(String(sel).toLowerCase())) ok = true; });
         if (!ok) return false;
+      }
+      if (filterState.freeOnly) {
+        const priceRaw = (p.price || p.db_price || '').toString().toLowerCase();
+        const compactPrice = priceRaw.replace(/\s+/g, '');
+        const numericCompact = compactPrice.replace(/[,.]/g, '');
+        const numericDigits = numericCompact.replace(/[^0-9]/g, '');
+        const numericZero = numericDigits.length > 0 && parseInt(numericDigits, 10) === 0;
+        const isFree = priceRaw.includes('zdarma') || compactPrice === 'free' || numericZero;
+        if (!isFree) {
+          return false;
+        }
+      }
+      if (filterState.amenities && filterState.amenities.size > 0) {
+        const amenitiesArr = Array.isArray(p.amenities) ? p.amenities : [];
+        const amenitySlugs = new Set();
+        amenitiesArr.forEach((amenity) => {
+          const slug = String((amenity && (amenity.slug || amenity.name || amenity)) || '').toLowerCase();
+          if (slug) {
+            amenitySlugs.add(slug);
+          }
+        });
+        for (const required of filterState.amenities) {
+          if (!amenitySlugs.has(String(required).toLowerCase())) {
+            return false;
+          }
+        }
+      }
+      if (filterState.access && filterState.access.size > 0) {
+        const accessValue = (p.access || p.charging_access || '').toString().toLowerCase();
+        if (!accessValue || !filterState.access.has(accessValue)) {
+          return false;
+        }
       }
       return true;
     });
@@ -6378,6 +6669,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (visible && visible.length > 0) {
               features = visible;
               window.features = features;
+              populateFilterOptions();
               if (typeof clearMarkers === 'function') clearMarkers();
               renderCards('', null, false);
             lastRenderedFeatures = features.slice(0);
