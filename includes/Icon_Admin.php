@@ -334,17 +334,26 @@ class Icon_Admin {
                 echo '<div class="notice notice-success"><p>OpenRouteService API nastavení bylo uloženo.</p></div>';
             }
         }
+
+        if (isset($_POST['save_mapy_api_settings'])) {
+            if (wp_verify_nonce($_POST['api_nonce'], 'save_api_settings')) {
+                update_option('db_mapy_api_key', sanitize_text_field($_POST['mapy_api_key']));
+                echo '<div class="notice notice-success"><p>Mapy.com API nastavení bylo uloženo.</p></div>';
+            }
+        }
         
         $google_api_key = get_option('db_google_api_key', '');
         $tripadvisor_api_key = get_option('db_tripadvisor_api_key', '');
         $tomtom_api_key = get_option('db_tomtom_api_key', '');
         $openchargemap_api_key = get_option('db_openchargemap_api_key', '');
+        $mapy_api_key = get_option('db_mapy_api_key', '');
         $config = get_option('db_nearby_config', array());
         $ors_api_key = $config['ors_api_key'] ?? '';
         $google_masked_key = $google_api_key ? str_repeat('•', min(strlen($google_api_key), 20)) : '';
         $ta_masked_key = $tripadvisor_api_key ? str_repeat('•', min(strlen($tripadvisor_api_key), 20)) : '';
         $tomtom_masked_key = $tomtom_api_key ? str_repeat('•', min(strlen($tomtom_api_key), 20)) : '';
         $openchargemap_masked_key = $openchargemap_api_key ? str_repeat('•', min(strlen($openchargemap_api_key), 20)) : '';
+        $mapy_masked_key = $mapy_api_key ? str_repeat('•', min(strlen($mapy_api_key), 20)) : '';
         $ors_masked_key = $ors_api_key ? str_repeat('•', min(strlen($ors_api_key), 20)) : '';
         ?>
         <div class="card">
@@ -362,6 +371,25 @@ class Icon_Admin {
                         <p class="description">
                             Získejte klíč na <a href="https://console.cloud.google.com/" target="_blank">Google Cloud Console</a>.
                         </p>
+                        <p class="description"><strong>Priorita:</strong> 2. (sekundární) | <strong>Cache:</strong> 30 dní</p>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Mapy.com API nastavení</h2>
+            <p>API klíč pro Mapy.com API. Primární volba pro obohacování dat v České republice.</p>
+            <table class="form-table">
+                <tr>
+                    <th scope="row"><label>Mapy.com API klíč</label></th>
+                    <td>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="text" id="mapy_api_key_display" value="<?php echo esc_attr($mapy_masked_key); ?>" class="regular-text" readonly style="background-color: #f0f0f0;" />
+                            <button type="button" class="button" onclick="showMapyApiKeyDialog()">Upravit</button>
+                        </div>
+                        <p class="description">Získejte klíč na <a href="https://developer.mapy.com/" target="_blank">developer.mapy.com</a>.</p>
+                        <p class="description"><strong>Priorita:</strong> 1. (primární pro ČR) | <strong>Cache:</strong> 30 dní</p>
                     </td>
                 </tr>
             </table>
@@ -379,6 +407,7 @@ class Icon_Admin {
                             <button type="button" class="button" onclick="document.getElementById('ta_api_key_modal').style.display='block'">Upravit</button>
                         </div>
                         <p class="description">Získejte klíč na <a href="https://developer-tripadvisor.com/" target="_blank">Tripadvisor Developer Portal</a>.</p>
+                        <p class="description"><strong>Priorita:</strong> 3. (fallback) | <strong>Cache:</strong> 24 hodin</p>
                     </td>
                 </tr>
             </table>
@@ -534,6 +563,29 @@ class Icon_Admin {
             </div>
         </div>
 
+        <!-- Modal dialog pro editaci Mapy.com API klíče -->
+        <div id="mapy_api_key_modal" style="display: none; position: fixed; z-index: 100000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
+            <div style="background-color: white; margin: 15% auto; padding: 20px; border-radius: 5px; width: 500px; max-width: 90%;">
+                <h3>Upravit Mapy.com API klíč</h3>
+                <form method="post" action="">
+                    <?php wp_nonce_field('save_api_settings', 'api_nonce'); ?>
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row"><label for="mapy_api_key">Mapy.com API klíč</label></th>
+                            <td>
+                                <input type="text" id="mapy_api_key" name="mapy_api_key" value="<?php echo esc_attr($mapy_api_key); ?>" class="regular-text" style="width: 100%;" />
+                                <p class="description">Vložte váš Mapy.com API klíč pro obohacování dat v České republice</p>
+                            </td>
+                        </tr>
+                    </table>
+                    <div style="text-align: right; margin-top: 20px;">
+                        <button type="button" class="button" onclick="closeMapyApiKeyDialog()">Zrušit</button>
+                        <input type="submit" name="save_mapy_api_settings" class="button-primary" value="Uložit" style="margin-left: 10px;" />
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <!-- Modal dialog pro editaci OpenRouteService API klíče -->
         <div id="ors_api_key_modal" style="display: none; position: fixed; z-index: 100000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5);">
             <div style="background-color: white; margin: 15% auto; padding: 20px; border-radius: 5px; width: 500px; max-width: 90%;">
@@ -566,6 +618,14 @@ class Icon_Admin {
             document.getElementById('google_api_key_modal').style.display = 'none';
         }
         
+        function showMapyApiKeyDialog() {
+            document.getElementById('mapy_api_key_modal').style.display = 'block';
+        }
+        
+        function closeMapyApiKeyDialog() {
+            document.getElementById('mapy_api_key_modal').style.display = 'none';
+        }
+        
         function showTomTomApiKeyDialog() {
             document.getElementById('tomtom_api_key_modal').style.display = 'block';
         }
@@ -593,11 +653,15 @@ class Icon_Admin {
         // Zavřít modaly při kliknutí mimo něj
         window.onclick = function(event) {
             var googleModal = document.getElementById('google_api_key_modal');
+            var mapyModal = document.getElementById('mapy_api_key_modal');
             var tomtomModal = document.getElementById('tomtom_api_key_modal');
             var openchargemapModal = document.getElementById('openchargemap_api_key_modal');
             var orsModal = document.getElementById('ors_api_key_modal');
             if (event.target == googleModal) {
                 closeGoogleApiKeyDialog();
+            }
+            if (event.target == mapyModal) {
+                closeMapyApiKeyDialog();
             }
             if (event.target == tomtomModal) {
                 closeTomTomApiKeyDialog();

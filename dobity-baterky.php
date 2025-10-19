@@ -643,6 +643,14 @@ if (is_admin()) {
             }
         }
         
+        // Simple API Test Admin
+        if ( file_exists( __DIR__ . '/includes/Admin/Simple_API_Test_Admin.php' ) ) {
+            require_once __DIR__ . '/includes/Admin/Simple_API_Test_Admin.php';
+            if ( class_exists( 'DB\Admin\Simple_API_Test_Admin' ) ) {
+                new DB\Admin\Simple_API_Test_Admin();
+            }
+        }
+        
         // Inicializovat automatické zpracování
         if ( file_exists( __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php' ) ) {
             require_once __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php';
@@ -679,6 +687,34 @@ if ( file_exists( __DIR__ . '/includes/REST_Charging_Discovery.php' ) ) {
         DB\REST_Charging_Discovery::get_instance()->register();
     }
 }
+
+// Simple API Selector (pouze pro testování)
+if ( file_exists( __DIR__ . '/includes/Simple_API_Selector.php' ) ) {
+    require_once __DIR__ . '/includes/Simple_API_Selector.php';
+}
+
+// Charging Services
+if ( file_exists( __DIR__ . '/includes/Services/Db_Mapy_Service.php' ) ) {
+    require_once __DIR__ . '/includes/Services/Db_Mapy_Service.php';
+}
+
+if ( file_exists( __DIR__ . '/includes/Services/Db_Charging_Service.php' ) ) {
+    require_once __DIR__ . '/includes/Services/Db_Charging_Service.php';
+}
+
+if ( file_exists( __DIR__ . '/includes/Services/Db_Charging_Enrichment_Service.php' ) ) {
+    require_once __DIR__ . '/includes/Services/Db_Charging_Enrichment_Service.php';
+}
+
+if ( file_exists( __DIR__ . '/includes/Rest/Db_Charging_Controller.php' ) ) {
+    require_once __DIR__ . '/includes/Rest/Db_Charging_Controller.php';
+}
+
+// Registrace REST API endpointů
+add_action('rest_api_init', function() {
+    $chargingController = new \DB\Rest\Db_Charging_Controller();
+    $chargingController->register_routes();
+});
 
 // POI Discovery Worker helpers
 if ( file_exists( __DIR__ . '/includes/Jobs/POI_Discovery_Worker.php' ) ) {

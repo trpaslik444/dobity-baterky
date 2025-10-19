@@ -129,7 +129,7 @@ class POI_Discovery {
 		return ['processed' => $processed, 'updated' => $updated];
 	}
 
-	private function discoverGooglePlaceId(string $title, ?float $lat, ?float $lng): ?string {
+	public function discoverGooglePlaceId(string $title, ?float $lat, ?float $lng): ?string {
 		$apiKey = (string) get_option('db_google_api_key');
 		if ($apiKey === '') {
 			return null;

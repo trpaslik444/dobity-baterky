@@ -102,21 +102,23 @@ class REST_On_Demand {
      * Kontrola oprávnění pro on-demand zpracování
      */
     public function check_ondemand_permission($request) {
-        // Pouze přihlášení uživatelé s oprávněním
-        if (!is_user_logged_in()) {
-            return false;
+        // Povolit volání i bez přihlášení pro frontend
+        // Kontrola pouze pro admin funkce
+        
+        // Pokud je uživatel přihlášen, zkontrolovat oprávnění
+        if (is_user_logged_in()) {
+            // Kontrola capability pro mapu
+            if (function_exists('db_user_can_see_map') && !db_user_can_see_map()) {
+                return false;
+            }
+            
+            // Alternativně: kontrola WordPress capabilities
+            if (!current_user_can('read')) {
+                return false;
+            }
         }
         
-        // Kontrola capability pro mapu
-        if (function_exists('db_user_can_see_map') && !db_user_can_see_map()) {
-            return false;
-        }
-        
-        // Alternativně: kontrola WordPress capabilities
-        if (!current_user_can('read')) {
-            return false;
-        }
-        
+        // Povolit volání i bez přihlášení (pro frontend mapu)
         return true;
     }
     
