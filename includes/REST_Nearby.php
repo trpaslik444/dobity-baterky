@@ -1049,6 +1049,12 @@ class REST_Nearby {
             $icon_registry = \DB\Icon_Registry::get_instance();
             $icon_data = $icon_registry->get_icon($post);
             
+            // Debug pro ikony
+            if ($item['post_type'] === 'poi') {
+                error_log('[REST_NEARBY DEBUG] POI ID: ' . $post->ID . ', Title: ' . get_the_title($post));
+                error_log('[REST_NEARBY DEBUG] Icon data: ' . print_r($icon_data, true));
+            }
+            
             // Základní properties (stejně jako v REST_Map.php)
             $properties = [
                 'id' => $post->ID,

@@ -2493,6 +2493,17 @@ document.addEventListener('DOMContentLoaded', async function() {
           
           // Získat originální ikonu podle typu místa
           const getItemIcon = (props) => {
+            // Debug pro ikony
+            if (props.post_type === 'poi') {
+              console.log('[DEBUG] POI icon data:', {
+                id: props.id,
+                title: props.title,
+                svg_content: props.svg_content,
+                icon_slug: props.icon_slug,
+                icon_color: props.icon_color
+              });
+            }
+            
             if (props.svg_content) {
               // Pro POI použít SVG obsah
               return props.svg_content;
