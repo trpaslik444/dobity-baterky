@@ -82,6 +82,25 @@ class OnDemandProcessor {
      * Spustit zpracování
      */
     async startProcessing(pointId, pointType, priority) {
+        // Nejdříve získat token
+        const tokenResponse = await fetch('/wp-json/db/v1/ondemand/token', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-WP-Nonce': wpApiSettings.nonce
+            },
+            body: JSON.stringify({
+                point_id: pointId
+            })
+        });
+        
+        if (!tokenResponse.ok) {
+            throw new Error(`Token generation failed: ${tokenResponse.status}`);
+        }
+        
+        const tokenData = await tokenResponse.json();
+        
+        // Nyní spustit zpracování s platným tokenem
         const response = await fetch('/wp-json/db/v1/ondemand/process', {
             method: 'POST',
             headers: {
@@ -92,7 +111,7 @@ class OnDemandProcessor {
                 point_id: pointId,
                 point_type: pointType,
                 priority: priority,
-                token: 'frontend-trigger'
+                token: tokenData.token
             })
         });
         

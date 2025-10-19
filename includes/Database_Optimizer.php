@@ -37,7 +37,11 @@ class Database_Optimizer {
         
         foreach ($meta_indexes as $index) {
             // Zkontrolovat, zda index už existuje
-            $existing_indexes = $wpdb->get_results($wpdb->prepare("SHOW INDEX FROM %s WHERE Key_name = %s", $index['table'], $index['name']));
+            // Použít esc_sql() pro názvy tabulek a prepare() pouze pro hodnoty
+            $table_name = esc_sql($index['table']);
+            $index_name = esc_sql($index['name']);
+            $existing_indexes = $wpdb->get_results("SHOW INDEX FROM {$table_name} WHERE Key_name = '{$index_name}'");
+            
             if (!empty($existing_indexes)) {
                 continue; // Index už existuje, přeskočit
             }
