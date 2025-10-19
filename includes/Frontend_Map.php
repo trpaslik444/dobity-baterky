@@ -79,6 +79,7 @@ class Frontend_Map {
             'pwaEnabled' => class_exists('PWAforWP') ? true : false,
             'ajaxUrl'   => admin_url('admin-ajax.php'),
             'googleApiKey' => get_option('db_google_api_key'),
+            'chargerIconColor' => get_option('db_charger_icon_color', '#049FE8'),
         ) );
         
     }

@@ -1205,10 +1205,56 @@ document.addEventListener('DOMContentLoaded', async function() {
        }).setView([50.08, 14.42], 12);
        window.map = map; // Nastavit globální přístup pro isochrones funkce
        
+      // Pokusit se získat polohu uživatele a centrovat na ni
+      const tryGetUserLocation = async () => {
+        try {
+          // Zkontrolovat, zda je geolokace dostupná
+          if (!navigator.geolocation) return null;
+          
+          // Zkusit získat poslední uloženou polohu z LocationService
+          const lastLoc = LocationService.getLast();
+          if (lastLoc && lastLoc.lat && lastLoc.lng) {
+            // Zkontrolovat, zda není příliš stará (max 1 hodina)
+            if (lastLoc.ts && (Date.now() - lastLoc.ts) < 3600000) {
+              return [lastLoc.lat, lastLoc.lng];
+            }
+          }
+          
+          // Pokusit se získat aktuální polohu
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+              resolve, 
+              reject, 
+              { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+            );
+          });
+          
+          if (pos && pos.coords) {
+            return [pos.coords.latitude, pos.coords.longitude];
+          }
+        } catch (err) {
+          // Tiše selhat - použije se defaultní pozice
+          console.debug('[DB Map] Geolocation not available or denied:', err.message);
+        }
+        return null;
+      };
+      
       // Spustit počáteční fetch hned po inicializaci mapy
       if (loadMode === 'radius') {
         setTimeout(async () => {
-          const c = map.getCenter();
+          // Zkusit získat polohu uživatele
+          const userLocation = await tryGetUserLocation();
+          
+          let c;
+          if (userLocation) {
+            // Centrovat na polohu uživatele
+            map.setView(userLocation, 13, { animate: false });
+            c = map.getCenter();
+          } else {
+            // Použít defaultní centrum
+            c = map.getCenter();
+          }
+          
           try {
             // Pro počáteční načítání použít větší radius (FIXED_RADIUS_KM)
             await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
@@ -2321,19 +2367,35 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Získat originální ikonu pro typ bodu
   const getTypeIcon = (props) => {
-    if (props.svg_content) {
+    if (props.svg_content && props.svg_content.trim() !== '') {
       // Pro POI použít SVG obsah
       return props.svg_content;
-    } else if (props.icon_slug) {
-      // Pro ostatní typy použít icon_slug
+    } else if (props.icon_slug && props.icon_slug.trim() !== '') {
+      // Pro POI použít icon_slug jako fallback
       const iconUrl = getIconUrl(props.icon_slug);
       return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
     } else if (props.post_type === 'charging_location') {
-      // Fallback pro nabíječky – použít inlinovaný recolorovaný SVG stejně jako v detailu
-      return getChargerColoredSvg() || '🔌';
+      // Pro charging locations zkusit načíst ikonu z featureCache
+      const cachedFeature = featureCache.get(props.id);
+      if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+        return recolorChargerIcon(cachedFeature.properties.svg_content, props);
+      }
+      if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+        const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+        return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '🔌';
+      }
+      // Fallback pro nabíječky
+      return '🔌';
     } else if (props.post_type === 'rv_spot') {
       // Fallback pro RV
       return '🚐';
+    } else if (props.post_type === 'poi') {
+      // Fallback pro POI - použít generickou ikonu podniku
+      return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+      </svg>`;
     }
     return '📍';
   };
@@ -2424,6 +2486,31 @@ document.addEventListener('DOMContentLoaded', async function() {
       map.setView([lat, lng], map.getZoom(), { animate: true, duration: 0.5 });
     }
     
+    // Pokud je to charging_location, načíst rozšířená data asynchronně
+    if (p.post_type === 'charging_location') {
+      const needsChargingEnrich = shouldFetchChargingDetails(p);
+      if (needsChargingEnrich) {
+        // Načíst data na pozadí a aktualizovat UI
+        enrichChargingFeature(feature).then(enrichedCharging => {
+          if (enrichedCharging && enrichedCharging !== feature) {
+            // Aktualizovat cache
+            featureCache.set(enrichedCharging.properties.id, enrichedCharging);
+            
+            // Aktualizovat konektory v mobile sheet
+            const connectorsSection = mobileSheet.querySelector('.sheet-connectors');
+            if (connectorsSection) {
+              const newConnectorsSection = generateMobileConnectorsSection(enrichedCharging.properties);
+              if (newConnectorsSection) {
+                connectorsSection.outerHTML = newConnectorsSection;
+              }
+            }
+          }
+        }).catch(err => {
+          // Silent fail - pokračovat s původními daty
+        });
+      }
+    }
+    
     // Načíst nearby data pro mobilní sheet
     setTimeout(() => {
       const nearbyContainer = mobileSheet.querySelector('.sheet-nearby-list');
@@ -2493,19 +2580,46 @@ document.addEventListener('DOMContentLoaded', async function() {
           
           // Získat originální ikonu podle typu místa
           const getItemIcon = (props) => {
-            if (props.svg_content) {
+            
+            if (props.svg_content && props.svg_content.trim() !== '') {
               // Pro POI použít SVG obsah
               return props.svg_content;
-            } else if (props.icon_slug) {
-              // Pro ostatní typy použít icon_slug
+            } else if (props.icon_slug && props.icon_slug.trim() !== '') {
+              // Pro POI použít icon_slug jako fallback
               const iconUrl = getIconUrl(props.icon_slug);
               return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
             } else if (props.post_type === 'charging_location') {
+              // Pro charging locations zkusit načíst ikonu z featureCache
+              const cachedFeature = featureCache.get(props.id);
+              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+                return recolorChargerIcon(cachedFeature.properties.svg_content, props);
+              }
+              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+                const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+                return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '⚡';
+              }
               // Fallback pro nabíječky
-              return getChargerColoredSvg() || '⚡';
+              return '⚡';
             } else if (props.post_type === 'rv_spot') {
               // Fallback pro RV
               return '🏕️';
+            } else if (props.post_type === 'poi') {
+              // Pro POI bez SVG obsahu zkusit načíst ikonu podle názvu typu
+              // Zkusit získat ikonu z featureCache pokud je dostupná
+              const cachedFeature = featureCache.get(props.id);
+              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+                return cachedFeature.properties.svg_content;
+              }
+              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+                const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+                return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+              }
+              // Fallback pro POI - použít generickou ikonu podniku
+              return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+              </svg>`;
             }
             return '📍';
           };
@@ -3027,6 +3141,16 @@ document.addEventListener('DOMContentLoaded', async function() {
           typeBadge = '⚡';
         } else if (postType === 'rv_spot') {
           typeBadge = '🏕️';
+        } else if (postType === 'poi') {
+          // Pro POI zkusit použít SVG obsah nebo icon_slug z cache
+          if (cachedFeature.properties?.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+            typeBadge = cachedFeature.properties.svg_content;
+          } else if (cachedFeature.properties?.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+            const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+            typeBadge = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+          } else {
+            typeBadge = '📍';
+          }
         }
       }
 
@@ -3114,17 +3238,35 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Určit ikonu podle typu a dostupných dat
       let typeBadge = '';
-      if (item.svg_content) {
+      if (item.svg_content && item.svg_content.trim() !== '') {
         // Pro POI použít SVG obsah
         typeBadge = item.svg_content;
-      } else if (item.icon_slug) {
+      } else if (item.icon_slug && item.icon_slug.trim() !== '') {
         // Pro ostatní typy použít icon_slug
         const iconUrl = getIconUrl(item.icon_slug);
         typeBadge = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
       } else if (item.post_type === 'charging_location') {
-        typeBadge = getChargerColoredSvg() || '⚡';
+        // Pro charging locations zkusit načíst ikonu z featureCache
+        const cachedFeature = featureCache.get(item.id);
+        if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+          typeBadge = recolorChargerIcon(cachedFeature.properties.svg_content, item);
+        } else if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+          const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+          typeBadge = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '⚡';
+        } else {
+          typeBadge = '⚡';
+        }
       } else if (item.post_type === 'poi') {
-        typeBadge = '📍';
+        // Pro POI bez SVG obsahu zkusit načíst ikonu z featureCache
+        const cachedFeature = featureCache.get(item.id);
+        if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+          typeBadge = cachedFeature.properties.svg_content;
+        } else if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+          const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+          typeBadge = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+        } else {
+          typeBadge = '📍';
+        }
       } else if (item.post_type === 'rv_spot') {
         typeBadge = '🏕️';
       } else {
@@ -3225,7 +3367,16 @@ document.addEventListener('DOMContentLoaded', async function() {
             const iconUrl = getIconUrl(item.icon_slug);
             typeIcon = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
           } else if (item.post_type === 'charging_location') { 
-            typeIcon = getChargerColoredSvg() || '⚡'; 
+            // Pro charging locations zkusit načíst ikonu z featureCache
+            const cachedFeature = featureCache.get(item.id);
+            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+              typeIcon = recolorChargerIcon(cachedFeature.properties.svg_content, item);
+            } else if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+              const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+              typeIcon = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '⚡';
+            } else {
+              typeIcon = '⚡';
+            } 
           } else if (item.post_type === 'rv_spot') { 
             typeIcon = '🏕️'; 
           }
@@ -4229,19 +4380,38 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Získat originální ikonu pro Detail Modal
     const getDetailIcon = (props) => {
-      if (props.svg_content) {
+      if (props.svg_content && props.svg_content.trim() !== '') {
         // Pro POI použít SVG obsah
         return props.svg_content;
-      } else if (props.icon_slug) {
+      } else if (props.icon_slug && props.icon_slug.trim() !== '') {
         // Pro ostatní typy použít icon_slug
         const iconUrl = getIconUrl(props.icon_slug);
         return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
       } else if (props.post_type === 'charging_location') {
-        // Fallback pro nabíječky
-        return getChargerColoredSvg() || '🔌';
+        // Pro charging locations zkusit načíst ikonu z featureCache
+        const cachedFeature = featureCache.get(props.id);
+        if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+          return recolorChargerIcon(cachedFeature.properties.svg_content, props);
+        } else if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+          const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+          return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '🔌';
+        } else {
+          return '🔌';
+        }
       } else if (props.post_type === 'rv_spot') {
         // Fallback pro RV
         return '🚐';
+      } else if (props.post_type === 'poi') {
+        // Pro POI bez SVG obsahu zkusit načíst ikonu z featureCache
+        const cachedFeature = featureCache.get(props.id);
+        if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+          return cachedFeature.properties.svg_content;
+        } else if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+          const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+          return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+        } else {
+          return '📍';
+        }
       }
       return '📍';
     };
@@ -4864,16 +5034,28 @@ document.addEventListener('DOMContentLoaded', async function() {
               } catch(_) {}
             }
             LocationService.startWatch();
+            // Spustit i HeadingService pokud je k dispozici
+            HeadingService.start();
             return;
           }
           // prompt nebo unknown – watchPosition vyvolá dialog
           LocationService.startWatch();
           // iOS 13+ vyžaduje explicitní povolení pro orientaci zařízení – vyžádej při kliknutí
           if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try { await DeviceOrientationEvent.requestPermission(); } catch(_) {}
+            try { 
+              const permission = await DeviceOrientationEvent.requestPermission();
+              if (permission === 'granted') {
+                HeadingService.start();
+              }
+            } catch(_) {}
+          } else {
+            // Pro ostatní prohlížeče spustit přímo
+            HeadingService.start();
           }
         } catch(_) {
           LocationService.startWatch();
+          // Spustit i HeadingService pokud je k dispozici
+          HeadingService.start();
         }
       });
       btn.dataset.dbListenerAttached = '1';
@@ -4915,13 +5097,18 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Aktivovat pouze na mobilech
   if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-    HeadingService.start();
+    // Nezačínat automaticky - počkat na oprávnění
+    // HeadingService.start();
+    
     HeadingService.onUpdate((deg) => {
       __dbCurrentHeading = deg;
       if (__dbHeadingMarker && typeof deg === 'number') {
         const el = __dbHeadingMarker.getElement();
         if (el) {
-          try { el.style.transform = `rotate(${deg}deg)`; } catch(_) {}
+          try { 
+            // Rotovat celý marker podle skutečného headingu
+            el.style.transform = `rotate(${deg}deg)`; 
+          } catch(_) {}
         }
       }
     });
@@ -5701,7 +5888,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
-              ${p.svg_content ? p.svg_content : (p.icon_slug ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : (p.post_type === 'charging_location' ? (getChargerColoredSvg() || '') : ''))}
+              ${p.svg_content ? (p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content) : (p.icon_slug ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : (p.post_type === 'charging_location' ? '⚡' : ''))}
             </div>
             ${dbLogo}
           </div>`;
@@ -5782,8 +5969,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else if (p.icon_slug) {
           fallbackIcon = `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;object-fit:contain;" alt="">`;
         } else if (p.post_type === 'charging_location') {
-          // Pro nabíjecí místa použít správnou charger ikonu
-          fallbackIcon = getChargerColoredSvg(p);
+          // Pro nabíjecí místa zkusit načíst ikonu z featureCache
+          const cachedFeature = featureCache.get(p.id);
+          if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+            fallbackIcon = recolorChargerIcon(cachedFeature.properties.svg_content, p);
+          } else if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+            const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+            fallbackIcon = iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '⚡';
+          } else {
+            fallbackIcon = '⚡';
+          }
         } else {
           // Default ikona pro ostatní typy
           if (p.post_type === 'rv_spot') {
@@ -6349,6 +6544,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Umožni přebarvení z adminu, pokud není hybrid
     const color = p.icon_color || (mode === 'dc' ? dcColor : acColor);
     return { fill: color, defs: '' };
+  }
+
+  // Funkce pro přebarvení ikony podle admin nastavení (jedna barva pro všechny typy nabíječek)
+  function recolorChargerIcon(svgContent, props) {
+    if (!svgContent || typeof svgContent !== 'string') return svgContent;
+    
+    // SVG už má nastavenou barvu z PHP, takže ji jen vrátíme
+    return svgContent;
   }
 
   // Zavřít filtry při kliknutí mimo panel

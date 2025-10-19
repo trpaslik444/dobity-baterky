@@ -453,6 +453,7 @@ class REST_Map {
                     'speed' => get_post_meta($post->ID, '_db_speed', true),
                     'connectors' => get_post_meta($post->ID, '_db_connectors', true),
                     'konektory' => get_post_meta($post->ID, '_db_konektory', true),
+                    'db_connectors' => get_post_meta($post->ID, '_db_connectors', true),
                     'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
                     // Metadata o stavu a dostupnosti z externích API
                     'business_status' => get_post_meta($post->ID, '_charging_business_status', true),
@@ -638,30 +639,39 @@ class REST_Map {
                     if (empty($properties['connectors'])) {
                         $meta_connectors = get_post_meta($post->ID, '_db_connectors', true);
                         $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+                        $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
                         
                         
                         if (!empty($meta_connectors)) {
                             if (is_array($meta_connectors)) {
-                                // Přidat počty z _db_charger_counts
+                                // Přidat počty a výkony z databáze
                                 foreach ($meta_connectors as &$connector) {
                                     if (isset($charger_counts[$connector['type']])) {
                                         $connector['quantity'] = $charger_counts[$connector['type']];
                                     }
+                                    if (isset($charger_powers[$connector['type']])) {
+                                        $connector['power'] = $charger_powers[$connector['type']];
+                                    }
                                 }
                                 $properties['connectors'] = $meta_connectors;
                                 $properties['konektory'] = $meta_connectors;
+                                $properties['db_connectors'] = $meta_connectors;
                             } else {
                                 // Pokud je string, zkusit parsovat jako JSON
                                 $parsed = json_decode($meta_connectors, true);
                                 if (is_array($parsed)) {
-                                    // Přidat počty z _db_charger_counts
+                                    // Přidat počty a výkony z databáze
                                     foreach ($parsed as &$connector) {
                                         if (isset($charger_counts[$connector['type']])) {
                                             $connector['quantity'] = $charger_counts[$connector['type']];
                                         }
+                                        if (isset($charger_powers[$connector['type']])) {
+                                            $connector['power'] = $charger_powers[$connector['type']];
+                                        }
                                     }
                                     $properties['connectors'] = $parsed;
                                     $properties['konektory'] = $parsed;
+                                    $properties['db_connectors'] = $parsed;
                                 }
                             }
                         }
@@ -670,16 +680,21 @@ class REST_Map {
                         if (empty($properties['connectors'])) {
                             $ocm_connectors = get_post_meta($post->ID, '_ocm_connectors', true);
                             $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+                            $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
                             
                             if (!empty($ocm_connectors) && is_array($ocm_connectors)) {
-                                // Přidat počty z _db_charger_counts
+                                // Přidat počty a výkony z databáze
                                 foreach ($ocm_connectors as &$connector) {
                                     if (isset($charger_counts[$connector['type']])) {
                                         $connector['quantity'] = $charger_counts[$connector['type']];
                                     }
+                                    if (isset($charger_powers[$connector['type']])) {
+                                        $connector['power'] = $charger_powers[$connector['type']];
+                                    }
                                 }
                                 $properties['connectors'] = $ocm_connectors;
                                 $properties['konektory'] = $ocm_connectors;
+                                $properties['db_connectors'] = $ocm_connectors;
                             }
                         }
                         
@@ -690,6 +705,7 @@ class REST_Map {
                             if (!empty($connectors_meta) && is_array($connectors_meta)) {
                                 $properties['connectors'] = $connectors_meta;
                                 $properties['konektory'] = $connectors_meta;
+                                $properties['db_connectors'] = $connectors_meta;
                             }
                         }
                         
@@ -700,6 +716,7 @@ class REST_Map {
                             if (!empty($mpo_connectors) && is_array($mpo_connectors)) {
                                 $properties['connectors'] = $mpo_connectors;
                                 $properties['konektory'] = $mpo_connectors;
+                                $properties['db_connectors'] = $mpo_connectors;
                             }
                         }
                     }
