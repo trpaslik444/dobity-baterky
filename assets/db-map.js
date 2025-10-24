@@ -1903,17 +1903,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     </div>
     <div style="margin-top:.6em;">
       <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Výkon (kW)</div>
-      <div style="position:relative;height:40px;margin:10px 0;">
-        <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:#e5e7eb;border-radius:2px;transform:translateY(-50%);"></div>
-        <div style="position:absolute;top:50%;left:0%;height:4px;background:#FF6A4B;border-radius:2px;transform:translateY(-50%);width:100%;" id="db-power-range-fill"></div>
-        <input type="range" id="db-power-min" min="0" max="400" step="1" value="0" style="position:absolute;top:50%;left:0;width:100%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:4;pointer-events:auto;" />
-        <input type="range" id="db-power-max" min="0" max="400" step="1" value="400" style="position:absolute;top:50%;left:0;width:100%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:5;pointer-events:auto;" />
-
-
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:.8em;color:#666;">
-        <span id="db-power-min-value">0 kW</span>
-        <span id="db-power-max-value">400 kW</span>
+      <div style="display:flex;gap:.5em;align-items:center;">
+        <div style="flex:1;">
+          <label style="font-size:.75em;color:#666;display:block;margin-bottom:.2em;">Od</label>
+          <input type="number" id="db-power-min" min="0" max="400" step="1" value="0" style="width:100%;padding:.4em;border:1px solid #e5e7eb;border-radius:6px;font-size:.9em;" />
+        </div>
+        <div style="flex:1;">
+          <label style="font-size:.75em;color:#666;display:block;margin-bottom:.2em;">Do</label>
+          <input type="number" id="db-power-max" min="0" max="400" step="1" value="400" style="width:100%;padding:.4em;border:1px solid #e5e7eb;border-radius:6px;font-size:.9em;" />
+        </div>
       </div>
     </div>
 
@@ -2248,10 +2246,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   function updatePowerRange(minPower, maxPower) {
-    const pMinR = document.getElementById('db-power-min');
-    const pMaxR = document.getElementById('db-power-max');
-    const pMinValue = document.getElementById('db-power-min-value');
-    const pMaxValue = document.getElementById('db-power-max-value');
+    const pMinInput = document.getElementById('db-power-min');
+    const pMaxInput = document.getElementById('db-power-max');
 
     const resolvedMin = Math.floor(minPower);
     const resolvedMax = Math.ceil(maxPower);
@@ -2260,11 +2256,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       max: resolvedMax,
     };
 
-    if (pMinR && pMaxR) {
-      pMinR.min = resolvedMin;
-      pMaxR.min = resolvedMin;
-      pMinR.max = resolvedMax;
-      pMaxR.max = resolvedMax;
+    if (pMinInput && pMaxInput) {
+      pMinInput.min = resolvedMin;
+      pMaxInput.min = resolvedMin;
+      pMinInput.max = resolvedMax;
+      pMaxInput.max = resolvedMax;
 
       let currentMin = filterState.powerMin;
       let currentMax = filterState.powerMax;
@@ -2277,40 +2273,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       currentMin = Math.min(Math.max(currentMin, resolvedMin), resolvedMax);
       currentMax = Math.min(Math.max(currentMax, resolvedMin), resolvedMax);
 
-      if (currentMin > currentMax) {
-        if (powerBoundsInitialized) {
-          currentMin = resolvedMin;
-          currentMax = resolvedMax;
-        } else {
-          currentMin = resolvedMin;
-          currentMax = resolvedMax;
-        }
+      if (currentMin >= currentMax) {
+        currentMin = resolvedMin;
+        currentMax = resolvedMax;
       }
 
       filterState.powerMin = currentMin;
       filterState.powerMax = currentMax;
 
-      pMinR.value = String(currentMin);
-      pMaxR.value = String(currentMax);
-
-      if (pMinValue) pMinValue.textContent = `${currentMin} kW`;
-      if (pMaxValue) pMaxValue.textContent = `${currentMax} kW`;
-
-      const pRangeFill = document.getElementById('db-power-range-fill');
-      if (pRangeFill) {
-        if (powerBounds.max === powerBounds.min) {
-          pRangeFill.style.left = '0%';
-          pRangeFill.style.width = '100%';
-        } else {
-          const rangeSize = Math.max(powerBounds.max - powerBounds.min, 1);
-          const leftPercent = ((currentMin - powerBounds.min) / rangeSize) * 100;
-          const rightPercent = ((currentMax - powerBounds.min) / rangeSize) * 100;
-          const clampedLeft = Math.min(Math.max(leftPercent, 0), 100);
-          const clampedRight = Math.min(Math.max(rightPercent, clampedLeft), 100);
-          pRangeFill.style.left = `${clampedLeft}%`;
-          pRangeFill.style.width = `${clampedRight - clampedLeft}%`;
-        }
-      }
+      pMinInput.value = String(currentMin);
+      pMaxInput.value = String(currentMax);
     }
 
     powerBoundsInitialized = true;
@@ -2346,20 +2318,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     const acEl = document.getElementById('db-filter-ac');
     const dcEl = document.getElementById('db-filter-dc');
     const freeEl = document.getElementById('db-filter-free');
-    const pMinR = document.getElementById('db-power-min');
-    const pMaxR = document.getElementById('db-power-max');
-    const pMinValue = document.getElementById('db-power-min-value');
-    const pMaxValue = document.getElementById('db-power-max-value');
-    const pRangeFill = document.getElementById('db-power-range-fill');
+    const pMinInput = document.getElementById('db-power-min');
+    const pMaxInput = document.getElementById('db-power-max');
     const resetBtn = document.getElementById('db-filter-reset');
     const applyBtn = document.getElementById('db-filter-apply');
 
-    // Jezdec s vizuálním vyplněním
-    let lastSliderChanged = null;
-    function updatePowerSlider(triggerRender = true) {
-      if (!pMinR || !pMaxR) return;
-      let minVal = parseInt(pMinR.value || `${powerBounds.min}`, 10);
-      let maxVal = parseInt(pMaxR.value || `${powerBounds.max}`, 10);
+    // Validace number inputů - Od musí být < Do
+    let lastInputChanged = null;
+    function validateAndUpdatePowerInputs(triggerRender = true) {
+      if (!pMinInput || !pMaxInput) return;
+      let minVal = parseInt(pMinInput.value || `${powerBounds.min}`, 10);
+      let maxVal = parseInt(pMaxInput.value || `${powerBounds.max}`, 10);
 
       if (!Number.isFinite(minVal)) minVal = powerBounds.min;
       if (!Number.isFinite(maxVal)) maxVal = powerBounds.max;
@@ -2367,43 +2336,31 @@ document.addEventListener('DOMContentLoaded', async function() {
       minVal = Math.min(Math.max(minVal, powerBounds.min), powerBounds.max);
       maxVal = Math.min(Math.max(maxVal, powerBounds.min), powerBounds.max);
 
-      if (minVal > maxVal) {
-        if (lastSliderChanged === 'min') {
-          maxVal = minVal;
-          pMaxR.value = String(maxVal);
-        } else if (lastSliderChanged === 'max') {
-          minVal = maxVal;
-          pMinR.value = String(minVal);
-        } else {
-          const newMin = Math.min(minVal, maxVal);
-          const newMax = Math.max(minVal, maxVal);
-          minVal = newMin;
-          maxVal = newMax;
-          pMinR.value = String(minVal);
-          pMaxR.value = String(maxVal);
+      // Validace: Od musí být vždy < Do
+      if (minVal >= maxVal) {
+        if (lastInputChanged === 'min') {
+          // Pokud uživatel změnil Od a je >= Do, nastavíme Do na Od + 1
+          maxVal = Math.min(minVal + 1, powerBounds.max);
+          pMaxInput.value = String(maxVal);
+          // Pokud jsme na max, snížíme Od
+          if (maxVal === powerBounds.max && minVal >= maxVal) {
+            minVal = maxVal - 1;
+            pMinInput.value = String(minVal);
+          }
+        } else if (lastInputChanged === 'max') {
+          // Pokud uživatel změnil Do a je <= Od, nastavíme Od na Do - 1
+          minVal = Math.max(maxVal - 1, powerBounds.min);
+          pMinInput.value = String(minVal);
+          // Pokud jsme na min, zvýšíme Do
+          if (minVal === powerBounds.min && maxVal <= minVal) {
+            maxVal = minVal + 1;
+            pMaxInput.value = String(maxVal);
+          }
         }
       }
 
       filterState.powerMin = minVal;
       filterState.powerMax = maxVal;
-
-      if (pMinValue) pMinValue.textContent = `${minVal} kW`;
-      if (pMaxValue) pMaxValue.textContent = `${maxVal} kW`;
-
-      if (pRangeFill) {
-        if (powerBounds.max === powerBounds.min) {
-          pRangeFill.style.left = '0%';
-          pRangeFill.style.width = '100%';
-        } else {
-          const rangeSize = Math.max(powerBounds.max - powerBounds.min, 1);
-          const leftPercent = ((minVal - powerBounds.min) / rangeSize) * 100;
-          const rightPercent = ((maxVal - powerBounds.min) / rangeSize) * 100;
-          const clampedLeft = Math.min(Math.max(leftPercent, 0), 100);
-          const clampedRight = Math.min(Math.max(rightPercent, clampedLeft), 100);
-          pRangeFill.style.left = `${clampedLeft}%`;
-          pRangeFill.style.width = `${clampedRight - clampedLeft}%`;
-        }
-      }
 
       if (triggerRender && typeof renderCards === 'function') {
         renderCards('', null, false);
@@ -2429,26 +2386,35 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
 
-    if (pMinR) pMinR.addEventListener('input', () => { lastSliderChanged = 'min'; updatePowerSlider(true); });
-    if (pMaxR) pMaxR.addEventListener('input', () => { lastSliderChanged = 'max'; updatePowerSlider(true); });
-
-    // Zabránit posuvání mapy při používání posuvníků
-    if (pMinR) {
-      pMinR.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
-      pMinR.addEventListener('touchmove', function(e) { e.stopPropagation(); }, { passive: true });
-      pMinR.addEventListener('touchend', function(e) { e.stopPropagation(); }, { passive: true });
-      pMinR.addEventListener('mousedown', function(e) { e.stopPropagation(); });
-      pMinR.addEventListener('mousemove', function(e) { e.stopPropagation(); });
-      pMinR.addEventListener('mouseup', function(e) { e.stopPropagation(); });
+    // Event listenery pro number inputy s validací
+    if (pMinInput) {
+      pMinInput.addEventListener('input', () => { 
+        lastInputChanged = 'min'; 
+        validateAndUpdatePowerInputs(true); 
+      });
+      pMinInput.addEventListener('blur', () => {
+        // Po opuštění pole zkontroluj, že hodnota je validní
+        if (pMinInput.value === '' || pMinInput.value < powerBounds.min) {
+          pMinInput.value = String(powerBounds.min);
+          lastInputChanged = 'min';
+          validateAndUpdatePowerInputs(true);
+        }
+      });
     }
     
-    if (pMaxR) {
-      pMaxR.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
-      pMaxR.addEventListener('touchmove', function(e) { e.stopPropagation(); }, { passive: true });
-      pMaxR.addEventListener('touchend', function(e) { e.stopPropagation(); }, { passive: true });
-      pMaxR.addEventListener('mousedown', function(e) { e.stopPropagation(); });
-      pMaxR.addEventListener('mousemove', function(e) { e.stopPropagation(); });
-      pMaxR.addEventListener('mouseup', function(e) { e.stopPropagation(); });
+    if (pMaxInput) {
+      pMaxInput.addEventListener('input', () => { 
+        lastInputChanged = 'max'; 
+        validateAndUpdatePowerInputs(true); 
+      });
+      pMaxInput.addEventListener('blur', () => {
+        // Po opuštění pole zkontroluj, že hodnota je validní
+        if (pMaxInput.value === '' || pMaxInput.value > powerBounds.max) {
+          pMaxInput.value = String(powerBounds.max);
+          lastInputChanged = 'max';
+          validateAndUpdatePowerInputs(true);
+        }
+      });
     }
 
     if (resetBtn) resetBtn.addEventListener('click', () => {
@@ -2464,10 +2430,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (dcEl) dcEl.checked = true;
       if (freeEl) freeEl.checked = false;
 
-      if (pMinR && pMaxR) {
-        pMinR.value = String(powerBounds.min);
-        pMaxR.value = String(powerBounds.max);
-        updatePowerSlider(false);
+      if (pMinInput && pMaxInput) {
+        pMinInput.value = String(powerBounds.min);
+        pMaxInput.value = String(powerBounds.max);
       }
 
       // Resetovat connector ikony
