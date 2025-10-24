@@ -2590,23 +2590,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     return '';
   }
 
-  function openMobileSheet(feature) {
-    if (window.innerWidth > 900) return;
-    
-    const p = feature.properties || {};
-    const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
-    const lat = coords ? coords[1] : null;
-    const lng = coords ? coords[0] : null;
-    
-    // Spustit POI enrichment pro nabíječky (pouze na desktopu, na mobilu se volá z openMobileSheet)
-    if (p.post_type === 'charging_location' && lat && lng && window.innerWidth > 900) {
-      if (typeof window.triggerPOIEnrichment === 'function') {
-        window.triggerPOIEnrichment(p.id, { lat: lat, lng: lng, name: p.title || p.name });
-      }
-    }
-    
   // Získat barvu čtverečku podle typu místa (stejně jako piny na mapě)
-  const getSquareColor = (props) => {
+  function getSquareColor(props) {
     if (props.post_type === 'charging_location') {
       // Pro nabíječky použít stejnou logiku jako piny
       const mode = getChargerMode(props);
@@ -2623,10 +2608,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       return props.icon_color || '#FCE67D';
     }
     return '#049FE8'; // Modrá jako fallback
-  };
+  }
 
   // Získat originální ikonu pro typ bodu
-  const getTypeIcon = (props) => {
+  function getTypeIcon(props) {
     if (props.svg_content && props.svg_content.trim() !== '') {
       // Pro POI použít SVG obsah
       return props.svg_content;
@@ -2658,7 +2643,22 @@ document.addEventListener('DOMContentLoaded', async function() {
       </svg>`;
     }
     return '📍';
-  };
+  }
+
+  function openMobileSheet(feature) {
+    if (window.innerWidth > 900) return;
+    
+    const p = feature.properties || {};
+    const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
+    const lat = coords ? coords[1] : null;
+    const lng = coords ? coords[0] : null;
+    
+    // Spustit POI enrichment pro nabíječky (pouze na desktopu, na mobilu se volá z openMobileSheet)
+    if (p.post_type === 'charging_location' && lat && lng && window.innerWidth > 900) {
+      if (typeof window.triggerPOIEnrichment === 'function') {
+        window.triggerPOIEnrichment(p.id, { lat: lat, lng: lng, name: p.title || p.name });
+      }
+    }
     
     // Nový obsah s kompaktním designem
     const finalHTML = `
