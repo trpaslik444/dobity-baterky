@@ -1906,8 +1906,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       <div style="position:relative;height:40px;margin:10px 0;">
         <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:#e5e7eb;border-radius:2px;transform:translateY(-50%);"></div>
         <div style="position:absolute;top:50%;left:0%;height:4px;background:#FF6A4B;border-radius:2px;transform:translateY(-50%);width:100%;" id="db-power-range-fill"></div>
-        <input type="range" id="db-power-min" min="0" max="400" step="1" value="0" style="position:absolute;top:50%;left:0;width:50%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:3;pointer-events:auto;" />
-        <input type="range" id="db-power-max" min="0" max="400" step="1" value="400" style="position:absolute;top:50%;right:0;width:50%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:3;pointer-events:auto;" />
+        <input type="range" id="db-power-min" min="0" max="400" step="1" value="0" style="position:absolute;top:50%;left:0;width:100%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:4;pointer-events:auto;" />
+        <input type="range" id="db-power-max" min="0" max="400" step="1" value="400" style="position:absolute;top:50%;left:0;width:100%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:5;pointer-events:auto;" />
 
 
       </div>

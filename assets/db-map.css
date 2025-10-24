@@ -1786,18 +1786,18 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   touch-action: none;
 }
 
-/* Jezdec pozadí - každý range pokrývá svou polovinu */
+/* Jezdce - oba pokrývají celou šířku pro správnou funkčnost */
 #db-power-min {
   position: absolute;
   top: 50%;
   left: 0;
-  width: 50%;
+  width: 100%;
   height: 4px;
   background: transparent;
   appearance: none;
   -webkit-appearance: none;
   transform: translateY(-50%);
-  z-index: 3;
+  z-index: 4;
   pointer-events: auto;
   touch-action: none;
 }
@@ -1805,14 +1805,14 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 #db-power-max {
   position: absolute;
   top: 50%;
-  right: 0;
-  width: 50%;
+  left: 0;
+  width: 100%;
   height: 4px;
   background: transparent;
   appearance: none;
   -webkit-appearance: none;
   transform: translateY(-50%);
-  z-index: 3;
+  z-index: 5;
   pointer-events: auto;
   touch-action: none;
 }
