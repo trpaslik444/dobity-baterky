@@ -2459,15 +2459,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         renderCards('', null, false); 
       }
     });
-
-
-
-    // Inicializace jezdce
-    if (pMinR && pMaxR) {
-      updatePowerSlider(false);
-    }
-
-
   }
 
   attachFilterHandlers();
