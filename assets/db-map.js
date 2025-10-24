@@ -1906,11 +1906,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       <div style="display:flex;gap:.5em;align-items:flex-start;">
         <div style="flex:1;">
           <label for="db-power-min" style="font-size:.75em;color:#666;display:block;margin-bottom:.3em;">Od</label>
-          <input type="number" id="db-power-min" min="0" max="400" step="1" value="0" />
+          <input type="number" id="db-power-min" min="0" max="1000" step="1" value="0" />
         </div>
         <div style="flex:1;">
           <label for="db-power-max" style="font-size:.75em;color:#666;display:block;margin-bottom:.3em;">Do</label>
-          <input type="number" id="db-power-max" min="0" max="400" step="1" value="400" />
+          <input type="number" id="db-power-max" min="0" max="1000" step="1" value="400" />
         </div>
       </div>
     </div>
@@ -2257,32 +2257,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
 
     if (pMinInput && pMaxInput) {
-      pMinInput.min = resolvedMin;
-      pMaxInput.min = resolvedMin;
-      pMinInput.max = resolvedMax;
-      pMaxInput.max = resolvedMax;
-
+      // Nenastavujeme min/max atributy, validaci řešíme v JS
+      // Pouze nastavíme hodnoty inputů, pokud ještě nebyly inicializovány
+      
       let currentMin = filterState.powerMin;
       let currentMax = filterState.powerMax;
 
       if (!powerBoundsInitialized) {
         currentMin = resolvedMin;
         currentMax = resolvedMax;
+        filterState.powerMin = currentMin;
+        filterState.powerMax = currentMax;
+        pMinInput.value = String(currentMin);
+        pMaxInput.value = String(currentMax);
       }
-
-      currentMin = Math.min(Math.max(currentMin, resolvedMin), resolvedMax);
-      currentMax = Math.min(Math.max(currentMax, resolvedMin), resolvedMax);
-
-      if (currentMin >= currentMax) {
-        currentMin = resolvedMin;
-        currentMax = resolvedMax;
-      }
-
-      filterState.powerMin = currentMin;
-      filterState.powerMax = currentMax;
-
-      pMinInput.value = String(currentMin);
-      pMaxInput.value = String(currentMax);
+      // Pokud už byly inicializovány, ponecháme hodnoty jak jsou
     }
 
     powerBoundsInitialized = true;
@@ -2327,33 +2316,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     let lastInputChanged = null;
     function validateAndUpdatePowerInputs(triggerRender = true) {
       if (!pMinInput || !pMaxInput) return;
-      let minVal = parseInt(pMinInput.value || `${powerBounds.min}`, 10);
-      let maxVal = parseInt(pMaxInput.value || `${powerBounds.max}`, 10);
+      let minVal = parseInt(pMinInput.value, 10);
+      let maxVal = parseInt(pMaxInput.value, 10);
 
-      if (!Number.isFinite(minVal)) minVal = powerBounds.min;
-      if (!Number.isFinite(maxVal)) maxVal = powerBounds.max;
-
-      minVal = Math.min(Math.max(minVal, powerBounds.min), powerBounds.max);
-      maxVal = Math.min(Math.max(maxVal, powerBounds.min), powerBounds.max);
+      // Pokud nejsou validní čísla, použij výchozí hodnoty
+      if (!Number.isFinite(minVal) || minVal < 0) minVal = 0;
+      if (!Number.isFinite(maxVal) || maxVal < 0) maxVal = 400;
 
       // Validace: Od musí být vždy < Do
       if (minVal >= maxVal) {
         if (lastInputChanged === 'min') {
           // Pokud uživatel změnil Od a je >= Do, nastavíme Do na Od + 1
-          maxVal = Math.min(minVal + 1, powerBounds.max);
+          maxVal = minVal + 1;
           pMaxInput.value = String(maxVal);
-          // Pokud jsme na max, snížíme Od
-          if (maxVal === powerBounds.max && minVal >= maxVal) {
-            minVal = maxVal - 1;
-            pMinInput.value = String(minVal);
-          }
         } else if (lastInputChanged === 'max') {
           // Pokud uživatel změnil Do a je <= Od, nastavíme Od na Do - 1
-          minVal = Math.max(maxVal - 1, powerBounds.min);
+          minVal = Math.max(maxVal - 1, 0);
           pMinInput.value = String(minVal);
-          // Pokud jsme na min, zvýšíme Do
-          if (minVal === powerBounds.min && maxVal <= minVal) {
-            maxVal = minVal + 1;
+          // Pokud jsme na min (0), zvýšíme Do
+          if (minVal === 0 && maxVal <= minVal) {
+            maxVal = 1;
             pMaxInput.value = String(maxVal);
           }
         }
@@ -2394,8 +2376,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
       pMinInput.addEventListener('blur', () => {
         // Po opuštění pole zkontroluj, že hodnota je validní
-        if (pMinInput.value === '' || pMinInput.value < powerBounds.min) {
-          pMinInput.value = String(powerBounds.min);
+        const effectiveMin = Math.max(powerBounds.min, 0);
+        if (pMinInput.value === '' || parseInt(pMinInput.value, 10) < effectiveMin) {
+          pMinInput.value = String(effectiveMin);
           lastInputChanged = 'min';
           validateAndUpdatePowerInputs(true);
         }
@@ -2409,8 +2392,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
       pMaxInput.addEventListener('blur', () => {
         // Po opuštění pole zkontroluj, že hodnota je validní
-        if (pMaxInput.value === '' || pMaxInput.value > powerBounds.max) {
-          pMaxInput.value = String(powerBounds.max);
+        const effectiveMax = Math.max(powerBounds.max, 1000);
+        if (pMaxInput.value === '' || parseInt(pMaxInput.value, 10) > effectiveMax) {
+          pMaxInput.value = String(effectiveMax);
           lastInputChanged = 'max';
           validateAndUpdatePowerInputs(true);
         }
