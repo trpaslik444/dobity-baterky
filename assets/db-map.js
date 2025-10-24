@@ -2352,6 +2352,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       filterState.powerMin = minVal;
       filterState.powerMax = maxVal;
+      
+      console.log('[Power Filter] Updated:', { min: minVal, max: maxVal, triggerRender: triggerRender });
 
       if (triggerRender && typeof renderCards === 'function') {
         renderCards('', null, false);
@@ -2463,7 +2465,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
     
-    if (applyBtn) applyBtn.addEventListener('click', () => { 
+    if (applyBtn) applyBtn.addEventListener('click', () => {
+      console.log('[Filter Apply] Current filterState:', {
+        powerMin: filterState.powerMin,
+        powerMax: filterState.powerMax,
+        ac: filterState.ac,
+        dc: filterState.dc,
+        freeOnly: filterState.freeOnly
+      });
       if (typeof renderCards === 'function') {
         renderCards('', null, false); 
       }
