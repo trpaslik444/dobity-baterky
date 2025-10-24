@@ -6012,7 +6012,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         return false;
       }
       const maxKw = getStationMaxKw(p);
-      if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) {
+      // Pokud maxKw je 0 (nemáme data), zahrnout nabíječku
+      // Jinak filtrovat podle rozsahu
+      if (maxKw > 0 && (maxKw < filterState.powerMin || maxKw > filterState.powerMax)) {
         if (debugCounter < 3) console.log('[Filter Debug] Rejected by power:', { title: p.title, maxKw, min: filterState.powerMin, max: filterState.powerMax });
         debugCounter++;
         return false;
