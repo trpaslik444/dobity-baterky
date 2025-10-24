@@ -1903,14 +1903,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     </div>
     <div style="margin-top:.6em;">
       <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Výkon (kW)</div>
-      <div style="display:flex;gap:.5em;align-items:center;">
+      <div style="display:flex;gap:.5em;align-items:flex-start;">
         <div style="flex:1;">
-          <label style="font-size:.75em;color:#666;display:block;margin-bottom:.2em;">Od</label>
-          <input type="number" id="db-power-min" min="0" max="400" step="1" value="0" style="width:100%;padding:.4em;border:1px solid #e5e7eb;border-radius:6px;font-size:.9em;" />
+          <label for="db-power-min" style="font-size:.75em;color:#666;display:block;margin-bottom:.3em;">Od</label>
+          <input type="number" id="db-power-min" min="0" max="400" step="1" value="0" />
         </div>
         <div style="flex:1;">
-          <label style="font-size:.75em;color:#666;display:block;margin-bottom:.2em;">Do</label>
-          <input type="number" id="db-power-max" min="0" max="400" step="1" value="400" style="width:100%;padding:.4em;border:1px solid #e5e7eb;border-radius:6px;font-size:.9em;" />
+          <label for="db-power-max" style="font-size:.75em;color:#666;display:block;margin-bottom:.3em;">Do</label>
+          <input type="number" id="db-power-max" min="0" max="400" step="1" value="400" />
         </div>
       </div>
     </div>

@@ -1786,50 +1786,38 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   touch-action: none;
 }
 
-/* Jezdce - oba pokrývají celou šířku pro správnou funkčnost */
-#db-power-min {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 100%;
-  height: 4px;
-  background: transparent;
-  appearance: none;
-  -webkit-appearance: none;
-  transform: translateY(-50%);
-  z-index: 4;
-  pointer-events: auto;
-  touch-action: none;
-}
-
+/* Number inputy pro výkonový filtr */
+#db-power-min,
 #db-power-max {
-  position: absolute;
-  top: 50%;
-  left: 0;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
   width: 100%;
-  height: 4px;
-  background: transparent;
-  appearance: none;
+  padding: 0.4em;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 0.9em;
+  background: #fff;
+  color: #333;
+  box-sizing: border-box;
   -webkit-appearance: none;
-  transform: translateY(-50%);
-  z-index: 5;
-  pointer-events: auto;
-  touch-action: none;
+  -moz-appearance: textfield;
 }
 
-/* Jezdec pozadí - Firefox */
-#db-power-min::-moz-range-track,
-#db-power-max::-moz-range-track {
-  background: transparent;
-  border: none;
+#db-power-min::-webkit-inner-spin-button,
+#db-power-min::-webkit-outer-spin-button,
+#db-power-max::-webkit-inner-spin-button,
+#db-power-max::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
-/* Jezdec pozadí - Webkit */
-#db-power-min::-webkit-slider-track,
-#db-power-max::-webkit-slider-track {
-  background: transparent;
-  border: none;
-} 
+#db-power-min:focus,
+#db-power-max:focus {
+  outline: 2px solid #049FE8;
+  outline-offset: 0;
+  border-color: #049FE8;
+}
 
 /* Tlačítko přepínání seznamu poskytovatelů */
 #db-provider-toggle {
@@ -1849,45 +1837,6 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 
 #db-provider-toggle:active {
   transform: scale(0.95);
-} 
-
-/* Jezdec s vizuálním vyplněním pro výkon */
-#db-power-min::-webkit-slider-thumb,
-#db-power-max::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  background: #FF6A4B;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 3px solid #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  transition: all 0.2s ease;
-}
-
-#db-power-min::-webkit-slider-thumb:hover,
-#db-power-max::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-
-#db-power-min::-moz-range-thumb,
-#db-power-max::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  background: #FF6A4B;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 3px solid #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  transition: all 0.2s ease;
-}
-
-#db-power-min::-moz-range-thumb:hover,
-#db-power-max::-moz-range-thumb:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
 /* Ikony konektorů */
