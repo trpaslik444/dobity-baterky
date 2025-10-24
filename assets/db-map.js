@@ -5999,15 +5999,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       filtered = filtered.filter(f => !!f.properties.db_recommended);
     }
     // Aplikovat filtry pro nabíječky
+    let debugCounter = 0;
     filtered = filtered.filter(f => {
       const p = f.properties || {};
       if (p.post_type !== 'charging_location') return true;
       const mode = getChargerMode(p);
       const allowAc = filterState.ac; const allowDc = filterState.dc;
       const modePass = (mode === 'ac' && allowAc) || (mode === 'dc' && allowDc) || (mode === 'hybrid' && (allowAc || allowDc));
-      if (!modePass) return false;
+      if (!modePass) {
+        if (debugCounter < 3) console.log('[Filter Debug] Rejected by mode:', { title: p.title, mode, allowAc, allowDc });
+        debugCounter++;
+        return false;
+      }
       const maxKw = getStationMaxKw(p);
-      if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) return false;
+      if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) {
+        if (debugCounter < 3) console.log('[Filter Debug] Rejected by power:', { title: p.title, maxKw, min: filterState.powerMin, max: filterState.powerMax });
+        debugCounter++;
+        return false;
+      }
 
       if (filterState.connectors && filterState.connectors.size > 0) {
         const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
@@ -6890,7 +6899,15 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Zavřít filtry při kliknutí mimo panel
   document.addEventListener('click', function(e) {
-    if (filterPanel.style.display === 'block' && !filterPanel.contains(e.target) && !filterBtn.contains(e.target)) {
+    const filterBtns = document.querySelectorAll('#db-filter-btn');
+    let clickedFilterBtn = false;
+    filterBtns.forEach(btn => {
+      if (btn.contains(e.target)) {
+        clickedFilterBtn = true;
+      }
+    });
+    
+    if (filterPanel && filterPanel.style.display === 'block' && !filterPanel.contains(e.target) && !clickedFilterBtn) {
       filterPanel.style.display = 'none';
       if (mapOverlay) mapOverlay.style.display = 'none';
       if (mapDiv) {
