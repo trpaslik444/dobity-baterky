@@ -14,6 +14,15 @@ let isochronesUnlockButton = null;
 let optimizedNearbyCache = new Map();
 let optimizedIsochronesCache = new Map();
 
+// Paleta dvojic z brandbooku Dobitý Baterky pro zvýraznění aktivních pinů
+const DB_BRAND_HIGHLIGHT_COMBOS = [
+  {primary: '#FF6A4B', halo: '#FCE67D'},
+  {primary: '#049FE8', halo: '#FFACC4'},
+  {primary: '#024B9B', halo: '#FCE67D'},
+  {primary: '#FF8DAA', halo: '#049FE8'},
+  {primary: '#FFACC4', halo: '#024B9B'}
+];
+
 /**
  * POI Enrichment - Spustí obohacení POI pro nabíječku
  */
@@ -5574,14 +5583,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     return hue;
   }
-  // Paleta dvojic z brandbooku Dobitý Baterky pro zvýraznění aktivních pinů
-  const DB_BRAND_HIGHLIGHT_COMBOS = [
-    {primary: '#FF6A4B', halo: '#FCE67D'},
-    {primary: '#049FE8', halo: '#FFACC4'},
-    {primary: '#024B9B', halo: '#FCE67D'},
-    {primary: '#FF8DAA', halo: '#049FE8'},
-    {primary: '#FFACC4', halo: '#024B9B'}
-  ];
   function normalizeHexColor(color) {
     if (typeof color !== 'string') return null;
     const trimmed = color.trim();
