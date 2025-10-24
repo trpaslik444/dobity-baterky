@@ -2169,8 +2169,35 @@ document.addEventListener('DOMContentLoaded', async function() {
     const direct = parseFloat(p.max_power_kw || p.maxPowerKw || p.max_kw || p.maxkw || '');
     let maxKw = isFinite(direct) ? direct : 0;
     const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
+    
+    // Debug: První 3 nabíječky - zobrazit strukturu dat
+    if (window.debugMaxKwCounter === undefined) window.debugMaxKwCounter = 0;
+    if (window.debugMaxKwCounter < 3) {
+      console.log('[DEBUG getStationMaxKw]', {
+        title: p.title,
+        direct_fields: {
+          max_power_kw: p.max_power_kw,
+          maxPowerKw: p.maxPowerKw,
+          max_kw: p.max_kw,
+          maxkw: p.maxkw,
+          max_power: p.max_power,
+          power_output: p.power_output
+        },
+        connectors: arr.map(c => ({
+          power_kw: c.power_kw,
+          power: c.power,
+          vykon: c.vykon,
+          max_power_kw: c.max_power_kw,
+          connector_power_kw: c.connector_power_kw,
+          type: c.type || c.connector_type
+        })),
+        all_properties: Object.keys(p).filter(k => k.toLowerCase().includes('power') || k.toLowerCase().includes('kw') || k.toLowerCase().includes('vykon'))
+      });
+      window.debugMaxKwCounter++;
+    }
+    
     arr.forEach(c => {
-      const pv = parseFloat(c.power_kw || c.power || c.vykon || c.max_power_kw || '');
+      const pv = parseFloat(c.power_kw || c.power || c.vykon || c.max_power_kw || c.connector_power_kw || '');
       if (isFinite(pv)) maxKw = Math.max(maxKw, pv);
     });
     if (!maxKw && typeof p.speed === 'string') {
