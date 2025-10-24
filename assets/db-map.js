@@ -13,6 +13,36 @@ let isochronesUnlockButton = null;
 // Optimalizované cache pro nearby data a isochrony
 let optimizedNearbyCache = new Map();
 let optimizedIsochronesCache = new Map();
+
+/**
+ * POI Enrichment - Spustí obohacení POI pro nabíječku
+ */
+window.triggerPOIEnrichment = function(stationId, stationData) {
+  console.log('[DB Map] Triggering POI enrichment for station:', stationId);
+  
+  // Zkontrolovat, zda je Simple POI Enrichment k dispozici
+  if (typeof window.simplePOIEnrichment !== 'undefined') {
+    window.simplePOIEnrichment.onChargingStationClick(stationId, stationData);
+  } else {
+    console.warn('[DB Map] Simple POI Enrichment not loaded');
+    
+    // Fallback - zkusit načíst POI enrichment script
+    if (!document.querySelector('script[src*="simple-poi-enrichment.js"]')) {
+      const script = document.createElement('script');
+      script.src = '/wp-content/plugins/dobity-baterky/assets/simple-poi-enrichment.js';
+      script.onload = () => {
+        console.log('[DB Map] Simple POI Enrichment loaded, retrying...');
+        if (window.simplePOIEnrichment) {
+          window.simplePOIEnrichment.onChargingStationClick(stationId, stationData);
+        }
+      };
+      script.onerror = () => {
+        console.error('[DB Map] Failed to load Simple POI Enrichment script');
+      };
+      document.head.appendChild(script);
+    }
+  }
+}
 let pendingRequests = new Map();
 let requestQueue = [];
 let isProcessingQueue = false;
@@ -1464,7 +1494,12 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   map.addLayer(clusterChargers);
   map.addLayer(clusterRV);
-    map.addLayer(clusterPOI);
+  map.addLayer(clusterPOI);
+  
+  // Přidat do window objektu pro přístup z jiných skriptů
+  window.clusterChargers = clusterChargers;
+  window.clusterRV = clusterRV;
+  window.clusterPOI = clusterPOI;
     
     // Vytvořit globální markersLayer pro isochrones funkce
     window.markersLayer = L.layerGroup([clusterChargers, clusterRV, clusterPOI]);
@@ -1870,7 +1905,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Výkon (kW)</div>
       <div style="position:relative;height:40px;margin:10px 0;">
         <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:#e5e7eb;border-radius:2px;transform:translateY(-50%);"></div>
-        <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:#FF6A4B;border-radius:2px;transform:translateY(-50%);" id="db-power-range-fill"></div>
+        <div style="position:absolute;top:50%;left:0%;height:4px;background:#FF6A4B;border-radius:2px;transform:translateY(-50%);width:100%;" id="db-power-range-fill"></div>
         <input type="range" id="db-power-min" min="0" max="400" step="1" value="0" style="position:absolute;top:50%;left:0;width:50%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:3;pointer-events:auto;" />
         <input type="range" id="db-power-max" min="0" max="400" step="1" value="400" style="position:absolute;top:50%;right:0;width:50%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:3;pointer-events:auto;" />
 
@@ -2287,6 +2322,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     Array.from(el.selectedOptions || []).forEach(o => s.add(o.value));
     return s;
   }
+  // Power slider state must be defined before any handlers use it
+  var powerBounds = { min: 0, max: 400 };
+  var powerBoundsInitialized = false;
+  // Filters state must also be available before handlers
+  var filterState = {
+    ac: true,
+    dc: true,
+    powerMin: 0,
+    powerMax: 400,
+    connectors: new Set(),
+    amenities: new Set(),
+    access: new Set(),
+    freeOnly: false,
+  };
+  // Flag to ensure filter handlers are attached only once
+  var filterHandlersAttached = false;
   function attachFilterHandlers() {
     if (filterHandlersAttached) {
       return;
@@ -2597,6 +2648,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
     const lat = coords ? coords[1] : null;
     const lng = coords ? coords[0] : null;
+    
+    // Spustit POI enrichment pro nabíječky (pouze na desktopu, na mobilu se volá z openMobileSheet)
+    if (p.post_type === 'charging_location' && lat && lng && window.innerWidth > 900) {
+      if (typeof window.triggerPOIEnrichment === 'function') {
+        window.triggerPOIEnrichment(p.id, { lat: lat, lng: lng, name: p.title || p.name });
+      }
+    }
     
   // Získat barvu čtverečku podle typu místa (stejně jako piny na mapě)
   const getSquareColor = (props) => {
@@ -3703,6 +3761,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       // Pokud data nejsou k dispozici, spustit on-demand zpracování
+      console.debug('[DB Map][Nearby] No cached nearby. Starting on-demand processing', { originId, type, cacheKey });
       // Nejdříve získat token
       const tokenResponse = await fetch('/wp-json/db/v1/ondemand/token', {
         method: 'POST',
@@ -3716,10 +3775,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
       
       if (!tokenResponse.ok) {
-        throw new Error(`Token generation failed: ${tokenResponse.status}`);
+        console.warn('[DB Map][Nearby] Token generation failed', { status: tokenResponse.status, statusText: tokenResponse.statusText });
       }
       
-      const tokenData = await tokenResponse.json();
+      let tokenData = null;
+      try { tokenData = await tokenResponse.json(); } catch(_) { tokenData = {}; }
+      console.debug('[DB Map][Nearby] Token response', { ok: tokenResponse.ok, tokenPresent: !!tokenData?.token });
       
       const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
         method: 'POST',
@@ -3734,9 +3795,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         })
       });
       
+      console.debug('[DB Map][Nearby] Process response', { ok: processResponse.ok, status: processResponse.status, statusText: processResponse.statusText });
       if (processResponse.ok) {
-        const processData = await processResponse.json();
+        let processData = {};
+        try { processData = await processResponse.json(); } catch(_) {}
         const hasData = processData.status === 'completed' && processData.items && Array.isArray(processData.items) && processData.items.length > 0;
+        console.debug('[DB Map][Nearby] Process payload', { status: processData.status, items: Array.isArray(processData.items) ? processData.items.length : null, hasData });
         
         // Uložit do frontend cache
         optimizedNearbyCache.set(cacheKey, {
@@ -3746,7 +3810,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Pokud máme data, spustit fetchNearby pro zobrazení
         if (hasData) {
+          console.debug('[DB Map][Nearby] Fetching nearby after process success', { originId, type });
           fetchNearby(originId, type, 9).then(data => {
+            console.debug('[DB Map][Nearby] fetchNearby result', { count: Array.isArray(data?.items) ? data.items.length : null });
             // Zobrazit isochrony pokud jsou k dispozici
             if (data.isochrones && data.isochrones.user_settings?.enabled) {
               const frontendSettings = JSON.parse(localStorage.getItem('db-isochrones-settings') || '{"enabled": true, "walking_speed": 4.5}');
@@ -3812,6 +3878,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             ...frontendSettings
           };
           renderIsochrones(adjustedGeojson, cached.data.isochrones.ranges_s, mergedSettings, { featureId: featureId });
+        } else {
+          console.debug('[DB Map][Nearby] Process did not return items yet; polling status will continue');
         }
       }
       
@@ -4208,6 +4276,20 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         } catch(err) {
           // warn log kept minimal: removed noisy output
+        }
+      }
+    }
+    
+    // Spustit POI enrichment pro nabíječky (desktop)
+    if (feature && feature.properties && feature.properties.post_type === 'charging_location') {
+      const p = feature.properties;
+      const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
+      const lat = coords ? coords[1] : null;
+      const lng = coords ? coords[0] : null;
+      
+      if (lat && lng) {
+        if (typeof window.triggerPOIEnrichment === 'function') {
+          window.triggerPOIEnrichment(p.id, { lat: lat, lng: lng, name: p.title || p.name });
         }
       }
     }
@@ -5368,20 +5450,11 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // Stav filtrů
-  const filterState = {
-    ac: true,
-    dc: true,
-    powerMin: 0,
-    powerMax: 400,
-    connectors: new Set(),
-    amenities: new Set(),
-    access: new Set(),
-    freeOnly: false,
-  };
+  // moved earlier
 
-  let powerBounds = { min: 0, max: 400 };
-  let powerBoundsInitialized = false;
-  let filterHandlersAttached = false;
+  // moved earlier
+  // moved earlier
+  // removed duplicate declaration; defined earlier near attachFilterHandlers
   
   // Funkce pro počáteční načtení bodů - používá stávající data z mapy
   async function loadInitialPoints() {
@@ -5921,7 +5994,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       clusterRV.clearLayers();
     }
     if (typeof clusterPOI !== 'undefined') {
-      clusterPOI.clearLayers();
+      // Neodstraňovat POI, které byly přidány přes POI enrichment
+      // Pouze odstranit původní POI markery, ne ty z enrichment systému
+      const layers = clusterPOI.getLayers();
+      layers.forEach(layer => {
+        // Odstranit pouze markery, které nejsou z POI enrichment systému
+        if (!layer._poiEnrichment) {
+          clusterPOI.removeLayer(layer);
+        }
+      });
     }
     
     markers = [];
@@ -6227,6 +6308,17 @@ document.addEventListener('DOMContentLoaded', async function() {
           openDetailModal(f);
           return;
         }
+        
+        // Spustit POI enrichment pro nabíječky
+        if (p.post_type === 'charging_location' && lat && lng) {
+          console.log('[DB Map] Triggering POI enrichment for charging station:', p.id);
+          if (typeof window.triggerPOIEnrichment === 'function') {
+            window.triggerPOIEnrichment(p.id, { lat: lat, lng: lng, name: p.title || p.name });
+          } else {
+            console.warn('[DB Map] triggerPOIEnrichment function not available');
+          }
+        }
+        
         // Primárně otevři spodní náhled (sheet) a zvýrazni pin; modal jen když to uživatel vyžádá
         highlightCardById(p.id);
         
@@ -8557,5 +8649,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
   }, 60000); // Každou minutu
+  
+  // Moved to top of file
   
 })();
