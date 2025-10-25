@@ -1843,11 +1843,11 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Panel filtrů (otevíraný tlačítkem Filtry)
   filterPanel = document.createElement('div');
   filterPanel.id = 'db-map-filter-panel';
-  filterPanel.style.cssText = 'position:absolute;right:12px;top:64px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:12px;z-index:9999;min-width:240px;max-width:320px;max-height:calc(100vh - 120px);display:none;overflow-y:auto;pointer-events:auto;';
+  filterPanel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 20px 40px rgba(0,0,0,.3);padding:20px;z-index:10000;min-width:320px;max-width:400px;max-height:calc(100vh - 80px);display:none;overflow-y:auto;pointer-events:auto;';
   // Transparentní overlay pro blokování interakce s mapou
   mapOverlay = document.createElement('div');
   mapOverlay.id = 'db-map-overlay';
-  mapOverlay.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;background:transparent;z-index:999;display:none;pointer-events:auto;';
+  mapOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:none;pointer-events:auto;';
   filterPanel.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:space-between;gap:.5em;">
       <strong>Filtry</strong>
@@ -1864,8 +1864,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:#FF6A4B;border-radius:2px;transform:translateY(-50%);" id="db-power-range-fill"></div>
         <input type="range" id="db-power-min" min="0" max="400" step="1" value="0" style="position:absolute;top:50%;left:0;width:50%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:3;pointer-events:auto;" />
         <input type="range" id="db-power-max" min="0" max="400" step="1" value="400" style="position:absolute;top:50%;right:0;width:50%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:3;pointer-events:auto;" />
-
-
       </div>
       <div style="display:flex;justify-content:space-between;font-size:.8em;color:#666;">
         <span id="db-power-min-value">0 kW</span>
@@ -2011,18 +2009,50 @@ document.addEventListener('DOMContentLoaded', async function() {
     return normalizeConnectorType(raw);
   }
   function getStationMaxKw(p) {
+    // Debug log pro diagnostiku
+    console.log('[DB Map] getStationMaxKw called for:', p.id, p.title);
+    
+    // 1. Zkusit přímé pole max_power_kw
     const direct = parseFloat(p.max_power_kw || p.maxPowerKw || p.max_kw || p.maxkw || '');
     let maxKw = isFinite(direct) ? direct : 0;
+    
+    console.log('[DB Map] Direct max power:', direct, '-> maxKw:', maxKw);
+    
+    // 2. Projít všechny konektory a najít nejvyšší výkon
     const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
-    arr.forEach(c => {
-      const pv = parseFloat(c.power_kw || c.power || c.vykon || c.max_power_kw || '');
-      if (isFinite(pv)) maxKw = Math.max(maxKw, pv);
+    console.log('[DB Map] Connectors array:', arr);
+    
+    arr.forEach((c, index) => {
+      const pv = parseFloat(c.power_kw || c.power || c.vykon || c.max_power_kw || c.power_kw || '');
+      console.log(`[DB Map] Connector ${index}:`, c, '-> power:', pv);
+      if (isFinite(pv) && pv > 0) {
+        maxKw = Math.max(maxKw, pv);
+      }
     });
+    
+    // 3. Fallback na speed pole
     if (!maxKw && typeof p.speed === 'string') {
       const s = p.speed.toLowerCase();
       if (s.includes('dc')) maxKw = 50;
       else if (s.includes('ac')) maxKw = 22;
+      console.log('[DB Map] Speed fallback:', s, '-> maxKw:', maxKw);
     }
+    
+    // 4. Pokud stále nemáme výkon, zkusit db_charger_power
+    if (!maxKw && p.db_charger_power) {
+      const powerData = p.db_charger_power;
+      if (typeof powerData === 'object') {
+        Object.values(powerData).forEach(power => {
+          const pv = parseFloat(power);
+          if (isFinite(pv) && pv > 0) {
+            maxKw = Math.max(maxKw, pv);
+          }
+        });
+      }
+      console.log('[DB Map] db_charger_power fallback:', powerData, '-> maxKw:', maxKw);
+    }
+    
+    console.log('[DB Map] Final maxKw:', maxKw);
     return maxKw || 0;
   }
   function populateFilterOptions() {
@@ -5712,19 +5742,44 @@ document.addEventListener('DOMContentLoaded', async function() {
     filtered = filtered.filter(f => {
       const p = f.properties || {};
       if (p.post_type !== 'charging_location') return true;
+      
+      // Debug log pro diagnostiku
+      console.log('[DB Map] Filtering station:', p.id, p.title);
+      
+      // 1. Filtrování podle typu (AC/DC)
       const mode = getChargerMode(p);
-      const allowAc = filterState.ac; const allowDc = filterState.dc;
+      const allowAc = filterState.ac; 
+      const allowDc = filterState.dc;
       const modePass = (mode === 'ac' && allowAc) || (mode === 'dc' && allowDc) || (mode === 'hybrid' && (allowAc || allowDc));
-      if (!modePass) return false;
+      if (!modePass) {
+        console.log('[DB Map] Station filtered out by mode:', mode, 'allowAc:', allowAc, 'allowDc:', allowDc);
+        return false;
+      }
+      
+      // 2. Filtrování podle výkonu
       const maxKw = getStationMaxKw(p);
-      if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) return false;
+      console.log('[DB Map] Station power:', maxKw, 'filter range:', filterState.powerMin, '-', filterState.powerMax);
+      
+      if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) {
+        console.log('[DB Map] Station filtered out by power:', maxKw, 'not in range', filterState.powerMin, '-', filterState.powerMax);
+        return false;
+      }
 
+      // 3. Filtrování podle konektorů
       if (filterState.connectors && filterState.connectors.size > 0) {
         const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
         const keys = new Set(arr.map(getConnectorTypeKey));
-        let ok = false; filterState.connectors.forEach(sel => { if (keys.has(String(sel).toLowerCase())) ok = true; });
-        if (!ok) return false;
+        let ok = false; 
+        filterState.connectors.forEach(sel => { 
+          if (keys.has(String(sel).toLowerCase())) ok = true; 
+        });
+        if (!ok) {
+          console.log('[DB Map] Station filtered out by connectors:', keys, 'not matching', Array.from(filterState.connectors));
+          return false;
+        }
       }
+      
+      console.log('[DB Map] Station passed all filters:', p.id);
       return true;
     });
     

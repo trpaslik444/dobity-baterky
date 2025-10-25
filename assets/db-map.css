@@ -1751,10 +1751,12 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   }
 } 
 
-/* Filtry - jezdec s 2 kuličkami */
+/* Modal filtry - jezdec s 2 kuličkami */
 #db-map-filter-panel {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 #f1f5f9;
+  pointer-events: auto;
+  touch-action: none;
 }
 
 #db-map-filter-panel::-webkit-scrollbar {
@@ -1775,15 +1777,40 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   background: #94a3b8;
 }
 
-/* Oprava problému s mapou v pozadí filtrů */
-#db-map-filter-panel {
+#db-map-filter-panel * {
   pointer-events: auto;
   touch-action: none;
 }
 
-#db-map-filter-panel * {
-  pointer-events: auto;
-  touch-action: none;
+/* Modal overlay */
+#db-map-overlay {
+  backdrop-filter: blur(2px);
+  transition: opacity 0.3s ease;
+}
+
+/* Modal animace */
+#db-map-filter-panel {
+  animation: modalSlideIn 0.3s ease-out;
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Responsivní modal */
+@media (max-width: 768px) {
+  #db-map-filter-panel {
+    min-width: 280px;
+    max-width: calc(100vw - 40px);
+    padding: 16px;
+  }
 }
 
 /* Jezdec pozadí - každý range pokrývá svou polovinu */
