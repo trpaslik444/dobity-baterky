@@ -1843,57 +1843,110 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Panel filtrů (otevíraný tlačítkem Filtry)
   filterPanel = document.createElement('div');
   filterPanel.id = 'db-map-filter-panel';
-  filterPanel.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 20px 40px rgba(0,0,0,.3);padding:20px;z-index:10000;min-width:320px;max-width:400px;max-height:calc(100vh - 80px);display:none;overflow-y:auto;pointer-events:auto;';
+  filterPanel.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;font-family:Montserrat,sans-serif;';
   // Transparentní overlay pro blokování interakce s mapou
   mapOverlay = document.createElement('div');
   mapOverlay.id = 'db-map-overlay';
   mapOverlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:none;pointer-events:auto;';
   filterPanel.innerHTML = `
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:.5em;">
-      <strong>Filtry</strong>
-      <button type="button" id="db-map-filter-close" style="background:none;border:none;cursor:pointer;font-size:18px;line-height:1;">×</button>
-    </div>
-    <div style="display:flex;gap:.5em;margin-top:.6em;flex-wrap:wrap;">
-      <label style="display:flex;align-items:center;gap:.4em;"><input type="checkbox" id="db-filter-dc" checked /> DC</label>
-      <label style="display:flex;align-items:center;gap:.4em;"><input type="checkbox" id="db-filter-ac" checked /> AC</label>
-    </div>
-    <div style="margin-top:.6em;">
-      <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Výkon (kW)</div>
-      <div style="position:relative;height:40px;margin:10px 0;">
-        <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:#e5e7eb;border-radius:2px;transform:translateY(-50%);"></div>
-        <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:#FF6A4B;border-radius:2px;transform:translateY(-50%);" id="db-power-range-fill"></div>
-        <input type="range" id="db-power-min" min="0" max="400" step="1" value="0" style="position:absolute;top:50%;left:0;width:50%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:3;pointer-events:auto;" />
-        <input type="range" id="db-power-max" min="0" max="400" step="1" value="400" style="position:absolute;top:50%;right:0;width:50%;height:4px;background:transparent;appearance:none;transform:translateY(-50%);z-index:3;pointer-events:auto;" />
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:.8em;color:#666;">
-        <span id="db-power-min-value">0 kW</span>
-        <span id="db-power-max-value">400 kW</span>
-      </div>
-    </div>
+    <div class="db-filter-modal__backdrop" data-close="true"></div>
+    <div class="db-filter-modal__content" role="document">
+      <button type="button" class="db-filter-modal__close" aria-label="Zavřít">&times;</button>
+      <h2 class="db-filter-modal__title">Filtry</h2>
+      <div class="db-filter-modal__body">
+        <div class="db-filter-section">
+          <div class="db-filter-section__title">Typ nabíjení</div>
+          <div class="db-filter-checkboxes">
+            <label class="db-filter-checkbox">
+              <input type="checkbox" id="db-filter-dc" checked />
+              <span>DC</span>
+            </label>
+            <label class="db-filter-checkbox">
+              <input type="checkbox" id="db-filter-ac" checked />
+              <span>AC</span>
+            </label>
+          </div>
+        </div>
 
-    <div style="margin-top:.8em;">
-      <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Typ konektoru</div>
-      <div id="db-filter-connector" style="width:100%;max-height:120px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;"></div>
+        <div class="db-filter-section">
+          <div class="db-filter-section__title">Výkon (kW)</div>
+          <div class="db-filter-power-range">
+            <div class="db-filter-power-track">
+              <div class="db-filter-power-fill" id="db-power-range-fill"></div>
+              <input type="range" id="db-power-min" min="0" max="400" step="1" value="0" class="db-filter-power-slider db-filter-power-slider--min" />
+              <input type="range" id="db-power-max" min="0" max="400" step="1" value="400" class="db-filter-power-slider db-filter-power-slider--max" />
+            </div>
+            <div class="db-filter-power-values">
+              <span id="db-power-min-value">0 kW</span>
+              <span id="db-power-max-value">400 kW</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="db-filter-section">
+          <div class="db-filter-section__title">Typ konektoru</div>
+          <div id="db-filter-connector" class="db-filter-connector-list"></div>
+        </div>
+
+        <div class="db-filter-section db-filter-section--disabled">
+          <div class="db-filter-section__title">Amenity v okolí</div>
+          <div id="db-filter-amenity" class="db-filter-amenity-list" disabled title="Připravujeme"></div>
+        </div>
+
+        <div class="db-filter-section db-filter-section--disabled">
+          <div class="db-filter-section__title">Přístup</div>
+          <div id="db-filter-access" class="db-filter-access-list" disabled title="Připravujeme"></div>
+        </div>
+
+        <div class="db-filter-actions">
+          <button type="button" id="db-filter-reset" class="db-filter-btn db-filter-btn--secondary">Vymazat</button>
+          <button type="button" id="db-filter-apply" class="db-filter-btn db-filter-btn--primary">Použít</button>
+        </div>
+
+        <div class="db-filter-section">
+          <label class="db-filter-checkbox">
+            <input type="checkbox" id="db-map-toggle-recommended" />
+            <span>Jen DB doporučuje</span>
+          </label>
+        </div>
+      </div>
     </div>
-    <div style="margin-top:.8em;opacity:.6;">
-      <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Amenity v okolí</div>
-      <div id="db-filter-amenity" style="width:100%;max-height:120px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;opacity:0.6;" disabled title="Připravujeme"></div>
-    </div>
-    <div style="margin-top:.8em;opacity:.6;">
-      <div style="font-size:.9em;color:#444;margin-bottom:.4em;">Přístup</div>
-      <div id="db-filter-access" style="width:100%;max-height:120px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:6px;padding:8px;opacity:0.6;" disabled title="Připravujeme"></div>
-    </div>
-    <div style="display:flex;gap:.5em;margin-top:.8em;justify-content:space-between;padding-bottom:8px;">
-      <button type="button" id="db-filter-reset" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;padding:.4em .8em;cursor:pointer;">Vymazat</button>
-      <button type="button" id="db-filter-apply" style="background:#049FE8;color:#fff;border:0;border-radius:8px;padding:.4em .8em;cursor:pointer;">Použít</button>
-    </div>
-    <label style="display:flex;align-items:center;gap:.5em;margin-top:.6em;">
-      <input type="checkbox" id="db-map-toggle-recommended" /> Jen DB doporučuje
-    </label>
   `;
   mapDiv.appendChild(filterPanel);
   mapDiv.appendChild(mapOverlay);
   
+  // Event handlery pro modal
+  const closeFilterModal = () => {
+    filterPanel.style.display = 'none';
+    filterPanel.classList.remove('open');
+    document.body.classList.remove('db-filter-modal-open');
+  };
+
+  const openFilterModal = () => {
+    filterPanel.style.display = 'flex';
+    filterPanel.classList.add('open');
+    document.body.classList.add('db-filter-modal-open');
+  };
+
+  // Close button
+  const closeButton = filterPanel.querySelector('.db-filter-modal__close');
+  if (closeButton) {
+    closeButton.addEventListener('click', closeFilterModal);
+  }
+
+  // Backdrop click
+  const backdrop = filterPanel.querySelector('.db-filter-modal__backdrop');
+  if (backdrop) {
+    backdrop.addEventListener('click', closeFilterModal);
+  }
+
+  // Escape key
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && filterPanel.classList.contains('open')) {
+      closeFilterModal();
+    }
+  });
+
   // Zabránit posuvání mapy při interakci s filter panelem
   filterPanel.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
   filterPanel.addEventListener('touchmove', function(e) { e.stopPropagation(); }, { passive: true });
@@ -1910,33 +1963,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     event.preventDefault();
     event.stopPropagation();
 
-    const isVisible = filterPanel.style.display === 'block';
-    filterPanel.style.display = isVisible ? 'none' : 'block';
-
-    if (mapOverlay) {
-      const newDisplay = isVisible ? 'none' : 'block';
-      mapOverlay.style.display = newDisplay;
-    }
-
-    if (mapDiv) {
-      if (isVisible) {
-        mapDiv.style.zIndex = '1';
-        mapDiv.classList.remove('filters-open');
-      } else {
-        mapDiv.style.zIndex = '0';
-        mapDiv.classList.add('filters-open');
-      }
+    const isVisible = filterPanel.classList.contains('open');
+    if (isVisible) {
+      closeFilterModal();
+    } else {
+      openFilterModal();
     }
   }
-  const filterClose = filterPanel.querySelector('#db-map-filter-close');
-  if (filterClose) filterClose.addEventListener('click', () => {
-    filterPanel.style.display = 'none';
-    if (mapOverlay) mapOverlay.style.display = 'none';
-    if (mapDiv) {
-      mapDiv.style.zIndex = '1';
-      mapDiv.classList.remove('filters-open');
-    }
-  });
+  // Close button je už nastavený výše v openFilterModal/closeFilterModal
 
   // ===== KONEC PANELU FILTRŮ =====
 
@@ -2023,7 +2057,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('[DB Map] Connectors array:', arr);
     
     arr.forEach((c, index) => {
-      const pv = parseFloat(c.power_kw || c.power || c.vykon || c.max_power_kw || c.power_kw || '');
+      // Zkusit různé možné názvy polí pro výkon
+      const powerFields = [
+        'power_kw', 'power', 'vykon', 'max_power_kw', 'power_kw',
+        'maxPower', 'max_power', 'powerMax', 'power_max',
+        'output_power', 'outputPower', 'rated_power', 'ratedPower',
+        'nominal_power', 'nominalPower', 'capacity', 'kw'
+      ];
+      
+      let pv = 0;
+      for (const field of powerFields) {
+        const value = c[field];
+        if (value !== undefined && value !== null && value !== '') {
+          const parsed = parseFloat(value);
+          if (isFinite(parsed) && parsed > 0) {
+            pv = parsed;
+            break;
+          }
+        }
+      }
+      
       console.log(`[DB Map] Connector ${index}:`, c, '-> power:', pv);
       if (isFinite(pv) && pv > 0) {
         maxKw = Math.max(maxKw, pv);
@@ -4838,7 +4891,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     const filterBtn2 = listHeader.querySelector('.db-map-topbar-btn[title="Filtry"]');
     if (filterBtn2) filterBtn2.addEventListener('click', () => {
-      filterPanel.style.display = (filterPanel.style.display === 'none' || !filterPanel.style.display) ? 'block' : 'none';
+      const isVisible = filterPanel.classList.contains('open');
+      if (isVisible) {
+        closeFilterModal();
+      } else {
+        openFilterModal();
+      }
     });
     const favBtn2 = listHeader.querySelector('.db-map-topbar-btn[title="Oblíbené"]');
     if (favBtn2) favBtn2.addEventListener('click', () => {
@@ -6609,17 +6667,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     return svgContent;
   }
 
-  // Zavřít filtry při kliknutí mimo panel
-  document.addEventListener('click', function(e) {
-    if (filterPanel.style.display === 'block' && !filterPanel.contains(e.target) && !filterBtn.contains(e.target)) {
-      filterPanel.style.display = 'none';
-      if (mapOverlay) mapOverlay.style.display = 'none';
-      if (mapDiv) {
-        mapDiv.style.zIndex = '1';
-        mapDiv.classList.remove('filters-open');
-      }
-    }
-  });
+  // Zavřít filtry při kliknutí mimo panel - už je řešeno v backdrop click handleru
 
   // Nové vyhledávací pole s lupou ikonou
   function createSearchOverlay() {
