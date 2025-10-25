@@ -2170,32 +2170,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     let maxKw = isFinite(direct) ? direct : 0;
     const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
     
-    // Debug: První 3 nabíječky - zobrazit strukturu dat
-    if (window.debugMaxKwCounter === undefined) window.debugMaxKwCounter = 0;
-    if (window.debugMaxKwCounter < 3) {
-      console.log('[DEBUG getStationMaxKw]', {
-        title: p.title,
-        direct_fields: {
-          max_power_kw: p.max_power_kw,
-          maxPowerKw: p.maxPowerKw,
-          max_kw: p.max_kw,
-          maxkw: p.maxkw,
-          max_power: p.max_power,
-          power_output: p.power_output
-        },
-        connectors: arr.map(c => ({
-          power_kw: c.power_kw,
-          power: c.power,
-          vykon: c.vykon,
-          max_power_kw: c.max_power_kw,
-          connector_power_kw: c.connector_power_kw,
-          type: c.type || c.connector_type
-        })),
-        all_properties: Object.keys(p).filter(k => k.toLowerCase().includes('power') || k.toLowerCase().includes('kw') || k.toLowerCase().includes('vykon'))
-      });
-      window.debugMaxKwCounter++;
-    }
-    
     arr.forEach(c => {
       const pv = parseFloat(c.power_kw || c.power || c.vykon || c.max_power_kw || c.connector_power_kw || '');
       if (isFinite(pv)) maxKw = Math.max(maxKw, pv);
@@ -2379,8 +2353,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       filterState.powerMin = minVal;
       filterState.powerMax = maxVal;
-      
-      console.log('[Power Filter] Updated:', { min: minVal, max: maxVal, triggerRender: triggerRender });
 
       if (triggerRender && typeof renderCards === 'function') {
         renderCards('', null, false);
@@ -2493,13 +2465,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     
     if (applyBtn) applyBtn.addEventListener('click', () => {
-      console.log('[Filter Apply] Current filterState:', {
-        powerMin: filterState.powerMin,
-        powerMax: filterState.powerMax,
-        ac: filterState.ac,
-        dc: filterState.dc,
-        freeOnly: filterState.freeOnly
-      });
       if (typeof renderCards === 'function') {
         renderCards('', null, false); 
       }
@@ -6026,7 +5991,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       filtered = filtered.filter(f => !!f.properties.db_recommended);
     }
     // Aplikovat filtry pro nabíječky
-    let debugCounter = 0;
     filtered = filtered.filter(f => {
       const p = f.properties || {};
       if (p.post_type !== 'charging_location') return true;
@@ -6034,16 +5998,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       const allowAc = filterState.ac; const allowDc = filterState.dc;
       const modePass = (mode === 'ac' && allowAc) || (mode === 'dc' && allowDc) || (mode === 'hybrid' && (allowAc || allowDc));
       if (!modePass) {
-        if (debugCounter < 3) console.log('[Filter Debug] Rejected by mode:', { title: p.title, mode, allowAc, allowDc });
-        debugCounter++;
         return false;
       }
       const maxKw = getStationMaxKw(p);
-      // Pokud maxKw je 0 (nemáme data), zahrnout nabíječku
-      // Jinak filtrovat podle rozsahu
-      if (maxKw > 0 && (maxKw < filterState.powerMin || maxKw > filterState.powerMax)) {
-        if (debugCounter < 3) console.log('[Filter Debug] Rejected by power:', { title: p.title, maxKw, min: filterState.powerMin, max: filterState.powerMax });
-        debugCounter++;
+      // Filtrovat podle rozsahu výkonu
+      if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) {
         return false;
       }
 

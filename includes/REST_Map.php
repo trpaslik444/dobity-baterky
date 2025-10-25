@@ -596,6 +596,7 @@ class REST_Map {
                     // Načtení konektorů z charger_type taxonomie (správná taxonomie pro ikony)
                     $charger_type_terms = wp_get_post_terms($post->ID, 'charger_type');
                     $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+                    $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
                     
                     if (!empty($charger_type_terms) && !is_wp_error($charger_type_terms)) {
                         $connectors = [];
@@ -613,6 +614,27 @@ class REST_Map {
                                 }
                             }
                             
+                            // Získat výkon z _db_charger_power
+                            $power = null;
+                            if (is_array($charger_powers)) {
+                                // Zkusit najít podle term ID
+                                if (isset($charger_powers[$charger_term->term_id])) {
+                                    $power = $charger_powers[$charger_term->term_id];
+                                }
+                                // Fallback: zkusit podle slug
+                                elseif (isset($charger_powers[$charger_term->slug])) {
+                                    $power = $charger_powers[$charger_term->slug];
+                                }
+                                // Fallback: zkusit podle názvu
+                                elseif (isset($charger_powers[$charger_term->name])) {
+                                    $power = $charger_powers[$charger_term->name];
+                                }
+                            }
+                            // Fallback: zkusit term_meta
+                            if (!$power) {
+                                $power = get_term_meta($charger_term->term_id, 'power', true);
+                            }
+                            
                             // SVG ikony dočasně zakázány - čekáme na správné ikony
                             $svg_icon = null;
                             
@@ -622,7 +644,8 @@ class REST_Map {
                                 'icon' => get_term_meta($charger_term->term_id, 'charger_icon', true), // Správný meta klíč pro ikony
                                 'svg_icon' => $svg_icon, // Nový SVG systém
                                 'type' => get_term_meta($charger_term->term_id, 'charger_current_type', true), // Správný meta klíč pro typ proudu
-                                'power' => get_term_meta($charger_term->term_id, 'power', true),
+                                'power' => $power,
+                                'power_kw' => $power,
                                 'quantity' => $quantity, // Přidat počet
                                 // Přidání vlastností pro kompatibilitu s JavaScript kódem
                                 'connector_standard' => $charger_term->name,
