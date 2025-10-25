@@ -1926,6 +1926,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     filterPanel.style.display = 'flex';
     filterPanel.classList.add('open');
     document.body.classList.add('db-filter-modal-open');
+    
+    // Inicializovat slidery
+    setTimeout(() => {
+      const pMinR = document.getElementById('db-power-min');
+      const pMaxR = document.getElementById('db-power-max');
+      const pMinValue = document.getElementById('db-power-min-value');
+      const pMaxValue = document.getElementById('db-power-max-value');
+      const pRangeFill = document.getElementById('db-power-range-fill');
+      
+      if (pMinR && pMaxR && pMinValue && pMaxValue && pRangeFill) {
+        const minVal = parseInt(pMinR.value || '0', 10);
+        const maxVal = parseInt(pMaxR.value || '400', 10);
+        
+        // Aktualizovat vizuální vyplnění
+        const minPercent = (minVal / 400) * 100;
+        const maxPercent = (maxVal / 400) * 100;
+        pRangeFill.style.left = `${minPercent}%`;
+        pRangeFill.style.width = `${maxPercent - minPercent}%`;
+        
+        // Aktualizovat hodnoty
+        pMinValue.textContent = `${minVal} kW`;
+        pMaxValue.textContent = `${maxVal} kW`;
+      }
+    }, 100);
   };
 
   // Close button
@@ -2196,8 +2220,19 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Jezdec s vizuálním vyplněním
     function updatePowerSlider() {
-      const minVal = parseInt(pMinR.value || '0', 10);
-      const maxVal = parseInt(pMaxR.value || '400', 10);
+      let minVal = parseInt(pMinR.value || '0', 10);
+      let maxVal = parseInt(pMaxR.value || '400', 10);
+      
+      // Omezit hodnoty - min nemůže být větší než max a naopak
+      if (minVal >= maxVal) {
+        if (pMinR === event.target) {
+          minVal = maxVal - 1;
+          pMinR.value = minVal;
+        } else {
+          maxVal = minVal + 1;
+          pMaxR.value = maxVal;
+        }
+      }
       
       // Aktualizovat vizuální vyplnění jezdce
       if (pRangeFill) {
