@@ -2,6 +2,175 @@
 /* Import Google Fonts pro typografii z brandbooku */
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Patrick+Hand&display=swap');
 
+/* ===== SMART LOADING MANAGER STYLES ===== */
+.db-manual-load-container {
+  position: absolute;
+  bottom: 25vh; /* 1/4 od spodní hrany */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: none;
+  animation: slideInFromBottom 0.3s ease-out;
+}
+
+.db-manual-load-btn {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  border: none;
+  backdrop-filter: none;
+  width: 120px; /* Pevná šířka v pixelech */
+}
+
+.db-manual-load-btn button {
+  background: #049FE8; /* Modrá z brandbooku */
+  color: #FFACC4; /* Růžová z brandbooku */
+  border: none;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(4, 159, 232, 0.3);
+}
+
+.db-manual-load-btn button:hover {
+  background: #0378b8; /* Tmavší modrá při hover */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(4, 159, 232, 0.4);
+}
+
+.db-manual-load-btn button:active {
+  transform: translateY(0);
+}
+
+.db-manual-load-btn .icon {
+  display: none; /* Skrytý pin */
+}
+
+.db-manual-load-btn .text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.db-loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1001;
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid #049FE8;
+  backdrop-filter: blur(10px);
+  display: none;
+  align-items: center;
+  gap: 10px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.db-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #049FE8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.db-loading-indicator span {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 500;
+  color: #333;
+  font-size: 13px;
+}
+
+/* Auto-load toggle button - přesunuto do menu */
+.db-auto-load-toggle {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #049FE8;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  margin-left: 10px;
+}
+
+.db-auto-load-on {
+  background: linear-gradient(135deg, #049FE8 0%, #007BB5 100%);
+  color: white;
+}
+
+.db-auto-load-off {
+  background: rgba(255, 255, 255, 0.95);
+  color: #666;
+}
+
+.db-auto-load-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(4, 159, 232, 0.3);
+}
+
+/* Animations */
+@keyframes slideInFromBottom {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .db-manual-load-container {
+    bottom: 25vh; /* Zachovat 1/4 od spodní hrany */
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+  }
+  
+  .db-manual-load-btn {
+    width: 120px; /* Pevná šířka zachována */
+  }
+  
+  .db-manual-load-btn button {
+    font-size: 13px; /* Mírně menší font na mobilu */
+    padding: 10px 14px;
+  }
+}
+
 html, body {
   height: 100%;
   min-height: 100vh;

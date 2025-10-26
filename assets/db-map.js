@@ -1674,9 +1674,31 @@ document.addEventListener('DOMContentLoaded', async function() {
                 </div>
               ` }
             </div>
+            
+            <div class="db-menu-toggle-section">
+              <div class="db-menu-section-title">Nastavení mapy</div>
+              <div class="db-menu-toggle-item">
+                <label class="db-menu-toggle-label" for="db-auto-load-toggle-menu">
+                  <input type="checkbox" class="db-menu-toggle-checkbox" id="db-auto-load-toggle-menu" />
+                  <span class="db-menu-toggle-text">Automatické načítání dat</span>
+                </label>
+              </div>
+              <div class="db-menu-help-text">Pokud je vypnuto, data se načítají pouze po kliknutí na tlačítko</div>
+            </div>
           </div>
         `;
       document.body.appendChild(menuPanel);
+      
+      // Přidat event listener pro checkbox v menu
+      const menuCheckbox = menuPanel.querySelector('#db-auto-load-toggle-menu');
+      if (menuCheckbox && !menuCheckbox.dataset.dbListenerAttached) {
+        menuCheckbox.addEventListener('change', (e) => {
+          if (window.smartLoadingManager) {
+            window.smartLoadingManager.toggleAutoLoad();
+          }
+        });
+        menuCheckbox.dataset.dbListenerAttached = '1';
+      }
     }
 
     const closePanel = () => {
@@ -6502,46 +6524,205 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   // První render
   renderCards();
-  // ===== AUTO-FETCH V RADIUS REŽIMU NA MOVE/ZOOM =====
+  // ===== SMART LOADING MANAGER =====
+  class SmartLoadingManager {
+    constructor() {
+      this.manualLoadButton = null;
+      this.loadingIndicator = null;
+      this.autoLoadEnabled = true;
+      this.outsideLoadedArea = false;
+      this.lastCheckTime = 0;
+      this.checkInterval = 2000; // Kontrola každé 2 sekundy
+    }
+    
+    init() {
+      this.createManualLoadButton();
+      this.createLoadingIndicator();
+      this.loadUserPreferences();
+    }
+    
+    createManualLoadButton() {
+      this.manualLoadButton = document.createElement('div');
+      this.manualLoadButton.id = 'db-manual-load-container';
+      this.manualLoadButton.className = 'db-manual-load-container';
+      this.manualLoadButton.innerHTML = `
+        <div class="db-manual-load-btn">
+          <button id="db-load-new-area-btn" onclick="window.smartLoadingManager.loadNewAreaData()">
+            <span class="icon">📍</span>
+            <span class="text">Načíst místa v okolí</span>
+          </button>
+        </div>
+      `;
+      
+      // Přidat do mapy
+      const mapContainer = document.querySelector('.leaflet-container');
+      if (mapContainer) {
+        mapContainer.appendChild(this.manualLoadButton);
+      }
+      
+      this.hideManualLoadButton();
+    }
+    
+    createLoadingIndicator() {
+      this.loadingIndicator = document.createElement('div');
+      this.loadingIndicator.id = 'db-loading-indicator';
+      this.loadingIndicator.className = 'db-loading-indicator';
+      this.loadingIndicator.innerHTML = `
+        <div class="db-loading-spinner"></div>
+        <span>Načítám nová místa...</span>
+      `;
+      
+      const mapContainer = document.querySelector('.leaflet-container');
+      if (mapContainer) {
+        mapContainer.appendChild(this.loadingIndicator);
+      }
+      
+      this.hideLoadingIndicator();
+    }
+    
+    loadUserPreferences() {
+      const saved = localStorage.getItem('db-auto-load-enabled');
+      this.autoLoadEnabled = saved !== null ? saved === 'true' : false; // Výchozí: manuální načítání
+    }
+    
+    saveUserPreferences() {
+      localStorage.setItem('db-auto-load-enabled', this.autoLoadEnabled.toString());
+    }
+    
+    checkIfOutsideLoadedArea(center, radius) {
+      if (!lastSearchCenter || !lastSearchRadiusKm) {
+        return false;
+      }
+      
+      const distFromLastCenter = haversineKm(lastSearchCenter, { lat: center.lat, lng: center.lng });
+      const thresholdKm = Math.max(1, Math.min(10, lastSearchRadiusKm * 0.3)); // Sníženo na 30%
+      
+      return distFromLastCenter > thresholdKm;
+    }
+    
+    showManualLoadButton() {
+      if (this.manualLoadButton) {
+        this.manualLoadButton.style.display = 'block';
+        this.outsideLoadedArea = true;
+      }
+    }
+    
+    hideManualLoadButton() {
+      if (this.manualLoadButton) {
+        this.manualLoadButton.style.display = 'none';
+        this.outsideLoadedArea = false;
+      }
+    }
+    
+    showLoadingIndicator() {
+      if (this.loadingIndicator) {
+        this.loadingIndicator.style.display = 'flex';
+      }
+    }
+    
+    hideLoadingIndicator() {
+      if (this.loadingIndicator) {
+        this.loadingIndicator.style.display = 'none';
+      }
+    }
+    
+    async loadNewAreaData() {
+      if (!map) return;
+      
+      this.showLoadingIndicator();
+      this.hideManualLoadButton();
+      
+      try {
+        const center = map.getCenter();
+        await fetchAndRenderRadius(center, null);
+        lastSearchCenter = { lat: center.lat, lng: center.lng };
+        lastSearchRadiusKm = FIXED_RADIUS_KM;
+      } catch (error) {
+        console.error('[DB Map] Error loading new area:', error);
+        this.showManualLoadButton(); // Zobrazit tlačítko znovu při chybě
+      } finally {
+        this.hideLoadingIndicator();
+      }
+    }
+    
+    toggleAutoLoad() {
+      this.autoLoadEnabled = !this.autoLoadEnabled;
+      this.saveUserPreferences();
+      
+      // Aktualizovat checkbox v menu
+      const menuCheckbox = document.getElementById('db-auto-load-toggle-menu');
+      if (menuCheckbox) {
+        menuCheckbox.checked = this.autoLoadEnabled;
+      }
+    }
+  }
+  
+  // Inicializace Smart Loading Manageru
+  window.smartLoadingManager = new SmartLoadingManager();
+  window.smartLoadingManager.init();
+  
+  // Aktualizovat checkbox v menu po načtení
+  setTimeout(() => {
+    if (window.smartLoadingManager) {
+      const menuCheckbox = document.getElementById('db-auto-load-toggle-menu');
+      if (menuCheckbox) {
+        menuCheckbox.checked = window.smartLoadingManager.autoLoadEnabled;
+      }
+    }
+  }, 1000);
+
+  // ===== OPTIMALIZOVANÉ AUTO-FETCH V RADIUS REŽIMU =====
   const onViewportChanged = debounce(async () => {
     try {
       if (loadMode !== 'radius') return;
       if (!map) return;
+      if (!window.smartLoadingManager) return;
+      
       // Pokud ještě neproběhlo počáteční načítání, nefetchovat
       if (!initialLoadCompleted) {
         return;
       }
+      
       // 1) Minimální zoom: pod tímto zoomem nefetchovat (šetření API)
       if (map.getZoom() < MIN_FETCH_ZOOM) { 
         return; 
       }
+      
       const c = map.getCenter();
-      // 2) Containment logika: fetchneme znovu až když se přiblížíme k hraně posledního okruhu
-      if (lastSearchCenter && lastSearchRadiusKm) {
-        const distFromLastCenter = haversineKm(lastSearchCenter, { lat: c.lat, lng: c.lng });
-        const thresholdKm = Math.max(1, Math.min(10, lastSearchRadiusKm * 0.4)); // cca 40 % poloměru
-        if (distFromLastCenter < (window.DB_RADIUS_HYSTERESIS_KM || thresholdKm)) {
-          // Jen překreslit z cache – body uvnitř posledního okruhu zůstanou, ostatní zmizí
-          const visible = selectFeaturesForView();
-            if (visible && visible.length > 0) {
-              features = visible;
-              window.features = features;
-              if (typeof clearMarkers === 'function') clearMarkers();
-              renderCards('', null, false);
-            lastRenderedFeatures = features.slice(0);
-          }
+      
+      // 2) Kontrola, zda jsme mimo načtenou oblast
+      const outsideArea = window.smartLoadingManager.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
+      
+      if (outsideArea) {
+        // Pokud je automatické načítání vypnuto, zobrazit tlačítko
+        if (!window.smartLoadingManager.autoLoadEnabled) {
+          window.smartLoadingManager.showManualLoadButton();
           return;
         }
+        
+        // Pokud je automatické načítání zapnuto, načíst automaticky
+        if (inFlightController) {
+          try { inFlightController.abort(); } catch(_) {}
+        }
+        await fetchAndRenderRadius(c, null);
+        lastSearchCenter = { lat: c.lat, lng: c.lng };
+        lastSearchRadiusKm = FIXED_RADIUS_KM;
+        window.smartLoadingManager.hideManualLoadButton();
+      } else {
+        // Jsme uvnitř načtené oblasti - jen překreslit z cache
+        const visible = selectFeaturesForView();
+        if (visible && visible.length > 0) {
+          features = visible;
+          window.features = features;
+          if (typeof clearMarkers === 'function') clearMarkers();
+          renderCards('', null, false);
+          lastRenderedFeatures = features.slice(0);
+        }
+        window.smartLoadingManager.hideManualLoadButton();
       }
-      if (inFlightController) {
-        try { inFlightController.abort(); } catch(_) {}
-      }
-      await fetchAndRenderRadius(c, null);
-      lastSearchCenter = { lat: c.lat, lng: c.lng };
-      lastSearchRadiusKm = FIXED_RADIUS_KM;
       
     } catch(_) {}
-  }, 300);
+  }, 1000); // Zvýšeno z 300ms na 1000ms pro lepší výkon
 
   map.on('moveend', onViewportChanged);
   map.on('zoomend', onViewportChanged);
@@ -8383,6 +8564,35 @@ document.addEventListener('DOMContentLoaded', async function() {
       pendingRequests: pendingRequests.size,
       queueLength: requestQueue.length
     };
+  };
+  
+  // Debug funkce pro Smart Loading Manager
+  window.getSmartLoadingStats = function() {
+    if (!window.smartLoadingManager) return null;
+    
+    return {
+      autoLoadEnabled: window.smartLoadingManager.autoLoadEnabled,
+      outsideLoadedArea: window.smartLoadingManager.outsideLoadedArea,
+      lastSearchCenter: lastSearchCenter,
+      lastSearchRadiusKm: lastSearchRadiusKm,
+      currentCenter: map ? map.getCenter() : null,
+      currentZoom: map ? map.getZoom() : null,
+      loadMode: loadMode,
+      initialLoadCompleted: initialLoadCompleted
+    };
+  };
+  
+  window.testManualLoad = function() {
+    if (window.smartLoadingManager) {
+      window.smartLoadingManager.showManualLoadButton();
+    }
+  };
+  
+  window.testLoadingIndicator = function() {
+    if (window.smartLoadingManager) {
+      window.smartLoadingManager.showLoadingIndicator();
+      setTimeout(() => window.smartLoadingManager.hideLoadingIndicator(), 3000);
+    }
   };
   
   // Pravidelné čištění starého cache
