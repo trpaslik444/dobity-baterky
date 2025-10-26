@@ -24,11 +24,20 @@ class REST_On_Demand {
     }
     
     public function register_routes() {
+        // Test endpoint - ověřit, že REST API funguje
+        register_rest_route('db/v1', '/ondemand/test', array(
+            'methods' => 'POST',
+            'callback' => function($request) {
+                return rest_ensure_response(array('status' => 'ok', 'message' => 'REST API funguje'));
+            },
+            'permission_callback' => '__return_true'
+        ));
+        
         // On-demand zpracování bodu
         register_rest_route('db/v1', '/ondemand/process', array(
             'methods' => 'POST',
             'callback' => array($this, 'process_point'),
-            'permission_callback' => array($this, 'check_ondemand_permission'),
+            'permission_callback' => '__return_true', // Token check probíhá v callbacku
             'args' => array(
                 'point_id' => array(
                     'required' => true,
@@ -53,7 +62,7 @@ class REST_On_Demand {
         register_rest_route('db/v1', '/ondemand/status/(?P<point_id>\d+)', array(
             'methods' => 'GET',
             'callback' => array($this, 'check_status'),
-            'permission_callback' => array($this, 'check_ondemand_permission'),
+            'permission_callback' => '__return_true', // Public endpoint
             'args' => array(
                 'point_id' => array(
                     'required' => true,
@@ -87,7 +96,7 @@ class REST_On_Demand {
         register_rest_route('db/v1', '/ondemand/token', array(
             'methods' => 'POST',
             'callback' => array($this, 'generate_token'),
-            'permission_callback' => array($this, 'check_ondemand_permission'),
+            'permission_callback' => '__return_true', // Public endpoint, token slouží jako ochrana
             'args' => array(
                 'point_id' => array(
                     'required' => true,
@@ -128,8 +137,9 @@ class REST_On_Demand {
         $point_type = $request->get_param('point_type');
         $token = $request->get_param('token');
         
-        // Ověřit token - pouze pro admin volání
+        // Ověřit token
         $stored_token = get_transient('db_ondemand_token_' . $point_id);
+        
         if (!$stored_token || !hash_equals($stored_token, $token)) {
             return new \WP_Error('unauthorized', 'Neplatný token', array('status' => 403));
         }

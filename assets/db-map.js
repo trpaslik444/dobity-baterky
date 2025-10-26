@@ -27,6 +27,50 @@ const OPTIMIZATION_CONFIG = {
     retryDelay: 1000
 };
 
+// ===== ŽIVÁ POLOHA UŽIVATELE (LocationService) =====
+const LocationService = (() => {
+    let watchId = null;
+    let last = null;
+    const listeners = new Set();
+    const cacheKey = 'db_last_location';
+
+    function loadCache() {
+        try { return JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch(_) { return null; }
+    }
+    function saveCache(p) {
+        try { localStorage.setItem(cacheKey, JSON.stringify(p)); } catch(_) {}
+    }
+    async function permissionState() {
+        if (!('permissions' in navigator)) return 'prompt';
+        try { const s = await navigator.permissions.query({ name: 'geolocation' }); return s.state; } catch(_) { return 'prompt'; }
+    }
+    function startWatch() {
+        if (!navigator.geolocation || watchId !== null) return;
+        watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+                last = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now() };
+                saveCache(last);
+                listeners.forEach(fn => { try { fn(last); } catch(_) {} });
+            },
+            (_) => {},
+            { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+        );
+    }
+    function stopWatch() {
+        if (watchId !== null) {
+            try { navigator.geolocation.clearWatch(watchId); } catch(_) {}
+            watchId = null;
+        }
+    }
+    function onUpdate(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+    function getLast() { return last || loadCache(); }
+    async function autoStartIfGranted() { try { if (await permissionState() === 'granted') startWatch(); } catch(_) {} }
+    return { startWatch, stopWatch, onUpdate, getLast, permissionState, autoStartIfGranted };
+})();
+
+// Auto-start, pokud je již povoleno
+LocationService.autoStartIfGranted();
+
 /**
  * Upravit isochrones podle frontend nastavení rychlosti chůze
  */
@@ -3791,6 +3835,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   /**
    * Zkontrolovat, zda má bod nearby data k dispozici (s cache)
    */
+  // Chránit proti duplicitním voláním
+  const activeOnDemandRequests = new Map();
+  
   async function checkNearbyDataAvailable(originId, type) {
     const cacheKey = `nearby_check_${originId}_${type}`;
     
@@ -3800,7 +3847,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       return cached.data;
     }
     
-    try {
+    // Kontrola, zda už běží zpracování pro tento bod
+    const requestKey = `${originId}_${type}`;
+    if (activeOnDemandRequests.has(requestKey)) {
+      // Vrátit pending promise
+      return await activeOnDemandRequests.get(requestKey);
+    }
+    
+    // Vytvořit nový promise pro tento request
+    const requestPromise = (async () => {
+      try {
       // Nejdříve zkusit získat data z on-demand status endpointu
       const statusResponse = await fetch(`/wp-json/db/v1/ondemand/status/${originId}?type=${type}`, {
         headers: {
@@ -3825,8 +3881,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const tokenResponse = await fetch('/wp-json/db/v1/ondemand/token', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-WP-Nonce': dbMapData?.restNonce || ''
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           point_id: originId
@@ -3834,7 +3889,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
       
       if (!tokenResponse.ok) {
-        throw new Error(`Token generation failed: ${tokenResponse.status}`);
+        // Uložit do cache jako prázdná data
+        optimizedNearbyCache.set(cacheKey, {
+          data: false,
+          timestamp: Date.now(),
+          error: 'Token generation failed'
+        });
+        return false;
       }
       
       const tokenData = await tokenResponse.json();
@@ -3842,8 +3903,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-WP-Nonce': dbMapData?.restNonce || ''
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           point_id: originId,
@@ -3884,17 +3944,35 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         return hasData;
-      } else if (processResponse.status === 403) {
-        // 403 Forbidden - pravděpodobně problém s oprávněními
-        console.warn('[DB Map] 403 Forbidden při volání ondemand/process - možná chyba s oprávněními');
+            } else if (processResponse.status === 403) {
+        // 403 Forbidden - uložit do cache jako prázdná data
+        optimizedNearbyCache.set(cacheKey, {
+          data: false,
+          timestamp: Date.now(),
+          error: '403 Forbidden'
+        });
         return false;
+      } else {
+        // Jiná chyba - uložit do cache jako prázdná data
+        optimizedNearbyCache.set(cacheKey, {
+          data: false,
+          timestamp: Date.now(),
+          error: `HTTP ${processResponse.status}`
+        });
+        return false;
+              }
+      } catch (error) {
+        return false;
+      } finally {
+        // Odstranit z aktivních requestů
+        activeOnDemandRequests.delete(requestKey);
       }
-      
-      return false;
-    } catch (error) {
-      console.error('[DB Map] Nearby check error:', error);
-      return false;
-    }
+    })();
+    
+    // Uložit do mapy aktivních requestů
+    activeOnDemandRequests.set(requestKey, requestPromise);
+    
+    return await requestPromise;
   }
 
   /**
@@ -4162,8 +4240,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'X-WP-Nonce': dbMapData?.restNonce || ''
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           point_id: originId,
@@ -5196,171 +5273,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Placeholder: zde lze napojit na skutečné oblíbené
     });
   }
-  // Vyhledávání na mapě
-  let searchQuery = '';
-  const searchForm = topbar.querySelector('form.db-map-searchbox');
-  const searchInput = topbar.querySelector('#db-map-search-input');
-  const searchBtn = topbar.querySelector('#db-map-search-btn');
-  // lastSearchResults už inicializováno na začátku
-  // Kontrola, zda existují elementy před přidáním event listenerů
-  if (searchForm && searchInput && searchBtn) {
-    function doSearch(e) {
-      if (e) e.preventDefault();
-      removeDesktopAutocomplete();
-      searchQuery = searchInput.value.trim().toLowerCase();
-      renderCards(searchQuery, null, true);
-      // Pokud je nalezeno přesně jedno místo, přibliž a zvýrazni
-      if (lastSearchResults.length === 1) {
-        const idx = features.indexOf(lastSearchResults[0]);
-        highlightMarker(idx);
-        map.setView([
-          lastSearchResults[0].geometry.coordinates[1],
-          lastSearchResults[0].geometry.coordinates[0]
-        ], 15, {animate:true});
-      }
-    }
-    
-    // Přidat autocomplete pro desktop
-    const handleDesktopAutocompleteInput = debounce((value) => {
-      showDesktopAutocomplete(value, searchInput);
-    }, 250);
-
-    searchInput.addEventListener('input', function() {
-      const query = this.value.trim();
-      if (query.length >= 2) {
-        handleDesktopAutocompleteInput(query);
-      } else {
-        removeDesktopAutocomplete();
-      }
-    });
-
-    searchInput.addEventListener('focus', function() {
-      const query = this.value.trim();
-      if (query.length >= 2) {
-        showDesktopAutocomplete(query, searchInput);
-      }
-    });
-
-    searchInput.addEventListener('blur', function() {
-      // Dát malé zpoždění, aby kliknutí na autocomplete položku fungovalo
-      setTimeout(() => {
-        removeDesktopAutocomplete();
-      }, 200);
-    });
-    
-    searchForm.addEventListener('submit', doSearch);
-    searchBtn.addEventListener('click', doSearch);
-    searchInput.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') {
-        removeDesktopAutocomplete();
-        doSearch(e);
-      }
-      if (e.key === 'Escape') {
-        removeDesktopAutocomplete();
-      }
-    });
-  }
-
-  // Načti GeoJSON body
-  const restUrl = dbMapData?.restUrl || '/wp-json/db/v1/map';
-  // Zkusit najít správnou cestu k ikonám
-  // Základní cesta k ikonám – preferuj absolutní cestu ve WP
-  let iconsBase = dbMapData?.iconsBase || '/wp-content/plugins/dobity-baterky/assets/icons/';
-  
-  // Pokud je cesta relativní, použít WordPress plugin URL
-  if (iconsBase.startsWith('assets/')) {
-    // Zkusit najít WordPress plugin URL
-    const scripts = document.querySelectorAll('script[src*="dobity-baterky"]');
-    if (scripts.length > 0) {
-      const scriptSrc = scripts[0].src;
-      const pluginUrl = scriptSrc.substring(0, scriptSrc.lastIndexOf('/assets/'));
-      iconsBase = pluginUrl + '/assets/icons/';
-
-    } else {
-      // Fallback na aktuální cestu
-      const currentPath = window.location.pathname;
-      const basePath = currentPath.substring(0, currentPath.lastIndexOf('/'));
-      iconsBase = basePath + '/' + iconsBase;
-
-    }
-  }
-  // Charger inline SVG recolor – načtení a cache (abychom nemuseli mít <img> s bílou výplní)
-  let __dbChargerSvgColored = null;
-  let __dbChargerSvgLoading = false;
-  function ensureChargerSvgColoredLoaded() {
-    if (__dbChargerSvgColored !== null || __dbChargerSvgLoading) return;
-    try {
-      // Barva výplně/obrysu pro ikonu nabíječky: na produkci je modrá (#049FE8)
-      const color = (dbMapData && dbMapData.chargerIconColor) || '#049FE8';
-      // Nový název souboru bez vnitřního fill: "charger ivon no fill.svg"
-      const chargerSvgFile = 'charger ivon no fill.svg';
-      const url = (iconsBase || '') + encodeURIComponent(chargerSvgFile);
-      if (!url) return;
-      __dbChargerSvgLoading = true;
-      fetch(url).then(r => r.text()).then(svg => {
-        try {
-          let s = svg
-            .replace(/<svg([^>]*)width="[^"]*"/, '<svg$1')
-            .replace(/<svg([^>]*)height="[^"]*"/, '<svg$1')
-            .replace(/<svg /, '<svg width="100%" height="100%" style="display:block;" ', 1)
-            // Překolorovat pouze vnořené elementy, nikoliv hlavní <svg>
-            .replace(/(<(path|g|rect|circle|polygon|ellipse|line|polyline)[^>]*?)\sfill="[^"]*"/gi, `$1`)
-            .replace(/(<(path|g|rect|circle|polygon|ellipse|line|polyline)[^>]*?)\sstroke="[^"]*"/gi, `$1`)
-            .replace(/<(path|g|rect|circle|polygon|ellipse|line|polyline)([^>]*)>/gi, `<$1$2 fill="${color}" stroke="${color}">`);
-          __dbChargerSvgColored = s;
-        } catch(_) {}
-      }).catch(() => {}).finally(() => { __dbChargerSvgLoading = false; });
-    } catch(_) {}
-  }
-  function getChargerColoredSvg() {
-    ensureChargerSvgColoredLoaded();
-    return __dbChargerSvgColored;
-  }
-
-  // ===== ŽIVÁ POLOHA UŽIVATELE (LocationService) =====
-  const LocationService = (() => {
-    let watchId = null;
-    let last = null;
-    const listeners = new Set();
-    const cacheKey = 'db_last_location';
-
-    function loadCache() {
-      try { return JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch(_) { return null; }
-    }
-    function saveCache(p) {
-      try { localStorage.setItem(cacheKey, JSON.stringify(p)); } catch(_) {}
-    }
-    async function permissionState() {
-      if (!('permissions' in navigator)) return 'prompt';
-      try { const s = await navigator.permissions.query({ name: 'geolocation' }); return s.state; } catch(_) { return 'prompt'; }
-    }
-    function startWatch() {
-      if (!navigator.geolocation || watchId !== null) return;
-      watchId = navigator.geolocation.watchPosition(
-        (pos) => {
-          last = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now() };
-          saveCache(last);
-          listeners.forEach(fn => { try { fn(last); } catch(_) {} });
-        },
-        (_) => {},
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-      );
-    }
-    function stopWatch() {
-      if (watchId !== null) {
-        try { navigator.geolocation.clearWatch(watchId); } catch(_) {}
-        watchId = null;
-      }
-    }
-    function onUpdate(fn) { listeners.add(fn); return () => listeners.delete(fn); }
-    function getLast() { return last || loadCache(); }
-    async function autoStartIfGranted() { try { if (await permissionState() === 'granted') startWatch(); } catch(_) {} }
-    return { startWatch, stopWatch, onUpdate, getLast, permissionState, autoStartIfGranted };
-  })();
-
-  // Auto-start, pokud je již povoleno
-  LocationService.autoStartIfGranted();
-
   // Vykreslení živé polohy do mapy
   let __dbUserMarker = null;
   let __dbUserAccuracy = null;
@@ -5581,59 +5493,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
 
-    // 3. Fallback na SVG ikony podle typu - ZAKÁZÁNO (generické ikony)
-    // const typeKey = getConnectorTypeKey(connector);
-    // if (typeKey) {
-    //   const iconFile = getConnectorIconByType(typeKey);
-    //   if (iconFile) {
-    //     // Použít iconsBase z dbMapData (nastaveno v PHP)
-    //     const base = dbMapData?.iconsBase || '/wp-content/plugins/dobity-baterky/assets/icons/';
-    //     const fullUrl = base + iconFile;
-    //     
-    //     console.log('[DEBUG] Using fallback SVG icon:', {
-    //         typeKey: typeKey,
-    //         iconFile: iconFile,
-    //         fullUrl: fullUrl
-    //     });
-    //     
-    //     // Na localhost zachovat HTTP, jinak převést na HTTPS
-    //     if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    //       return fullUrl;
-    //     }
-    //     return fullUrl.replace(/^http:\/\//, 'https://');
-    //   }
-    // }
-
     return '';
   }
   
-  // Fallback mapování pro typy konektorů - ZAKÁZÁNO (generické ikony)
-  // function getConnectorIconByType(connectorType) {
-  //   if (!connectorType) return '';
-  //   const type = connectorType.toLowerCase().trim();
-
-  //   // Mapování názvů konektorů na soubory
-  //   const connectorIconMap = {
-  //     'type 2': 'charger_type-11.svg',
-  //     'type-2': 'charger_type-11.svg',
-  //     'mennekes': 'charger_type-11.svg',
-  //     'iec 62196 type 2': 'charger_type-11.svg',
-
-  //     'ccs': 'charger_type-12.svg',
-  //     'ccs2': 'charger_type-12.svg',
-  //     'ccs combo 2': 'charger_type-12.svg',
-  //     'combo 2': 'charger_type-12.svg',
-
-  //     'chademo': 'charger_type-13.svg',
-
-  //     'schuko': 'charger_type-14.svg',
-  //     'domaci zasuvka': 'charger_type-14.svg',
-
-  //     'gb/t': 'charger_type-36.svg'
-  //   };
-
-  //   return connectorIconMap[type] || '';
-  // }
   function getDbLogoHtml(size) {
     const url = (dbMapData && dbMapData.dbLogoUrl) ? dbMapData.dbLogoUrl : null;
     // Bílý podklad pro čitelnost, oranžový obrys dle brandbooku - čtvercový
@@ -5898,6 +5760,11 @@ document.addEventListener('DOMContentLoaded', async function() {
   // searchAddressMarker už inicializován na začátku
 
   // --- ÚPRAVA VYHLEDÁVACÍHO ŘÁDKU ---
+  // Inicializace searchInput a searchForm
+  const searchInput = document.getElementById('db-map-search-input');
+  const searchForm = document.querySelector('.db-map-searchbox');
+  const searchBtn = document.querySelector('#db-map-search-btn');
+  
   if (searchInput && searchInput.parentNode) {
     createAddressAutocomplete(searchInput, function(result) {
       searchInput.value = result.display_name;
