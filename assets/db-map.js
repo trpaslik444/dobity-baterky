@@ -615,7 +615,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       const center = lastSearchCenter;
       const radiusKm = lastSearchRadiusKm;
       const out = [];
-      featureCache.forEach((f) => {
+      // Použít features místo featureCache - pouze aktuálně načtené body
+      const sourceFeatures = Array.isArray(features) ? features : [];
+      sourceFeatures.forEach((f) => {
         const c = f?.geometry?.coordinates; if (!c || c.length < 2) return;
         const ll = L.latLng(c[1], c[0]);
         if (center && radiusKm) {
@@ -678,9 +680,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // ===== RADIUS FETCH FUNKTIONALITA =====
   let inFlightController = null;
-  const RADIUS_KM = 75; // Výchozí fallback (bude nahrazen dle režimu)
+  const RADIUS_KM = 50; // Výchozí fallback (bude nahrazen dle režimu)
   const MIN_FETCH_ZOOM = (typeof window.DB_MIN_FETCH_ZOOM !== 'undefined') ? window.DB_MIN_FETCH_ZOOM : 9; // pod tímto zoomem nerefreshujeme
-  const FIXED_RADIUS_KM = (typeof window.DB_FIXED_RADIUS_KM !== 'undefined') ? window.DB_FIXED_RADIUS_KM : 75; // fixní okruh pro radius režim
+  const FIXED_RADIUS_KM = (typeof window.DB_FIXED_RADIUS_KM !== 'undefined') ? window.DB_FIXED_RADIUS_KM : 50; // fixní okruh pro radius režim
   // Feature flags
   window.DB_RADIUS_LIMIT = window.DB_RADIUS_LIMIT || 1000;
   window.DB_RADIUS_HYSTERESIS_KM = window.DB_RADIUS_HYSTERESIS_KM || 5; // minimální posun centra pro refetch
@@ -929,13 +931,15 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
-    
     // Zobrazení středu mapy na obrazovce (s aktuálním radiusem)
     showMapCenterDebug(center, radiusKm);
 
     // Zpožděný spinner: zobraz až když request trvá déle než 200 ms
     let spinnerShown = false;
-    const spinnerTimer = setTimeout(() => { document.body.classList.add('db-loading'); spinnerShown = true; }, 200);
+    const spinnerTimer = setTimeout(() => { 
+      document.body.classList.add('db-loading'); 
+      spinnerShown = true; 
+    }, 200);
     const t0 = performance.now?.() || Date.now();
     try {
       const res = await fetch(url, {
@@ -949,6 +953,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const geo = await res.json();
       const incoming = Array.isArray(geo?.features) ? geo.features : [];
+      
       // Sloučit do cache
       for (let i = 0; i < incoming.length; i++) {
         const f = incoming[i];
@@ -957,20 +962,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       lastSearchCenter = { lat: center.lat, lng: center.lng };
       lastSearchRadiusKm = radiusKm;
-      // Výběr pro aktuální zobrazení: pouze body uvnitř posledního radiusu a aktuálního viewportu
-        const visibleNow = selectFeaturesForView();
-        // Pro počáteční načítání použít všechny načtené body, ne filtrovat podle viewportu
-        if (lastRenderedFeatures.length === 0) {
-          // První načítání - použít všechny body z API
-          features = incoming;
-        } else {
-          // Další načítání - filtrovat podle viewportu
-          features = (visibleNow && visibleNow.length > 0) ? visibleNow : (lastRenderedFeatures.length > 0 ? lastRenderedFeatures : incoming);
-        }
-        window.features = features;
-        
-        // Vykreslit karty po načtení dat
-        renderCards('', null, false);
+      
+      // POUŽÍT POUZE nové body - staré odstranit i když se oblasti překrývají
+      // Tím zajistíme, že mapa vždy zobrazuje pouze aktuální radius
+      features = incoming;
+      
+      window.features = features;
 
       // FALLBACK: Pokud radius vrátí 0 bodů, stáhneme ALL a vyfiltrujeme klientsky
       if (features.length === 0) {
@@ -1006,7 +1003,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
 
-      if (typeof clearMarkers === 'function') clearMarkers();
+      // Vykreslit karty s novými daty
+      if (typeof clearMarkers === 'function') {
+        clearMarkers();
+      }
       renderCards('', null, false);
       lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
       // Zachovej stabilní viewport po fetchi: bez auto-fit/auto-pan.
@@ -1396,15 +1396,16 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Přidání LocateControl přesunuto níže po definici isMobile
   function makeClusterGroup(style) {
-    return L.markerClusterGroup({
+    const cluster = L.markerClusterGroup({
       spiderfyOnMaxZoom: false,
       showCoverageOnHover: false,
       zoomToBoundsOnClick: false,
       disableClusteringAtZoom: 13,
-      maxClusterRadius: 80,
+      maxClusterRadius: 60, // Optimalizace: menší radius = méně markerů v clusteru
       chunkedLoading: true,
-      chunkInterval: 200,
-      chunkDelay: 50,
+      chunkInterval: 100, // Optimalizace: rychlejší načítání
+      chunkDelay: 25, // Optimalizace: menší zpoždění
+      removeOutsideVisibleBounds: false, // Zakázat automatické odstraňování markerů mimo viewport
       iconCreateFunction: function(cluster) {
         const count = cluster.getChildCount();
         let hasRecommended = false;
@@ -1434,6 +1435,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         return L.divIcon({ html: clusterHtml, className: 'db-cluster', iconSize: L.point(36,36) });
       }
     });
+    
+    // Debug: sledovat přidávání/odstraňování markerů - pouze při problémech
+    // cluster.on('layeradd', function(e) {
+    //   console.log('[DB Map] Marker added to', style, 'cluster:', e.layer.feature?.properties?.id || e.layer._featureId || 'no-id');
+    // });
+    
+    // cluster.on('layerremove', function(e) {
+    //   console.log('[DB Map] Marker removed from', style, 'cluster:', e.layer.feature?.properties?.id || e.layer._featureId || 'no-id');
+    // });
+    
+    return cluster;
   }
   
   // Přidání event handlerů pro clustery
@@ -1876,20 +1888,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       <button type="button" class="db-filter-modal__close" aria-label="Zavřít">&times;</button>
       <h2 class="db-filter-modal__title">Filtry</h2>
       <div class="db-filter-modal__body">
-        <div class="db-filter-section">
-          <div class="db-filter-section__title">Typ nabíjení</div>
-          <div class="db-filter-checkboxes">
-            <label class="db-filter-checkbox">
-              <input type="checkbox" id="db-filter-dc" checked />
-              <span>DC</span>
-            </label>
-            <label class="db-filter-checkbox">
-              <input type="checkbox" id="db-filter-ac" checked />
-              <span>AC</span>
-            </label>
-          </div>
+        <div class="db-filter-reset-section" id="db-filter-reset-section" style="display: none;">
+          <button type="button" id="db-filter-reset" class="db-filter-btn db-filter-btn--secondary">Vymazat filtry</button>
         </div>
-
+        
         <div class="db-filter-section">
           <div class="db-filter-section__title">Výkon (kW)</div>
           <div class="db-filter-power-range">
@@ -1910,19 +1912,14 @@ document.addEventListener('DOMContentLoaded', async function() {
           <div id="db-filter-connector" class="db-filter-connector-list"></div>
         </div>
 
-        <div class="db-filter-section db-filter-section--disabled">
+        <div class="db-filter-section">
           <div class="db-filter-section__title">Amenity v okolí</div>
-          <div id="db-filter-amenity" class="db-filter-amenity-list" disabled title="Připravujeme"></div>
+          <div id="db-filter-amenity" class="db-filter-amenity-list"></div>
         </div>
 
-        <div class="db-filter-section db-filter-section--disabled">
+        <div class="db-filter-section">
           <div class="db-filter-section__title">Přístup</div>
-          <div id="db-filter-access" class="db-filter-access-list" disabled title="Připravujeme"></div>
-        </div>
-
-        <div class="db-filter-actions">
-          <button type="button" id="db-filter-reset" class="db-filter-btn db-filter-btn--secondary">Vymazat</button>
-          <button type="button" id="db-filter-apply" class="db-filter-btn db-filter-btn--primary">Použít</button>
+          <div id="db-filter-access" class="db-filter-access-list"></div>
         </div>
 
         <div class="db-filter-section">
@@ -1949,8 +1946,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     filterPanel.classList.add('open');
     document.body.classList.add('db-filter-modal-open');
     
-    // Inicializovat slidery
+    // Inicializovat filtry při otevření modalu
     setTimeout(() => {
+      // Inicializovat slidery
       const pMinR = document.getElementById('db-power-min');
       const pMaxR = document.getElementById('db-power-max');
       const pMinValue = document.getElementById('db-power-min-value');
@@ -1971,6 +1969,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         pMinValue.textContent = `${minVal} kW`;
         pMaxValue.textContent = `${maxVal} kW`;
       }
+      
+      // Inicializovat všechny filtry (bez resetování filterState)
+      attachFilterHandlers();
+      populateFilterOptions();
+      
+      // Načíst uložená nastavení PO inicializaci
+      loadFilterSettings();
+      
+      // Aplikovat načtená nastavení na UI s delay
+      setTimeout(() => {
+        applyFilterSettingsToUI();
+      }, 200);
     }, 100);
   };
 
@@ -2057,9 +2067,65 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         // Aktualizovat filterState
         filterState.connectors = new Set(Array.from(container.querySelectorAll('.selected')).map(el => el.dataset.value));
+        updateResetButtonVisibility();
+        saveFilterSettings();
         renderCards('', null, false);
       });
       container.appendChild(iconDiv);
+    });
+  }
+  
+  function fillAmenityOptions(container, options) {
+    if (!container) return;
+    container.innerHTML = '';
+    options.forEach(option => {
+      const checkboxDiv = document.createElement('div');
+      checkboxDiv.className = 'db-filter-checkbox';
+      checkboxDiv.innerHTML = `
+        <label class="db-filter-checkbox">
+          <input type="checkbox" data-value="${option.value}" />
+          <span>${option.label}</span>
+        </label>
+      `;
+      const checkbox = checkboxDiv.querySelector('input');
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          filterState.amenities.add(option.value);
+        } else {
+          filterState.amenities.delete(option.value);
+        }
+        updateResetButtonVisibility();
+        saveFilterSettings();
+        renderCards('', null, false);
+      });
+      container.appendChild(checkboxDiv);
+    });
+  }
+  
+  function fillAccessOptions(container, options) {
+    if (!container) return;
+    container.innerHTML = '';
+    options.forEach(option => {
+      const checkboxDiv = document.createElement('div');
+      checkboxDiv.className = 'db-filter-checkbox';
+      checkboxDiv.innerHTML = `
+        <label class="db-filter-checkbox">
+          <input type="checkbox" data-value="${option.value}" />
+          <span>${option.label}</span>
+        </label>
+      `;
+      const checkbox = checkboxDiv.querySelector('input');
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) {
+          filterState.access.add(option.value);
+        } else {
+          filterState.access.delete(option.value);
+        }
+        updateResetButtonVisibility();
+        saveFilterSettings();
+        renderCards('', null, false);
+      });
+      container.appendChild(checkboxDiv);
     });
   }
 
@@ -2089,18 +2155,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     return normalizeConnectorType(raw);
   }
   function getStationMaxKw(p) {
-    // Debug log pro diagnostiku
-    console.log('[DB Map] getStationMaxKw called for:', p.id, p.title);
-    
     // 1. Zkusit přímé pole max_power_kw
     const direct = parseFloat(p.max_power_kw || p.maxPowerKw || p.max_kw || p.maxkw || '');
     let maxKw = isFinite(direct) ? direct : 0;
     
-    console.log('[DB Map] Direct max power:', direct, '-> maxKw:', maxKw);
-    
     // 2. Projít všechny konektory a najít nejvyšší výkon
     const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
-    console.log('[DB Map] Connectors array:', arr);
     
     arr.forEach((c, index) => {
       // Zkusit různé možné názvy polí pro výkon
@@ -2117,13 +2177,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (value !== undefined && value !== null && value !== '') {
           const parsed = parseFloat(value);
           if (isFinite(parsed) && parsed > 0) {
-            pv = parsed;
-            break;
+            pv = Math.max(pv, parsed);
           }
         }
       }
-      
-      console.log(`[DB Map] Connector ${index}:`, c, '-> power:', pv);
       if (isFinite(pv) && pv > 0) {
         maxKw = Math.max(maxKw, pv);
       }
@@ -2134,7 +2191,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       const s = p.speed.toLowerCase();
       if (s.includes('dc')) maxKw = 50;
       else if (s.includes('ac')) maxKw = 22;
-      console.log('[DB Map] Speed fallback:', s, '-> maxKw:', maxKw);
     }
     
     // 4. Pokud stále nemáme výkon, zkusit db_charger_power
@@ -2148,10 +2204,8 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         });
       }
-      console.log('[DB Map] db_charger_power fallback:', powerData, '-> maxKw:', maxKw);
     }
     
-    console.log('[DB Map] Final maxKw:', maxKw);
     return maxKw || 0;
   }
   function populateFilterOptions() {
@@ -2183,10 +2237,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     updatePowerRange(minPower, maxPower);
     
     const connectorContainer = document.getElementById('db-filter-connector');
-    
-    
-    
     fillConnectorIcons(connectorContainer, connectorSet);
+    
+    // Naplnit amenity filtry
+    const amenityContainer = document.getElementById('db-filter-amenity');
+    if (amenityContainer) {
+      const amenityOptions = [
+        { value: 'restaurant', label: 'Restaurace' },
+        { value: 'hotel', label: 'Hotel' },
+        { value: 'shopping', label: 'Nakupování' },
+        { value: 'parking', label: 'Parkování' },
+        { value: 'wc', label: 'WC' },
+        { value: 'wifi', label: 'WiFi' }
+      ];
+      fillAmenityOptions(amenityContainer, amenityOptions);
+    }
+    
+    // Naplnit access filtry
+    const accessContainer = document.getElementById('db-filter-access');
+    if (accessContainer) {
+      const accessOptions = [
+        { value: 'free', label: 'Zdarma' },
+        { value: 'paid', label: 'Placené' },
+        { value: 'membership', label: 'Pro členy' },
+        { value: 'public', label: 'Veřejné' },
+        { value: 'private', label: 'Soukromé' }
+      ];
+      fillAccessOptions(accessContainer, accessOptions);
+    }
   }
   
   function updatePowerRange(minPower, maxPower) {
@@ -2202,23 +2280,27 @@ document.addEventListener('DOMContentLoaded', async function() {
       pMinR.max = Math.ceil(maxPower);
       pMaxR.max = Math.ceil(maxPower);
       
-      // Nastavit výchozí hodnoty
-      pMinR.value = Math.floor(minPower);
-      pMaxR.value = Math.ceil(maxPower);
-      
-      // Aktualizovat filterState
-      filterState.powerMin = Math.floor(minPower);
-      filterState.powerMax = Math.ceil(maxPower);
+      // Nastavit výchozí hodnoty pouze pokud nejsou uložené hodnoty
+      if (filterState.powerMin === 0 && filterState.powerMax === 400) {
+        pMinR.value = Math.floor(minPower);
+        pMaxR.value = Math.ceil(maxPower);
+        
+        // Aktualizovat filterState pouze pokud nejsou uložené hodnoty
+        filterState.powerMin = Math.floor(minPower);
+        filterState.powerMax = Math.ceil(maxPower);
+      }
       
       // Aktualizovat zobrazení
-      if (pMinValue) pMinValue.textContent = `${Math.floor(minPower)} kW`;
-      if (pMaxValue) pMaxValue.textContent = `${Math.ceil(maxPower)} kW`;
+      if (pMinValue) pMinValue.textContent = `${filterState.powerMin} kW`;
+      if (pMaxValue) pMaxValue.textContent = `${filterState.powerMax} kW`;
       
       // Aktualizovat vizuální vyplnění
       const pRangeFill = document.getElementById('db-power-range-fill');
       if (pRangeFill) {
-        pRangeFill.style.left = '0%';
-        pRangeFill.style.width = '100%';
+        const minPercent = (filterState.powerMin / Math.ceil(maxPower)) * 100;
+        const maxPercent = (filterState.powerMax / Math.ceil(maxPower)) * 100;
+        pRangeFill.style.left = `${minPercent}%`;
+        pRangeFill.style.width = `${maxPercent - minPercent}%`;
       }
     }
   }
@@ -2229,16 +2311,134 @@ document.addEventListener('DOMContentLoaded', async function() {
     Array.from(el.selectedOptions || []).forEach(o => s.add(o.value));
     return s;
   }
+  // Funkce pro ukládání nastavení filtrů
+  function saveFilterSettings() {
+    try {
+      const settings = {
+        powerMin: filterState.powerMin,
+        powerMax: filterState.powerMax,
+        connectors: Array.from(filterState.connectors),
+        amenities: Array.from(filterState.amenities),
+        access: Array.from(filterState.access),
+        showOnlyRecommended: showOnlyRecommended
+      };
+      localStorage.setItem('db-map-filters', JSON.stringify(settings));
+    } catch (e) {
+      console.warn('Nepodařilo se uložit nastavení filtrů:', e);
+    }
+  }
+  
+  // Funkce pro načtení nastavení filtrů
+  function loadFilterSettings() {
+    try {
+      const saved = localStorage.getItem('db-map-filters');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        filterState.powerMin = settings.powerMin || 0;
+        filterState.powerMax = settings.powerMax || 400;
+        filterState.connectors = new Set(settings.connectors || []);
+        filterState.amenities = new Set(settings.amenities || []);
+        filterState.access = new Set(settings.access || []);
+        showOnlyRecommended = settings.showOnlyRecommended || false;
+        return true;
+      }
+    } catch (e) {
+      console.warn('Nepodařilo se načíst nastavení filtrů:', e);
+    }
+    return false;
+  }
+  
+  // Funkce pro aplikování nastavení na UI
+  function applyFilterSettingsToUI() {
+    // Aplikovat power slider
+    const pMinR = document.getElementById('db-power-min');
+    const pMaxR = document.getElementById('db-power-max');
+    if (pMinR && pMaxR) {
+      pMinR.value = filterState.powerMin;
+      pMaxR.value = filterState.powerMax;
+      
+      // Aktualizovat vizuální vyplnění
+      const pRangeFill = document.getElementById('db-power-range-fill');
+      if (pRangeFill) {
+        const minPercent = (filterState.powerMin / 400) * 100;
+        const maxPercent = (filterState.powerMax / 400) * 100;
+        pRangeFill.style.left = `${minPercent}%`;
+        pRangeFill.style.width = `${maxPercent - minPercent}%`;
+      }
+      
+      // Aktualizovat hodnoty
+      const pMinValue = document.getElementById('db-power-min-value');
+      const pMaxValue = document.getElementById('db-power-max-value');
+      if (pMinValue) pMinValue.textContent = `${filterState.powerMin} kW`;
+      if (pMaxValue) pMaxValue.textContent = `${filterState.powerMax} kW`;
+    }
+    
+    // Aplikovat DB doporučuje
+    const recommendedEl = document.getElementById('db-map-toggle-recommended');
+    if (recommendedEl) {
+      recommendedEl.checked = showOnlyRecommended;
+    }
+    
+    // Aplikovat konektory
+    const connectorContainer = document.getElementById('db-filter-connector');
+    if (connectorContainer) {
+      Array.from(connectorContainer.querySelectorAll('.db-connector-icon')).forEach(el => {
+        const value = el.dataset.value;
+        if (filterState.connectors.has(value)) {
+          el.classList.add('selected');
+          el.style.background = '#FF6A4B';
+          el.style.borderColor = '#FF6A4B';
+          el.style.color = '#fff';
+        }
+      });
+    }
+    
+    // Aplikovat amenity
+    const amenityContainer = document.getElementById('db-filter-amenity');
+    if (amenityContainer) {
+      Array.from(amenityContainer.querySelectorAll('input[type="checkbox"]')).forEach(checkbox => {
+        const value = checkbox.dataset.value;
+        checkbox.checked = filterState.amenities.has(value);
+      });
+    }
+    
+    // Aplikovat access
+    const accessContainer = document.getElementById('db-filter-access');
+    if (accessContainer) {
+      Array.from(accessContainer.querySelectorAll('input[type="checkbox"]')).forEach(checkbox => {
+        const value = checkbox.dataset.value;
+        checkbox.checked = filterState.access.has(value);
+      });
+    }
+    
+    // Aktualizovat viditelnost reset tlačítka
+    updateResetButtonVisibility();
+  }
+  
+  // Funkce pro kontrolu aktivních filtrů
+  function hasActiveFilters() {
+    return filterState.connectors.size > 0 || 
+           filterState.amenities.size > 0 || 
+           filterState.access.size > 0 ||
+           filterState.powerMin > 0 || filterState.powerMax < 400 ||
+           showOnlyRecommended;
+  }
+  
+  // Funkce pro zobrazení/skrytí reset tlačítka
+  function updateResetButtonVisibility() {
+    const resetSection = document.getElementById('db-filter-reset-section');
+    if (resetSection) {
+      resetSection.style.display = hasActiveFilters() ? 'block' : 'none';
+    }
+  }
+  
   function attachFilterHandlers() {
-    const acEl = document.getElementById('db-filter-ac');
-    const dcEl = document.getElementById('db-filter-dc');
     const pMinR = document.getElementById('db-power-min');
     const pMaxR = document.getElementById('db-power-max');
     const pMinValue = document.getElementById('db-power-min-value');
     const pMaxValue = document.getElementById('db-power-max-value');
     const pRangeFill = document.getElementById('db-power-range-fill');
     const resetBtn = document.getElementById('db-filter-reset');
-    const applyBtn = document.getElementById('db-filter-apply');
 
     // Jezdec s vizuálním vyplněním
     function updatePowerSlider() {
@@ -2272,25 +2472,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       filterState.powerMin = minVal;
       filterState.powerMax = maxVal;
       
-      // Překreslit karty
+      // Aktualizovat viditelnost reset tlačítka
+      updateResetButtonVisibility();
+      
+      // Uložit nastavení
+      saveFilterSettings();
+      
+      // Okamžitě aplikovat filtry
       if (typeof renderCards === 'function') {
         renderCards('', null, false);
       }
     }
 
-    if (acEl) acEl.addEventListener('change', () => { 
-      filterState.ac = !!acEl.checked; 
-      if (typeof renderCards === 'function') {
-        renderCards('', null, false); 
-      }
-    });
-    if (dcEl) dcEl.addEventListener('change', () => { 
-      filterState.dc = !!dcEl.checked; 
-      if (typeof renderCards === 'function') {
-        renderCards('', null, false); 
-      }
-    });
-    
     if (pMinR) pMinR.addEventListener('input', updatePowerSlider);
     if (pMaxR) pMaxR.addEventListener('input', updatePowerSlider);
     
@@ -2314,17 +2507,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     if (resetBtn) resetBtn.addEventListener('click', () => {
-      filterState.ac = true; filterState.dc = true;
       filterState.powerMin = 0; filterState.powerMax = 400;
       filterState.connectors = new Set();
-      
-      if (acEl) acEl.checked = true; 
-      if (dcEl) dcEl.checked = true;
+      filterState.amenities = new Set();
+      filterState.access = new Set();
+      showOnlyRecommended = false;
       
       if (pMinR && pMaxR) { 
         pMinR.value = '0'; 
         pMaxR.value = '400'; 
         updatePowerSlider();
+      }
+      
+      // Resetovat DB doporučuje checkbox
+      const recommendedElReset = document.getElementById('db-map-toggle-recommended');
+      if (recommendedElReset) {
+        recommendedElReset.checked = false;
       }
       
       // Resetovat connector ikony
@@ -2338,25 +2536,58 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
       }
       
+      // Resetovat amenity checkboxy
+      const amenityContainer = document.getElementById('db-filter-amenity');
+      if (amenityContainer) {
+        Array.from(amenityContainer.querySelectorAll('input[type="checkbox"]')).forEach(checkbox => {
+          checkbox.checked = false;
+        });
+      }
+      
+      // Resetovat access checkboxy
+      const accessContainer = document.getElementById('db-filter-access');
+      if (accessContainer) {
+        Array.from(accessContainer.querySelectorAll('input[type="checkbox"]')).forEach(checkbox => {
+          checkbox.checked = false;
+        });
+      }
+      
+      // Resetovat DB doporučuje checkbox
+      const recommendedElReset2 = document.getElementById('db-map-toggle-recommended');
+      if (recommendedElReset2) {
+        recommendedElReset2.checked = false;
+        showOnlyRecommended = false;
+      }
+      
+      // Aktualizovat viditelnost reset tlačítka
+      updateResetButtonVisibility();
+      
+      // Uložit nastavení
+      saveFilterSettings();
+      
       if (typeof renderCards === 'function') {
         renderCards('', null, false);
       }
     });
     
-    if (applyBtn) applyBtn.addEventListener('click', () => { 
-      if (typeof renderCards === 'function') {
-        renderCards('', null, false); 
-      }
-    });
-    
-
-    
-    // Inicializace jezdce
-    if (pMinR && pMaxR) {
-      updatePowerSlider();
+    // Event listener pro "DB doporučuje" checkbox
+    const recommendedEl = document.getElementById('db-map-toggle-recommended');
+    if (recommendedEl) {
+      recommendedEl.addEventListener('change', () => {
+        showOnlyRecommended = !!recommendedEl.checked;
+        updateResetButtonVisibility();
+        saveFilterSettings();
+        if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
+      });
     }
     
-
+    // Inicializace jezdce - NE volat updatePowerSlider() zde, protože resetuje filterState
+    // updatePowerSlider() se zavolá až v applyFilterSettingsToUI()
+    
+    // Inicializovat viditelnost reset tlačítka
+    updateResetButtonVisibility();
   }
 
   // Mobilní bottom sheet pro detail - nový design jako plovoucí karta
@@ -3653,6 +3884,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         return hasData;
+      } else if (processResponse.status === 403) {
+        // 403 Forbidden - pravděpodobně problém s oprávněními
+        console.warn('[DB Map] 403 Forbidden při volání ondemand/process - možná chyba s oprávněními');
+        return false;
       }
       
       return false;
@@ -5261,8 +5496,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Stav filtrů
   const filterState = {
-    ac: true,
-    dc: true,
     powerMin: 0,
     powerMax: 400,
     connectors: new Set(),
@@ -5337,7 +5570,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // 1. Preferovat SVG ikonu z databáze (nový systém)
     if (connector.svg_icon) {
-      console.log('[DEBUG] Using database SVG icon');
       return 'data:image/svg+xml;base64,' + btoa(connector.svg_icon);
     }
 
@@ -5812,12 +6044,46 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     markers = [];
   }
+  
+  // Inteligentní cache pro markery - experimentální optimalizace
+  const markerCache = new Map();
+  
+  function getCachedMarker(featureId) {
+    return markerCache.get(featureId);
+  }
+  
+  function setCachedMarker(featureId, marker) {
+    // Omezení cache na 1000 markerů pro výkon
+    if (markerCache.size > 1000) {
+      const firstKey = markerCache.keys().next().value;
+      markerCache.delete(firstKey);
+    }
+    markerCache.set(featureId, marker);
+  }
   // Upravíme renderCards, aby synchronizovala markery s panelem
   function renderCards(filterText = '', activeId = null, isSearch = false) {
+    // Načíst filtry při prvním volání, pokud nejsou ještě načtené
+    if (filterState.powerMin === 0 && filterState.powerMax === 400 && 
+        filterState.connectors.size === 0 && filterState.amenities.size === 0 && 
+        filterState.access.size === 0 && !showOnlyRecommended) {
+      loadFilterSettings();
+    }
+    
+    // Debug log pouze pokud jsou aktivní filtry
+    const hasActiveFilters = filterState.powerMin > 0 || filterState.powerMax < 400 || 
+                             filterState.connectors.size > 0 || 
+                             filterState.amenities.size > 0 || 
+                             filterState.access.size > 0 ||
+                             showOnlyRecommended;
+    
+    
+    // Kontrola, zda jsou data načtená
+    if (!features || features.length === 0) {
+      return;
+    }
 
     // Kontrola, zda jsou potřebné proměnné inicializované
     if (typeof markers === 'undefined' || !Array.isArray(markers)) {
-
       return;
     }
 
@@ -5853,34 +6119,25 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (showOnlyRecommended) {
       filtered = filtered.filter(f => !!f.properties.db_recommended);
     }
-    // Aplikovat filtry pro nabíječky
+    // Aplikovat filtry pro nabíječky - filtrovat přímo features místo markerů
+    const chargingStations = features.filter(f => f.properties && f.properties.post_type === 'charging_location');
+    
+    const hasPowerFilter = filterState.powerMin > 0 || filterState.powerMax < 400;
+    
+    let debugLogged = false;
     filtered = filtered.filter(f => {
       const p = f.properties || {};
       if (p.post_type !== 'charging_location') return true;
       
-      // Debug log pro diagnostiku
-      console.log('[DB Map] Filtering station:', p.id, p.title);
       
-      // 1. Filtrování podle typu (AC/DC)
-      const mode = getChargerMode(p);
-      const allowAc = filterState.ac; 
-      const allowDc = filterState.dc;
-      const modePass = (mode === 'ac' && allowAc) || (mode === 'dc' && allowDc) || (mode === 'hybrid' && (allowAc || allowDc));
-      if (!modePass) {
-        console.log('[DB Map] Station filtered out by mode:', mode, 'allowAc:', allowAc, 'allowDc:', allowDc);
-        return false;
-      }
-      
-      // 2. Filtrování podle výkonu
+      // 1. Filtrování podle výkonu
       const maxKw = getStationMaxKw(p);
-      console.log('[DB Map] Station power:', maxKw, 'filter range:', filterState.powerMin, '-', filterState.powerMax);
       
       if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) {
-        console.log('[DB Map] Station filtered out by power:', maxKw, 'not in range', filterState.powerMin, '-', filterState.powerMax);
         return false;
       }
 
-      // 3. Filtrování podle konektorů
+      // 2. Filtrování podle konektorů
       if (filterState.connectors && filterState.connectors.size > 0) {
         const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
         const keys = new Set(arr.map(getConnectorTypeKey));
@@ -5889,12 +6146,10 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (keys.has(String(sel).toLowerCase())) ok = true; 
         });
         if (!ok) {
-          console.log('[DB Map] Station filtered out by connectors:', keys, 'not matching', Array.from(filterState.connectors));
           return false;
         }
       }
       
-      console.log('[DB Map] Station passed all filters:', p.id);
       return true;
     });
     
@@ -5991,20 +6246,47 @@ document.addEventListener('DOMContentLoaded', async function() {
         filtered.unshift(active);
       }
     }
-    // Odstraníme staré markery - kontrola před voláním
-    if (typeof clearMarkers === 'function') {
-      clearMarkers();
-    }
+    // Inteligentní aktualizace markerů - filtrovat markery na mapě podle aktivních filtrů
+    const currentMarkerIds = new Set();
+    [clusterChargers, clusterRV, clusterPOI].forEach(cluster => {
+      if (cluster && cluster.getLayers) {
+        cluster.getLayers().forEach(layer => {
+          const markerId = layer.feature?.properties?.id || layer._featureId;
+          if (markerId) {
+            currentMarkerIds.add(markerId);
+          }
+        });
+      }
+    });
+    
+    const neededMarkerIds = new Set(filtered.map(f => f.properties.id));
+    
+    // Odstranit pouze markery, které už nejsou potřeba podle filtru
+    [clusterChargers, clusterRV, clusterPOI].forEach(cluster => {
+      if (cluster && cluster.getLayers) {
+        cluster.getLayers().forEach(layer => {
+          const markerId = layer.feature?.properties?.id || layer._featureId;
+          if (markerId && !neededMarkerIds.has(markerId)) {
+            cluster.removeLayer(layer);
+          }
+        });
+      }
+    });
     
 
     
-    // Vytvoříme nové markery pouze pro aktuální filtered body
+    // Vytvoříme nové markery pouze pro ty, které neexistují
     filtered.forEach((f, i) => {
       const {geometry, properties: p} = f;
       if (!geometry || !geometry.coordinates) {
-        
         return;
       }
+      
+      // Kontrola, jestli marker už existuje
+      if (currentMarkerIds.has(p.id)) {
+        return; // Marker už existuje, přeskočit
+      }
+      
       const [lng, lat] = geometry.coordinates;
       
       function getMarkerHtml(active) {
@@ -6117,7 +6399,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         map.setView([lat, lng], 15, {animate:true});
         sortMode = 'distance-active';
-        renderCards('', p.id);
+        // POZOR: Nevolat renderCards() při kliknutí na marker - to způsobuje mizení ostatních markerů!
+        // renderCards('', p.id);
       });
       // Double-click na marker: otevři modal s detailem
       marker.on('dblclick', () => {
@@ -6634,7 +6917,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       try {
         const center = map.getCenter();
-        await fetchAndRenderRadius(center, null);
+        // Použít fixní radius místo dynamického - stejně jako při inicializaci
+        await fetchAndRenderRadiusWithFixedRadius(center, null, FIXED_RADIUS_KM);
         lastSearchCenter = { lat: center.lat, lng: center.lng };
         lastSearchRadiusKm = FIXED_RADIUS_KM;
       } catch (error) {
@@ -6704,7 +6988,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (inFlightController) {
           try { inFlightController.abort(); } catch(_) {}
         }
-        await fetchAndRenderRadius(c, null);
+        await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
         lastSearchCenter = { lat: c.lat, lng: c.lng };
         lastSearchRadiusKm = FIXED_RADIUS_KM;
         window.smartLoadingManager.hideManualLoadButton();
@@ -6714,8 +6998,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (visible && visible.length > 0) {
           features = visible;
           window.features = features;
-          if (typeof clearMarkers === 'function') clearMarkers();
-          renderCards('', null, false);
+          // POZOR: Nevolat renderCards() při pohybu mapy - způsobuje nekonečnou smyčku!
+          // renderCards('', null, false);
           lastRenderedFeatures = features.slice(0);
         }
         window.smartLoadingManager.hideManualLoadButton();
@@ -6781,7 +7065,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           localStorage.setItem('dbLoadMode', 'radius');
           setRadio('radius');
           const c = map.getCenter();
-          await fetchAndRenderRadius(c, null);
+          await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
         }
       } catch (e) {
       } finally {
@@ -7661,7 +7945,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const targetZoom = Math.max(map.getZoom(), 15);
       map.setView([lat, lng], targetZoom, { animate: true, duration: 0.5 });
 
-      await fetchAndRenderRadius({ lat, lng }, null);
+      await fetchAndRenderRadiusWithFixedRadius({ lat, lng }, null, FIXED_RADIUS_KM);
 
       searchAddressCoords = null;
       searchSortLocked = false;
@@ -7694,7 +7978,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const targetZoom = Math.max(map.getZoom(), 14);
       map.setView([lat, lng], targetZoom, { animate: true, duration: 0.5 });
 
-      await fetchAndRenderRadius({ lat, lng }, null);
+      await fetchAndRenderRadiusWithFixedRadius({ lat, lng }, null, FIXED_RADIUS_KM);
 
       searchAddressCoords = [lat, lng];
       searchSortLocked = true;
@@ -8061,7 +8345,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const targetZoom = Math.max(map.getZoom(), 15);
       map.setView([lat, lng], targetZoom, { animate: true, duration: 0.5 });
 
-      await fetchAndRenderRadius({ lat, lng }, null);
+      await fetchAndRenderRadiusWithFixedRadius({ lat, lng }, null, FIXED_RADIUS_KM);
 
       searchAddressCoords = null;
       searchSortLocked = false;

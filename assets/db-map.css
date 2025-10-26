@@ -1944,8 +1944,11 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   border-radius: 18px;
   padding: 2.5rem 2rem;
   box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
-  overflow-y: auto;
   color: #1f2933;
+  /* Zajistit scrollování */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Zabraň overflow na content */
 }
 
 #db-map-filter-panel .db-filter-modal__title {
@@ -1953,6 +1956,16 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   font-weight: 600;
   margin-bottom: 1.5rem;
   color: #049FE8;
+  flex-shrink: 0; /* Zabránit zmenšení nadpisu */
+}
+
+#db-map-filter-panel .db-filter-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 0.5rem; /* Prostor pro scrollbar */
 }
 
 #db-map-filter-panel .db-filter-modal__close {
@@ -1978,6 +1991,32 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 #db-map-filter-panel .db-filter-modal__close:focus {
   background: #024b9b;
   outline: none;
+}
+
+/* Filter reset section */
+.db-filter-reset-section {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(4, 159, 232, 0.2);
+}
+
+.db-filter-reset-section .db-filter-btn {
+  width: 100%;
+  background: #FF6A4B;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.db-filter-reset-section .db-filter-btn:hover {
+  background: #e55a3f;
+  transform: translateY(-1px);
 }
 
 /* Filter sections */

@@ -209,10 +209,6 @@ class REST_Map {
     }
 
     public function handle_map( $request ) {
-        // Debug logging
-        error_log('DB Map REST: handle_map spuštěn');
-        // error_log('DB Map REST: Parametry - included: ' . $request->get_param('included') . ', center: ' . $request->get_param('center') . ', radius_km: ' . $request->get_param('radius_km'));
-        
         // --- vstupy
         $included  = $request->get_param('included');  // např. "charging_location,rv_spot,poi"
         $post_types = $request->get_param('post_types'); // alternativní parametr pro kompatibilitu
@@ -239,12 +235,9 @@ class REST_Map {
             $types = ['charging_location','rv_spot','poi'];
         }
         
-        error_log('DB Map REST: Post types ke zpracování: ' . print_r($types, true));
-        
         // DEBUG: Kontrola existence postů s danými post_types
         foreach ($types as $pt) {
             $count = wp_count_posts($pt);
-            error_log('DB Map REST: Post count pro ' . $pt . ': ' . print_r($count, true));
             
             // DEBUG: Kontrola meta klíčů na prvním existujícím postu
             if ($count->publish > 0) {
@@ -260,7 +253,6 @@ class REST_Map {
                     $keys = $this->get_latlng_keys_for_type($pt);
                     $sample_lat = get_post_meta($sample->ID, $keys['lat'], true);
                     $sample_lng = get_post_meta($sample->ID, $keys['lng'], true);
-                    error_log('DB Map REST: Vzorek post ' . $pt . ' ID ' . $sample->ID . ' - ' . $keys['lat'] . ': ' . $sample_lat . ', ' . $keys['lng'] . ': ' . $sample_lng);
                 }
                 
                 // DEBUG: Kontrola rozsahu souřadnic
@@ -294,7 +286,6 @@ class REST_Map {
                      )",
                     $keys['lng'], $pt
                 ));
-                error_log('DB Map REST: Rozsah souřadnic pro ' . $pt . ' - lat: [' . $min_lat . ', ' . $max_lat . '], lng: [' . $min_lng . ', ' . $max_lng . ']');
             }
         }
 
@@ -323,7 +314,6 @@ class REST_Map {
         
         // Pro režim "all" necháme $use_radius = false a pokračujeme
         if (!$use_radius) {
-            error_log('DB Map REST: Režim "all" - načítám všechna data bez radius filtru');
         }
 
         if ($use_radius) {
@@ -341,7 +331,6 @@ class REST_Map {
         $debug_stats = [ 'per_type' => [], 'totals' => [ 'found' => 0, 'bbox' => 0, 'kept' => 0 ] ];
 
         foreach ($types as $pt) {
-            error_log('DB Map REST: Zpracovávám post_type: ' . $pt);
             $keys = $this->get_latlng_keys_for_type($pt);
             // error_log('DB Map REST: Meta klíče pro ' . $pt . ': ' . print_r($keys, true));
 
@@ -405,7 +394,6 @@ class REST_Map {
                 if (is_string($loV)) { $loV = str_replace(',', '.', trim($loV)); }
 
                 if (!is_numeric($laV) || !is_numeric($loV)) { 
-                    error_log('DB Map REST: Post ' . $post->ID . ' - neplatné souřadnice, přeskočeno');
                     continue; 
                 }
                 $laF = (float)$laV; $loF = (float)$loV;
@@ -594,6 +582,7 @@ class REST_Map {
                     // Načtení konektorů z charger_type taxonomie (správná taxonomie pro ikony)
                     $charger_type_terms = wp_get_post_terms($post->ID, 'charger_type');
                     $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+                    $charger_powers = get_post_meta($post->ID, '_db_charger_power', true); // Načíst výkony z post meta
                     
                     if (!empty($charger_type_terms) && !is_wp_error($charger_type_terms)) {
                         $connectors = [];
@@ -611,6 +600,19 @@ class REST_Map {
                                 }
                             }
                             
+                            // Získat výkon z _db_charger_power (hledat podle term ID, ne názvu)
+                            $power = 0; // výchozí hodnota
+                            if (is_array($charger_powers)) {
+                                // Zkusit najít podle term ID
+                                if (isset($charger_powers[$charger_term->term_id])) {
+                                    $power = floatval($charger_powers[$charger_term->term_id]);
+                                }
+                                // Fallback: zkusit najít podle názvu
+                                elseif (isset($charger_powers[$charger_term->name])) {
+                                    $power = floatval($charger_powers[$charger_term->name]);
+                                }
+                            }
+                            
                             // SVG ikony dočasně zakázány - čekáme na správné ikony
                             $svg_icon = null;
                             
@@ -620,7 +622,8 @@ class REST_Map {
                                 'icon' => get_term_meta($charger_term->term_id, 'charger_icon', true), // Správný meta klíč pro ikony
                                 'svg_icon' => $svg_icon, // Nový SVG systém
                                 'type' => get_term_meta($charger_term->term_id, 'charger_current_type', true), // Správný meta klíč pro typ proudu
-                                'power' => get_term_meta($charger_term->term_id, 'power', true),
+                                'power' => $power,
+                                'power_kw' => $power, // Přidat power_kw pro kompatibilitu s getStationMaxKw()
                                 'quantity' => $quantity, // Přidat počet
                                 // Přidání vlastností pro kompatibilitu s JavaScript kódem
                                 'connector_standard' => $charger_term->name,
@@ -641,6 +644,10 @@ class REST_Map {
                         $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
                         $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
                         
+                        // Debug: zkontrolovat, co se načetlo
+                        if ($post->ID == 4436) { // Lidl stanice z logů
+                        }
+                        
                         
                         if (!empty($meta_connectors)) {
                             if (is_array($meta_connectors)) {
@@ -651,6 +658,11 @@ class REST_Map {
                                     }
                                     if (isset($charger_powers[$connector['type']])) {
                                         $connector['power'] = $charger_powers[$connector['type']];
+                                        $connector['power_kw'] = $charger_powers[$connector['type']];
+                                        
+                                        // Debug: zkontrolovat, co se přidalo
+                                        if ($post->ID == 4436) {
+                                        }
                                     }
                                 }
                                 $properties['connectors'] = $meta_connectors;
@@ -667,6 +679,7 @@ class REST_Map {
                                         }
                                         if (isset($charger_powers[$connector['type']])) {
                                             $connector['power'] = $charger_powers[$connector['type']];
+                                            $connector['power_kw'] = $charger_powers[$connector['type']];
                                         }
                                     }
                                     $properties['connectors'] = $parsed;
@@ -766,7 +779,6 @@ class REST_Map {
             $debug_stats['totals']['bbox']  += (int)$bbox_count;
             $debug_stats['totals']['kept']  += (int)$haversine_count;
             
-            error_log('DB Map REST: ' . $pt . ' - bbox: ' . $bbox_count . ', haversine: ' . $haversine_count . ', přidáno: ' . count($features));
         }
 
         $total_before_limit = count($features);
@@ -789,9 +801,7 @@ class REST_Map {
             });
         }
 
-        error_log('DB Map REST: Finální výsledek - celkem features: ' . count($features));
         if (count($features) > 0) {
-            error_log('DB Map REST: První feature: ' . print_r($features[0], true));
         }
 
         // Přidání meta informací pro diagnostiku
