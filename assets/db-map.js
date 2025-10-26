@@ -1957,6 +1957,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         </div>
 
         <div class="db-filter-section">
+          <div class="db-filter-section__title">Provozovatel</div>
+          <button type="button" id="db-open-provider-modal" class="db-filter-provider-btn">Vybrat provozovatele...</button>
+        </div>
+
+        <div class="db-filter-section">
           <div class="db-filter-section__title">Amenity v okolí</div>
           <div id="db-filter-amenity" class="db-filter-amenity-list"></div>
         </div>
@@ -1975,6 +1980,27 @@ document.addEventListener('DOMContentLoaded', async function() {
       </div>
     </div>
   `;
+  
+  // Provider modal
+  const providerModal = document.createElement('div');
+  providerModal.id = 'db-provider-modal';
+  providerModal.className = 'db-provider-modal';
+  providerModal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10004;align-items:center;justify-content:center;';
+  providerModal.innerHTML = `
+    <div class="db-provider-modal__content" style="background:white;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
+      <div class="db-provider-modal__header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-shrink:0;">
+        <h3 style="margin:0;color:#049FE8;font-size:1.3rem;font-weight:600;">Vyberte provozovatele</h3>
+        <button type="button" class="db-provider-modal__close" style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:background 0.2s;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='none'">&times;</button>
+      </div>
+      <div class="db-provider-modal__body" id="db-provider-grid" style="flex:1;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;padding-right:8px;"></div>
+      <div class="db-provider-modal__footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;flex-shrink:0;padding-top:16px;border-top:1px solid #e5e7eb;">
+        <span id="db-provider-selected-count" style="color:#666;font-size:0.9rem;">0 vybráno</span>
+        <button type="button" id="db-provider-apply" style="background:#049FE8;color:white;border:none;border-radius:8px;padding:10px 24px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0378b8'" onmouseout="this.style.background='#049FE8'">Použít</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(providerModal);
+  
   mapDiv.appendChild(filterPanel);
   mapDiv.appendChild(mapOverlay);
   
@@ -2039,6 +2065,29 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (backdrop) {
     backdrop.addEventListener('click', closeFilterModal);
   }
+  
+  // Provider modal handlers
+  const openProviderBtn = document.getElementById('db-open-provider-modal');
+  if (openProviderBtn) {
+    openProviderBtn.addEventListener('click', openProviderModal);
+  }
+  
+  const providerModalClose = document.querySelector('.db-provider-modal__close');
+  if (providerModalClose) {
+    providerModalClose.addEventListener('click', closeProviderModal);
+  }
+  
+  const providerModalApply = document.getElementById('db-provider-apply');
+  if (providerModalApply) {
+    providerModalApply.addEventListener('click', applyProviderFilter);
+  }
+  
+  // Close provider modal on backdrop click
+  providerModal.addEventListener('click', (e) => {
+    if (e.target === providerModal) {
+      closeProviderModal();
+    }
+  });
 
   // Escape key
   document.addEventListener('keydown', (event) => {
@@ -2089,15 +2138,40 @@ document.addEventListener('DOMContentLoaded', async function() {
   function fillConnectorIcons(container, values) {
     if (!container) return;
     container.innerHTML = '';
+    
+    // Najít všechny unique konektory z features pro získání ikon
+    const allConnectors = [];
+    features.forEach(f => {
+      if (f.properties?.post_type === 'charging_location') {
+        const arr = Array.isArray(f.properties.connectors) ? f.properties.connectors : (Array.isArray(f.properties.konektory) ? f.properties.konektory : []);
+        arr.forEach(c => allConnectors.push(c));
+      }
+    });
+    
     Array.from(values).sort((a,b)=>String(a).localeCompare(String(b))).forEach(v => {
       if (!v) return;
+      
+      // Najít odpovídající konektor pro získání ikony
+      const matchingConnector = allConnectors.find(c => {
+        const key = getConnectorTypeKey(c);
+        return key === v;
+      });
+      
+      const iconUrl = matchingConnector ? getConnectorIconUrl(matchingConnector) : '';
+      
       const iconDiv = document.createElement('div');
       iconDiv.className = 'db-connector-icon';
       iconDiv.dataset.value = String(v);
       iconDiv.style.cssText = 'display:inline-block;width:32px;height:32px;margin:4px;border:2px solid #e5e7eb;border-radius:6px;cursor:pointer;transition:all 0.2s;background:transparent;';
       iconDiv.title = String(v);
-      // Zde by se načetla ikona konektoru z adminu
-      iconDiv.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:12px;color:#666;">${String(v).substring(0,3)}</div>`;
+      
+      // Zobrazit ikonu pokud je k dispozici
+      if (iconUrl) {
+        iconDiv.innerHTML = `<img src="${iconUrl}" style="width:24px;height:24px;object-fit:contain;display:block;" alt="${v}" />`;
+      } else {
+        iconDiv.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:12px;color:#666;">${String(v).substring(0,3)}</div>`;
+      }
+      
       iconDiv.addEventListener('click', () => {
         iconDiv.classList.toggle('selected');
         if (iconDiv.classList.contains('selected')) {
@@ -2171,6 +2245,89 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
       container.appendChild(checkboxDiv);
     });
+  }
+  
+  // Provider modal functions
+  function openProviderModal() {
+    const modal = document.getElementById('db-provider-modal');
+    const grid = document.getElementById('db-provider-grid');
+    if (!modal || !grid) return;
+    
+    // Naplnit grid provozovateli
+    grid.innerHTML = '';
+    const providers = window.dbProviderData || [];
+    
+    providers.sort((a, b) => {
+      const nameA = (a.nickname || a.name).toLowerCase();
+      const nameB = (b.nickname || b.name).toLowerCase();
+      return nameA.localeCompare(nameB);
+    }).forEach(provider => {
+      const providerDiv = document.createElement('div');
+      providerDiv.className = 'db-provider-item';
+      const isSelected = filterState.providers.has(provider.name);
+      
+      providerDiv.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px;border:2px solid ${isSelected ? '#FF6A4B' : '#e5e7eb'};border-radius:8px;cursor:pointer;transition:all 0.2s;background:${isSelected ? '#fff5f5' : 'white'};`;
+      
+      if (provider.icon) {
+        const iconUrl = getIconUrl(provider.icon);
+        providerDiv.innerHTML = `
+          <img src="${iconUrl}" style="width:32px;height:32px;object-fit:contain;" alt="${provider.nickname || provider.name}" />
+          <div style="font-size:0.75rem;text-align:center;color:#333;margin-top:4px;">${provider.nickname || provider.name}</div>
+        `;
+      } else {
+        providerDiv.innerHTML = `
+          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:600;color:#049FE8;border:2px solid #049FE8;border-radius:4px;">${(provider.nickname || provider.name).substring(0,2).toUpperCase()}</div>
+          <div style="font-size:0.75rem;text-align:center;color:#333;margin-top:4px;">${provider.nickname || provider.name}</div>
+        `;
+      }
+      
+      providerDiv.addEventListener('click', () => {
+        const wasSelected = filterState.providers.has(provider.name);
+        if (wasSelected) {
+          filterState.providers.delete(provider.name);
+          providerDiv.style.border = '2px solid #e5e7eb';
+          providerDiv.style.background = 'white';
+        } else {
+          filterState.providers.add(provider.name);
+          providerDiv.style.border = '2px solid #FF6A4B';
+          providerDiv.style.background = '#fff5f5';
+        }
+        updateProviderSelectedCount();
+      });
+      
+      grid.appendChild(providerDiv);
+    });
+    
+    updateProviderSelectedCount();
+    modal.style.display = 'flex';
+  }
+  
+  function closeProviderModal() {
+    const modal = document.getElementById('db-provider-modal');
+    if (modal) {
+      modal.style.display = 'none';
+    }
+  }
+  
+  function updateProviderSelectedCount() {
+    const countEl = document.getElementById('db-provider-selected-count');
+    if (countEl) {
+      const count = filterState.providers.size;
+      countEl.textContent = `${count} ${count === 1 ? 'vybrán' : count < 5 ? 'vybráni' : 'vybráno'}`;
+    }
+  }
+  
+  function applyProviderFilter() {
+    saveFilterSettings();
+    renderCards('', null, false);
+    closeProviderModal();
+    
+    // Aktualizovat tlačítko v modalu filtrů
+    const btn = document.getElementById('db-open-provider-modal');
+    if (btn) {
+      const count = filterState.providers.size;
+      btn.textContent = count > 0 ? `Provozovatel (${count})` : 'Vybrat provozovatele...';
+    }
   }
 
   function normalizeConnectorType(str) {
@@ -2255,6 +2412,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   function populateFilterOptions() {
     
     const connectorSet = new Set();
+    const providerMap = new Map(); // provider -> { name, nickname, icon }
     let minPower = 0;
     let maxPower = 400;
     
@@ -2266,6 +2424,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
         arr.forEach(c => { const key = getConnectorTypeKey(c); if (key) connectorSet.add(key); });
         
+        // Získat provozovatele
+        const provider = p.provider || p.operator_original;
+        if (provider) {
+          if (!providerMap.has(provider)) {
+            providerMap.set(provider, {
+              name: provider,
+              nickname: p.provider_nickname || p.operator_nickname,
+              icon: p.provider_icon || p.operator_icon || ''
+            });
+          }
+        }
+        
         // Najít min/max výkon pro dynamický rozsah
         const power = getStationMaxKw(p);
         if (power > 0) {
@@ -2274,6 +2444,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       }
     });
+    
+    // Uložit provider data pro pozdější použití
+    window.dbProviderData = Array.from(providerMap.values());
     
     
     
@@ -2364,6 +2537,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         connectors: Array.from(filterState.connectors),
         amenities: Array.from(filterState.amenities),
         access: Array.from(filterState.access),
+        providers: Array.from(filterState.providers),
         showOnlyRecommended: showOnlyRecommended
       };
       localStorage.setItem('db-map-filters', JSON.stringify(settings));
@@ -2383,6 +2557,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         filterState.connectors = new Set(settings.connectors || []);
         filterState.amenities = new Set(settings.amenities || []);
         filterState.access = new Set(settings.access || []);
+        filterState.providers = new Set(settings.providers || []);
         showOnlyRecommended = settings.showOnlyRecommended || false;
         return true;
       }
@@ -2464,6 +2639,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     return filterState.connectors.size > 0 || 
            filterState.amenities.size > 0 || 
            filterState.access.size > 0 ||
+           filterState.providers.size > 0 ||
            filterState.powerMin > 0 || filterState.powerMax < 400 ||
            showOnlyRecommended;
   }
@@ -2555,6 +2731,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       filterState.connectors = new Set();
       filterState.amenities = new Set();
       filterState.access = new Set();
+      filterState.providers = new Set();
       showOnlyRecommended = false;
       
       if (pMinR && pMaxR) { 
@@ -2601,6 +2778,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (recommendedElReset2) {
         recommendedElReset2.checked = false;
         showOnlyRecommended = false;
+      }
+      
+      // Resetovat provider tlačítko
+      const providerBtn = document.getElementById('db-open-provider-modal');
+      if (providerBtn) {
+        providerBtn.textContent = 'Vybrat provozovatele...';
       }
       
       // Aktualizovat viditelnost reset tlačítka
@@ -5413,6 +5596,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     connectors: new Set(),
     amenities: new Set(),
     access: new Set(),
+    providers: new Set()
   };
   
   // Funkce pro počáteční načtení bodů - používá stávající data z mapy
@@ -6010,9 +6194,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         const keys = new Set(arr.map(getConnectorTypeKey));
         let ok = false; 
         filterState.connectors.forEach(sel => { 
-          if (keys.has(String(sel).toLowerCase())) ok = true; 
+          // Normalizovat filtrovanou hodnotu stejným způsobem
+          const normalized = normalizeConnectorType(String(sel));
+          if (keys.has(normalized)) ok = true; 
         });
         if (!ok) {
+          return false;
+        }
+      }
+      
+      // 3. Filtrování podle provozovatelů
+      if (filterState.providers && filterState.providers.size > 0) {
+        const provider = p.provider || p.operator_original;
+        if (!provider || !filterState.providers.has(provider)) {
           return false;
         }
       }

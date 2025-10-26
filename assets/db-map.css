@@ -2036,6 +2036,32 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   margin-bottom: 0.75rem;
 }
 
+/* Provider filter button */
+.db-filter-provider-btn {
+  background: white;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  text-align: center;
+}
+
+.db-filter-provider-btn:hover {
+  background: #f9fafb;
+  border-color: #049FE8;
+  color: #049FE8;
+}
+
+.db-filter-provider-btn:active {
+  transform: scale(0.98);
+}
+
 /* Checkboxes */
 .db-filter-checkboxes {
   display: flex;
