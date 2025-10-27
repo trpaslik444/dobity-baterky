@@ -561,6 +561,7 @@ try {
 } catch(_) {}
 
 document.addEventListener('DOMContentLoaded', async function() {
+  console.log('[DB Map] DOMContentLoaded handler started');
   // Inicializovat globální proměnné pro isochrones
   if (!isochronesCache) {
     isochronesCache = new Map();
