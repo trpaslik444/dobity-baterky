@@ -2792,7 +2792,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Uložit nastavení
       saveFilterSettings();
       
-      if (typeof renderCards === 'function') {
+      // Po resetu filtrů znovu načíst data z API a aktualizovat provider data
+      if (typeof fetchAndRenderRadiusWithFixedRadius === 'function' && map) {
+        const center = map.getCenter();
+        fetchAndRenderRadiusWithFixedRadius(center, null, FIXED_RADIUS_KM).then(() => {
+          // Po načtení dat aktualizovat provider data v modalu
+          if (typeof populateFilterOptions === 'function') {
+            populateFilterOptions();
+          }
+        }).catch(err => {
+          console.error('[DB Map] Failed to refetch data after filter reset:', err);
+        });
+      } else if (typeof renderCards === 'function') {
         renderCards('', null, false);
       }
     });
