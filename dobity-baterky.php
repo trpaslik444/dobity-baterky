@@ -470,11 +470,24 @@ add_action('wp_enqueue_scripts', function() {
     $favorites_payload = array(
         'enabled' => false,
     );
+    
+    // Debug log
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[DB FAVORITES] is_user_logged_in: ' . (is_user_logged_in() ? 'YES' : 'NO') );
+        error_log( '[DB FAVORITES] class_exists Favorites_Manager: ' . (class_exists( '\\DB\\Favorites_Manager' ) ? 'YES' : 'NO') );
+    }
+    
     if ( is_user_logged_in() && class_exists( '\\DB\\Favorites_Manager' ) ) {
         try {
             $favorites_manager = Favorites_Manager::get_instance();
             $favorites_payload = $favorites_manager->get_localized_payload( get_current_user_id() );
+            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                error_log( '[DB FAVORITES] Payload enabled: ' . ($favorites_payload['enabled'] ? 'YES' : 'NO') );
+            }
         } catch ( \Throwable $e ) {
+            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                error_log( '[DB FAVORITES] Exception: ' . $e->getMessage() );
+            }
             $favorites_payload = array( 'enabled' => false );
         }
     }
