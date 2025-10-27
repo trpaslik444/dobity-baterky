@@ -9568,4 +9568,31 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }, 60000); // Každou minutu
   
+  // Event listener pro klikání na hvězdičku favorites
+  document.addEventListener('click', async (event) => {
+    const starBtn = event.target.closest('.db-favorite-star-btn');
+    if (!starBtn) {
+      return;
+    }
+    
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const postId = starBtn.getAttribute('data-db-favorite-post-id');
+    if (!postId) {
+      return;
+    }
+    
+    // Získat props z featureCache nebo features
+    const feature = featureCache.get(postId) || features.find(f => f.properties?.id === postId);
+    if (!feature) {
+      return;
+    }
+    
+    const props = feature.properties;
+    
+    // Toggle star - otevřít panel pro přidání/odebrání
+    await handleFavoritesToggle(event);
+  });
+  
 })();
