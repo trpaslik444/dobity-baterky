@@ -315,6 +315,14 @@ if ( file_exists( __DIR__ . '/includes/REST_Map.php' ) ) {
     }
 }
 
+// Favorites REST API
+if ( file_exists( __DIR__ . '/includes/REST_Favorites.php' ) ) {
+    require_once __DIR__ . '/includes/REST_Favorites.php';
+    if ( class_exists( 'DB\REST_Favorites' ) ) {
+        DB\REST_Favorites::get_instance()->register();
+    }
+}
+
 // On-Demand REST API
 if ( file_exists( __DIR__ . '/includes/REST_On_Demand.php' ) ) {
     require_once __DIR__ . '/includes/REST_On_Demand.php';
