@@ -9595,4 +9595,4 @@ document.addEventListener('DOMContentLoaded', async function() {
     await handleFavoritesToggle(event);
   });
   
-})();
+}); // Konec DOMContentLoaded handleru
