@@ -2188,12 +2188,21 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
 
-      // Vykreslit karty s novými daty
+      // Vykreslit karty s novými daty (pouze viditelné v viewportu pro optimalizaci)
       if (typeof clearMarkers === 'function') {
         clearMarkers();
       }
+      // Renderovat pouze viditelné body z viewportu, ne všechny najednou
+      const visibleFeatures = selectFeaturesForView();
+      // Poznámka: features zůstávají jako všechny načtené body (pro panování)
+      // ale renderujeme pouze viditelnou podmnožinu pro optimalizaci DOM
+      const originalFeatures = features;
+      features = visibleFeatures.length > 0 ? visibleFeatures : features;
       renderCards('', null, false);
-      lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
+      // Vrátit zpět všechny features po renderování
+      features = originalFeatures;
+      window.features = features;
+      lastRenderedFeatures = visibleFeatures.length > 0 ? visibleFeatures : Array.isArray(features) ? features.slice(0) : [];
       // Zachovej stabilní viewport po fetchi: bez auto-fit/auto-pan.
       // Poloha mapy je výhradně řízena uživatelem; přesuny provádíme
       // pouze na explicitní akce (klik na pin, potvrzení vyhledávání, moje poloha).
