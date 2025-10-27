@@ -38,7 +38,7 @@ if ( ! defined( 'DB_PLUGIN_URL' ) ) {
     define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 }
 if ( ! defined( 'DB_PLUGIN_VERSION' ) ) {
-    define( 'DB_PLUGIN_VERSION', '2.0.1' );
+    define( 'DB_PLUGIN_VERSION', '2.0.2' );
 }
 
 // -----------------------------------------------------------------------------
