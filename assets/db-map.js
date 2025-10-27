@@ -616,6 +616,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.features = features; // Nastavit globální přístup pro isochrones funkce
     // Jednoduchý per-session cache načtených feature podle ID
     const featureCache = new Map(); // id -> feature
+    window.featureCache = featureCache; // Globální přístup pro externí funkce
     const internalSearchCache = new Map();
     const externalSearchCache = new Map();
     let mobileSearchController = null;
@@ -9628,8 +9629,9 @@ setInterval(() => {
         const postId = btn.getAttribute('data-db-favorite-post-id');
         console.log('[DB Map] Post ID:', postId);
         
-        // Získat props z featureCache nebo features
-        const feature = featureCache && featureCache.get ? featureCache.get(postId) : null;
+        // Získat props z window.featureCache nebo features
+        const cache = (window.featureCache && window.featureCache.get) ? window.featureCache : null;
+        const feature = cache ? cache.get(postId) : (window.features && window.features.find ? window.features.find(f => f.properties && f.properties.id === postId) : null);
         const props = feature && feature.properties ? feature.properties : null;
         
         // Otevřít modál pro výběr složky oblíbených
