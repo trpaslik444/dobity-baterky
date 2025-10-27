@@ -9611,10 +9611,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 // Event listener pro favorites star button - mimo DOMContentLoaded
 setTimeout(() => {
+  console.log('[DB Map] Inside setTimeout, about to register listener');
   console.log('[DB Map] Registering favorites star button click listener OUTSIDE DOMContentLoaded');
   document.addEventListener('click', async (event) => {
     console.log('[DB Map] Click detected on:', event.target, 'has db-favorite-star-btn:', event.target.classList.contains('db-favorite-star-btn'));
     const starBtn = event.target.closest('.db-favorite-star-btn');
+    console.log('[DB Map] starBtn:', starBtn);
     if (!starBtn) {
       return;
     }
