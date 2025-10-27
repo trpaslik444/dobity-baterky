@@ -865,7 +865,15 @@ body.db-license-modal-open {
 
   /* Heading arrow at user location */
   /* Heading container (larger, with FOV fan and dot) */
-  .db-heading-container { width: 120px; height: 120px; transform-origin: 60px 60px; }
+  .db-heading-container { width: 120px; height: 120px; transform-origin: 60px 60px; pointer-events: none; }
+  .db-heading-rotator {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    transform-origin: 60px 60px;
+    transform: rotate(var(--db-heading-rotation, 0deg));
+    transition: transform 0.25s ease-out;
+  }
   .db-heading-wrapper { position: relative; width: 120px; height: 120px; transform-origin: 60px 60px; }
   /* Field of view fan */
   .db-heading-fov {
@@ -880,6 +888,10 @@ body.db-license-modal-open {
   /* Outer white ring + inner blue dot */
   .db-live-dot { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 24px; height: 24px; border-radius: 50%; background: #ffffff; box-shadow: 0 8px 16px rgba(0,0,0,0.35); display:flex; align-items:center; justify-content:center; }
   .db-live-dot > span { display:block; width: 14px; height: 14px; border-radius: 50%; background: #049FE8; }
+
+  @media (hover: hover) and (pointer: fine) {
+    .db-heading-container { display: none !important; }
+  }
   
   .db-menu-section-title {
     font-size: 0.9rem;
