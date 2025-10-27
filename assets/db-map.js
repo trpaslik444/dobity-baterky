@@ -9622,11 +9622,18 @@ setInterval(() => {
         const postId = btn.getAttribute('data-db-favorite-post-id');
         console.log('[DB Map] Post ID:', postId);
         
-        // Otevřít favorites panel pomocí handleFavoritesToggle
-        if (typeof handleFavoritesToggle === 'function') {
-          await handleFavoritesToggle(event);
-        } else {
-          console.log('[DB Map] handleFavoritesToggle not found');
+        // Jednoduše zavolat handleFavoritesToggle přímo
+        try {
+          if (window.handleFavoritesToggle) {
+            await window.handleFavoritesToggle(event);
+          } else if (typeof handleFavoritesToggle === 'function') {
+            await handleFavoritesToggle(event);
+          } else {
+            console.log('[DB Map] handleFavoritesToggle not found as window or local function');
+            console.log('[DB Map] Available functions:', Object.keys(window).filter(k => k.includes('Favorites')));
+          }
+        } catch (err) {
+          console.error('[DB Map] Error calling handleFavoritesToggle:', err);
         }
       });
     }
