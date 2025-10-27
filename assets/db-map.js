@@ -9570,26 +9570,34 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Event listener pro klikání na hvězdičku favorites
   document.addEventListener('click', async (event) => {
+    console.log('[DB Map] Click detected on:', event.target);
     const starBtn = event.target.closest('.db-favorite-star-btn');
+    console.log('[DB Map] Star button:', starBtn);
     if (!starBtn) {
       return;
     }
     
+    console.log('[DB Map] Star button clicked!');
     event.preventDefault();
     event.stopPropagation();
     
     const postId = starBtn.getAttribute('data-db-favorite-post-id');
     if (!postId) {
+      console.log('[DB Map] No post ID found');
       return;
     }
+    
+    console.log('[DB Map] Post ID:', postId);
     
     // Získat props z featureCache nebo features
     const feature = featureCache.get(postId) || features.find(f => f.properties?.id === postId);
     if (!feature) {
+      console.log('[DB Map] No feature found for post ID:', postId);
       return;
     }
     
     const props = feature.properties;
+    console.log('[DB Map] Feature found:', props);
     
     // Toggle star - otevřít panel pro přidání/odebrání
     await handleFavoritesToggle(event);
