@@ -73,6 +73,11 @@ class On_Demand_Processor {
                 $result['operations'][] = 'nearby_processed';
             }
             
+            // 2a. Zpracovat isochrony nezávisle na nearby datech
+            $isochrones_result = $this->process_isochrones_independent($point_id, $point_type);
+            $result['isochrones'] = $isochrones_result;
+            $result['operations'][] = 'isochrones_processed';
+            
             // 3. Zpracovat discovery data (pokud je požadováno)
             if ($options['include_discovery']) {
                 $discovery_result = $this->process_discovery_data($point_id, $point_type, $options['priority']);
@@ -140,10 +145,6 @@ class On_Demand_Processor {
                 }
             }
             
-            if (!$nearby_data) {
-                return null;
-            }
-            
             // Načíst isochrony - správné meta klíče
             $isochrones_keys = array(
                 'db_isochrones_v1_foot-walking',
@@ -164,6 +165,18 @@ class On_Demand_Processor {
                     'enabled' => true,
                     'walking_speed' => 4.5
                 );
+            }
+            
+            // Vrátit data, i když nemáme nearby items, ale máme isochrony
+            if (!$nearby_data && $isochrones_data) {
+                return array(
+                    'items' => [],
+                    'isochrones' => $isochrones_data
+                );
+            }
+            
+            if (!$nearby_data) {
+                return null;
             }
             
             return array(
@@ -217,12 +230,19 @@ class On_Demand_Processor {
             }
             
             // Zpracovat nearby data - typ se automaticky přemapuje v recompute_nearby_for_origin
-            // POI → hledá charging_location, charging_location → hledá poi
-            $search_type = ($point_type === 'poi') ? 'charging_location' : $point_type;
+            // POI<｜place▁holder▁no▁776｜> → hledá charging_location, charging_location → hledá poi
+            $search_type = ($point_type === 'poi') ? 'charging_location' : 'poi';
+            
+            // Log pro debug
+            error_log("[On-Demand] Calling recompute_nearby_for_origin for point_id={$point_id}, search_type={$search_type}");
+            
             $nearby_result = $this->nearby_job->recompute_nearby_for_origin($point_id, $search_type);
             
-            $result['processed'] = $nearby_result['processed'] ?? 0;
-            $result['errors'] = $nearby_result['errors'] ?? 0;
+            error_log("[On-Demand] recompute_nearby_for_origin result: " . print_r($nearby_result, true));
+            
+            // recompute_nearby_for_origin nevrací hodnotu (void), jen ukládá data do DB
+            $result['processed'] = 1;
+            $result['errors'] = 0;
             $result['cached'] = false;
             
             // Cache nearby výsledek
@@ -234,6 +254,87 @@ class On_Demand_Processor {
         } catch (\Exception $e) {
             $result['error'] = $e->getMessage();
             $result['errors']++;
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Zpracuje isochrony nezávisle na nearby datech
+     */
+    private function process_isochrones_independent(int $point_id, string $point_type): array {
+        $result = array(
+            'processed' => 0,
+            'errors' => 0,
+            'cached' => false
+        );
+        
+        try {
+            // Získat souřadnice bodu
+            $post = get_post($point_id);
+            if (!$post) {
+                return $result;
+            }
+            
+            $lat = $lng = null;
+            if ($post->post_type === 'charging_location') {
+                $lat = (float)get_post_meta($point_id, '_db_lat', true);
+                $lng = (float)get_post_meta($point_id, '_db_lng', true);
+            } elseif ($post->post_type === 'poi') {
+                $lat = (float)get_post_meta($point_id, '_poi_lat', true);
+                $lng = (float)get_post_meta($point_id, '_poi_lng', true);
+            } elseif ($post->post_type === 'rv_spot') {
+                $lat = (float)get_post_meta($point_id, '_rv_lat', true);
+                $lng = (float)get_post_meta($point_id, '_rv_lng', true);
+            }
+            
+            if (!$lat || !$lng) {
+                return $result;
+            }
+            
+            // Zkontrolovat, zda už máme isochrones data
+            $meta_key = 'db_isochrones_v1_foot-walking';
+            $existing_cache = get_post_meta($point_id, $meta_key, true);
+            
+            if ($existing_cache && !empty($existing_cache)) {
+                $payload = is_string($existing_cache) ? json_decode($existing_cache, true) : $existing_cache;
+                // Pokud máme platná data a nejsou starší než TTL, nepřenačítat
+                if ($payload && isset($payload['geojson']) && isset($payload['geojson']['features']) && 
+                    !empty($payload['geojson']['features']) && !isset($payload['error'])) {
+                    $ttl_days = 30;
+                    $computed_at = isset($payload['computed_at']) ? strtotime($payload['computed_at']) : 0;
+                    if ((time() - $computed_at) < ($ttl_days * DAY_IN_SECONDS)) {
+                        $result['cached'] = true;
+                        return $result; // Data jsou ještě platná
+                    }
+                }
+            }
+            
+            // Zkontrolovat konfiguraci
+            $cfg = get_option('db_nearby_config', []);
+            $orsKey = trim((string)($cfg['ors_api_key'] ?? ''));
+            $provider = (string)($cfg['provider'] ?? 'ors');
+            
+            if ($provider !== 'ors' || empty($orsKey)) {
+                $result['error'] = 'ORS provider not configured';
+                $result['errors']++;
+                return $result;
+            }
+            
+            // Zavolat fetch_and_cache_isochrones přes nearby_job
+            // Musíme použít reflexi, protože metoda je private
+            $reflection = new \ReflectionClass($this->nearby_job);
+            $method = $reflection->getMethod('fetch_and_cache_isochrones');
+            $method->setAccessible(true);
+            $method->invoke($this->nearby_job, $point_id, $lat, $lng, $orsKey);
+            
+            $result['processed'] = 1;
+            error_log("[On-Demand] Isochrones processed for point_id={$point_id}");
+            
+        } catch (\Exception $e) {
+            $result['error'] = $e->getMessage();
+            $result['errors']++;
+            error_log("[On-Demand] Isochrones error for point_id={$point_id}: " . $e->getMessage());
         }
         
         return $result;
@@ -366,18 +467,27 @@ class On_Demand_Processor {
         $processor = new self();
         $nearby_data = $processor->get_nearby_data_for_frontend($point_id, $point_type ?: 'poi');
         
-        if ($nearby_data && !empty($nearby_data['items'])) {
+        error_log("[On-Demand] check_processing_status - nearby_data exists: " . ($nearby_data ? 'YES' : 'NO'));
+        if ($nearby_data) {
+            error_log("[On-Demand] check_processing_status - items: " . count($nearby_data['items'] ?? []));
+            error_log("[On-Demand] check_processing_status - isochrones: " . (isset($nearby_data['isochrones']) ? 'YES' : 'NO'));
+        }
+        
+        // Vrátit data, pokud máme nearby items NEBO isochrony
+        if ($nearby_data && (!empty($nearby_data['items']) || !empty($nearby_data['isochrones']))) {
+            error_log("[On-Demand] check_processing_status - returning completed status with data");
             return array(
                 'status' => 'completed',
                 'point_id' => $point_id,
                 'point_type' => $point_type ?: 'poi',
-                'items' => $nearby_data['items'],
+                'items' => $nearby_data['items'] ?? [],
                 'isochrones' => $nearby_data['isochrones'] ?? null,
                 'cached_at' => 'database',
                 'processing_time' => 'unknown'
             );
         }
         
+        error_log("[On-Demand] check_processing_status - no data found, returning not_cached");
         return array(
             'status' => 'not_cached',
             'message' => 'Bod nebyl zpracován nebo cache vypršel'

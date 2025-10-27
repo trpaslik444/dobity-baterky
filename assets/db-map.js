@@ -1959,6 +1959,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           <button type="button" id="db-open-provider-modal" class="db-filter-provider-btn">Vybrat provozovatele...</button>
         </div>
 
+        <!-- Ostatní filtry dočasně zakomentovány
         <div class="db-filter-section">
           <div class="db-filter-section__title">Amenity v okolí</div>
           <div id="db-filter-amenity" class="db-filter-amenity-list"></div>
@@ -1967,6 +1968,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         <div class="db-filter-section">
           <div class="db-filter-section__title">Přístup</div>
           <div id="db-filter-access" class="db-filter-access-list"></div>
+        </div>
+        -->
+
+        <div class="db-filter-section">
+          <label class="db-filter-checkbox">
+            <input type="checkbox" id="db-filter-free" />
+            <span>Zdarma</span>
+          </label>
         </div>
 
         <div class="db-filter-section">
@@ -2545,6 +2554,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         amenities: Array.from(filterState.amenities),
         access: Array.from(filterState.access),
         providers: Array.from(filterState.providers),
+        free: filterState.free,
         showOnlyRecommended: showOnlyRecommended
       };
       localStorage.setItem('db-map-filters', JSON.stringify(settings));
@@ -2565,6 +2575,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         filterState.amenities = new Set(settings.amenities || []);
         filterState.access = new Set(settings.access || []);
         filterState.providers = new Set(settings.providers || []);
+        filterState.free = settings.free || false;
         showOnlyRecommended = settings.showOnlyRecommended || false;
         return true;
       }
@@ -2597,6 +2608,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       const pMaxValue = document.getElementById('db-power-max-value');
       if (pMinValue) pMinValue.textContent = `${filterState.powerMin} kW`;
       if (pMaxValue) pMaxValue.textContent = `${filterState.powerMax} kW`;
+    }
+    
+    // Aplikovat zdarma
+    const freeCheckbox = document.getElementById('db-filter-free');
+    if (freeCheckbox) {
+      freeCheckbox.checked = filterState.free;
     }
     
     // Aplikovat DB doporučuje
@@ -2655,6 +2672,7 @@ document.addEventListener('DOMContentLoaded', async function() {
            filterState.access.size > 0 ||
            filterState.providers.size > 0 ||
            filterState.powerMin > 0 || filterState.powerMax < 400 ||
+           filterState.free ||
            showOnlyRecommended;
   }
   
@@ -2667,6 +2685,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (filterState.providers.size > 0) count += filterState.providers.size;
     if (filterState.powerMin > 0) count++;
     if (filterState.powerMax < 400) count++;
+    if (filterState.free) count++;
     if (showOnlyRecommended) count++;
     return count;
   }
@@ -2761,12 +2780,19 @@ document.addEventListener('DOMContentLoaded', async function() {
       filterState.amenities = new Set();
       filterState.access = new Set();
       filterState.providers = new Set();
+      filterState.free = false;
       showOnlyRecommended = false;
       
       if (pMinR && pMaxR) { 
         pMinR.value = '0'; 
         pMaxR.value = '400'; 
         updatePowerSlider();
+      }
+      
+      // Resetovat zdarma checkbox
+      const freeCheckboxReset = document.getElementById('db-filter-free');
+      if (freeCheckboxReset) {
+        freeCheckboxReset.checked = false;
       }
       
       // Resetovat DB doporučuje checkbox
@@ -2836,6 +2862,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         renderCards('', null, false);
       }
     });
+    
+    // Event listener pro "Zdarma" checkbox
+    const freeCheckbox = document.getElementById('db-filter-free');
+    if (freeCheckbox) {
+      freeCheckbox.addEventListener('change', () => {
+        filterState.free = !!freeCheckbox.checked;
+        updateResetButtonVisibility();
+        saveFilterSettings();
+        if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
+      });
+    }
     
     // Event listener pro "DB doporučuje" checkbox
     const recommendedEl = document.getElementById('db-map-toggle-recommended');
@@ -4137,7 +4176,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       if (processResponse.ok) {
         const processData = await processResponse.json();
-        const hasData = processData.status === 'completed' && processData.items && Array.isArray(processData.items) && processData.items.length > 0;
+        // Máme data pokud máme items NEBO isochrony
+        const hasItems = processData.status === 'completed' && processData.items && Array.isArray(processData.items) && processData.items.length > 0;
+        const hasIsochrones = processData.status === 'completed' && processData.isochrones && processData.isochrones.geojson;
+        const hasData = hasItems || hasIsochrones;
         
         // Uložit do frontend cache
         optimizedNearbyCache.set(cacheKey, {
@@ -5636,7 +5678,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     connectors: new Set(),
     amenities: new Set(),
     access: new Set(),
-    providers: new Set()
+    providers: new Set(),
+    free: false
   };
   
   // Funkce pro počáteční načtení bodů - používá stávající data z mapy
@@ -6247,6 +6290,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (filterState.providers && filterState.providers.size > 0) {
         const provider = p.provider || p.operator_original;
         if (!provider || !filterState.providers.has(provider)) {
+          return false;
+        }
+      }
+      
+      // 4. Filtrování podle ceny (zdarma)
+      if (filterState.free) {
+        const price = p.price || p._db_price;
+        if (price !== 'free') {
           return false;
         }
       }
