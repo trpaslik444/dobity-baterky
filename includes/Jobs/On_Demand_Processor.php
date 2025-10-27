@@ -230,13 +230,14 @@ class On_Demand_Processor {
             }
             
             // Zpracovat nearby data - typ se automaticky přemapuje v recompute_nearby_for_origin
-            // POI<｜place▁holder▁no▁776｜> → hledá charging_location, charging_location → hledá poi
-            $search_type = ($point_type === 'poi') ? 'charging_location' : 'poi';
+            // Předat originální point_type pro automatické přemapování v recompute_nearby_for_origin
+            $search_type = $point_type; // Předat originální typ pro automatické přemapování
             
             // Log pro debug
-            error_log("[On-Demand] Calling recompute_nearby_for_origin for point_id={$point_id}, search_type={$search_type}");
+            error_log("[On-Demand] Calling recompute_nearby_for_origin for point_id={$point_id}, point_type={$point_type}");
+
+            $nearby_result = $this->nearby_job->recompute_nearby_for_origin($point_id, $point_type);
             
-            $nearby_result = $this->nearby_job->recompute_nearby_for_origin($point_id, $search_type);
             
             error_log("[On-Demand] recompute_nearby_for_origin result: " . print_r($nearby_result, true));
             

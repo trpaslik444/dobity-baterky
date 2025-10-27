@@ -37,7 +37,7 @@ class REST_On_Demand {
         register_rest_route('db/v1', '/ondemand/process', array(
             'methods' => 'POST',
             'callback' => array($this, 'process_point'),
-            'permission_callback' => '__return_true', // Token check probíhá v callbacku
+            'permission_callback' => function() { return is_user_logged_in(); }, // Pouze přihlášení uživatelé, token check probíhá v callbacku
             'args' => array(
                 'point_id' => array(
                     'required' => true,
@@ -96,7 +96,7 @@ class REST_On_Demand {
         register_rest_route('db/v1', '/ondemand/token', array(
             'methods' => 'POST',
             'callback' => array($this, 'generate_token'),
-            'permission_callback' => '__return_true', // Public endpoint, token slouží jako ochrana
+            'permission_callback' => function() { return is_user_logged_in(); }, // Pouze přihlášení uživatelé
             'args' => array(
                 'point_id' => array(
                     'required' => true,
