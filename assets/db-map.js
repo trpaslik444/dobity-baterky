@@ -4941,6 +4941,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   const LocationService = (() => {
     let watchId = null;
     let last = null;
+    let shouldBeWatching = false;
+    let initialFixRequested = false;
     const listeners = new Set();
     const cacheKey = 'db_last_location';
 
@@ -4954,8 +4956,25 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!('permissions' in navigator)) return 'prompt';
       try { const s = await navigator.permissions.query({ name: 'geolocation' }); return s.state; } catch(_) { return 'prompt'; }
     }
+    function ensureInitialFix() {
+      if (!navigator.geolocation || initialFixRequested) return;
+      initialFixRequested = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          initialFixRequested = false;
+          last = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now() };
+          saveCache(last);
+          listeners.forEach(fn => { try { fn(last); } catch(_) {} });
+        },
+        () => { initialFixRequested = false; },
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 8000 }
+      );
+    }
     function startWatch() {
-      if (!navigator.geolocation || watchId !== null) return;
+      if (!navigator.geolocation) return;
+      shouldBeWatching = true;
+      ensureInitialFix();
+      if (watchId !== null) return;
       watchId = navigator.geolocation.watchPosition(
         (pos) => {
           last = { lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy, ts: Date.now() };
@@ -4963,10 +4982,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           listeners.forEach(fn => { try { fn(last); } catch(_) {} });
         },
         (_) => {},
-        { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+        { enableHighAccuracy: true, maximumAge: 2500, timeout: 8000 }
       );
     }
     function stopWatch() {
+      shouldBeWatching = false;
       if (watchId !== null) {
         try { navigator.geolocation.clearWatch(watchId); } catch(_) {}
         watchId = null;
@@ -4975,6 +4995,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     function onUpdate(fn) { listeners.add(fn); return () => listeners.delete(fn); }
     function getLast() { return last || loadCache(); }
     async function autoStartIfGranted() { try { if (await permissionState() === 'granted') startWatch(); } catch(_) {} }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (watchId !== null) {
+            try { navigator.geolocation.clearWatch(watchId); } catch(_) {}
+            watchId = null;
+          }
+        } else if (shouldBeWatching) {
+          startWatch();
+        }
+      });
+    }
     return { startWatch, stopWatch, onUpdate, getLast, permissionState, autoStartIfGranted };
   })();
 
@@ -4987,28 +5019,62 @@ document.addEventListener('DOMContentLoaded', async function() {
   let __dbFirstFixDone = false;
   let __dbHeadingMarker = null;
   let __dbCurrentHeading = null; // degrees 0..360
+  let __dbShouldFollowUser = true;
+  let __dbAutoPanning = false;
+  let __dbFollowEventsBound = false;
+  let __dbAutoPanToken = 0;
 
   LocationService.onUpdate((p) => {
     if (!map || !p) return;
     const latlng = [p.lat, p.lng];
+    if (!__dbFollowEventsBound && map) {
+      const disableFollow = () => { if (!__dbAutoPanning) __dbShouldFollowUser = false; };
+      map.on('dragstart zoomstart touchstart movestart mousedown wheel', disableFollow);
+      map.on('moveend', () => { __dbAutoPanning = false; });
+      __dbFollowEventsBound = true;
+    }
     if (!__dbUserMarker) {
       __dbUserMarker = L.circleMarker(latlng, { radius: 6, color: '#049FE8', fillColor: '#049FE8', fillOpacity: 1, className: 'db-live-loc' }).addTo(map);
       __dbUserAccuracy = L.circle(latlng, { radius: p.acc || 50, color: '#049FE8', weight: 1, fillColor: '#049FE8', fillOpacity: 0.12 }).addTo(map);
-      // Vytvořit marker směru (šípka) – DivIcon s rotací dle headingu
-      const arrowHtml = '<div class="db-heading-wrapper">\
-          <div class="db-heading-fov"></div>\
-          <div class="db-live-dot"><span></span></div>\
-        </div>';
-      __dbHeadingMarker = L.marker(latlng, { icon: L.divIcon({ className: 'db-heading-container', html: arrowHtml, iconSize: [120,120], iconAnchor: [60,60] }), interactive: false }).addTo(map);
+      if (HeadingService.isSupported()) {
+        const arrowHtml = '<div class="db-heading-rotator" style="--db-heading-rotation: 0deg;">\
+            <div class="db-heading-wrapper">\
+              <div class="db-heading-fov"></div>\
+              <div class="db-live-dot"><span></span></div>\
+            </div>\
+          </div>';
+        __dbHeadingMarker = L.marker(latlng, { icon: L.divIcon({ className: 'db-heading-container', html: arrowHtml, iconSize: [120,120], iconAnchor: [60,60] }), interactive: false }).addTo(map);
+        HeadingService.start();
+      }
     } else {
       __dbUserMarker.setLatLng(latlng);
       __dbUserAccuracy.setLatLng(latlng).setRadius(p.acc || 50);
       if (__dbHeadingMarker) __dbHeadingMarker.setLatLng(latlng);
     }
     if (!__dbFirstFixDone && (p.acc || 9999) <= 2000) {
-      try { map.fitBounds(__dbUserAccuracy.getBounds(), { maxZoom: 15 }); } catch(_) {}
+      try {
+        const autoPanRun = ++__dbAutoPanToken;
+        __dbAutoPanning = true;
+        map.fitBounds(__dbUserAccuracy.getBounds(), { maxZoom: 15 });
+        setTimeout(() => { if (__dbAutoPanToken === autoPanRun) __dbAutoPanning = false; }, 800);
+      } catch(_) {
+        __dbAutoPanning = false;
+      }
       __dbFirstFixDone = true;
-      // TODO: případné doplnění: debounce načítání okolních dat
+    } else if (__dbShouldFollowUser && map && __dbUserMarker) {
+      try {
+        const current = __dbUserMarker.getLatLng();
+        const next = L.latLng(latlng[0], latlng[1]);
+        const moved = !current || map.distance(current, next) > Math.max((p.acc || 0) / 2, 3);
+        if (moved) {
+          const autoPanRun = ++__dbAutoPanToken;
+          __dbAutoPanning = true;
+          map.panTo(next, { animate: true, duration: 0.6, easeLinearity: 0.25 });
+          setTimeout(() => { if (__dbAutoPanToken === autoPanRun) __dbAutoPanning = false; }, 800);
+        }
+      } catch(_) {
+        __dbAutoPanning = false;
+      }
     }
   });
 
@@ -5027,35 +5093,46 @@ document.addEventListener('DOMContentLoaded', async function() {
                 const latlng = [last.lat, last.lng];
                 if (__dbUserAccuracy) {
                   __dbUserAccuracy.setLatLng(latlng).setRadius(last.acc || 50);
+                  const autoPanRun = ++__dbAutoPanToken;
+                  __dbAutoPanning = true;
                   map.fitBounds(__dbUserAccuracy.getBounds(), { maxZoom: 15 });
+                  setTimeout(() => { if (__dbAutoPanToken === autoPanRun) __dbAutoPanning = false; }, 800);
                 } else {
+                  const autoPanRun = ++__dbAutoPanToken;
+                  __dbAutoPanning = true;
                   map.setView(latlng, Math.max(map.getZoom() || 13, 15));
+                  setTimeout(() => { if (__dbAutoPanToken === autoPanRun) __dbAutoPanning = false; }, 800);
                 }
-              } catch(_) {}
+              } catch(_) {
+                __dbAutoPanning = false;
+              }
             }
             LocationService.startWatch();
+            __dbShouldFollowUser = true;
             // Spustit i HeadingService pokud je k dispozici
-            HeadingService.start();
+            if (HeadingService.isSupported()) HeadingService.start();
             return;
           }
           // prompt nebo unknown – watchPosition vyvolá dialog
           LocationService.startWatch();
+          __dbShouldFollowUser = true;
           // iOS 13+ vyžaduje explicitní povolení pro orientaci zařízení – vyžádej při kliknutí
           if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try { 
+            try {
               const permission = await DeviceOrientationEvent.requestPermission();
               if (permission === 'granted') {
-                HeadingService.start();
+                if (HeadingService.isSupported()) HeadingService.start();
               }
             } catch(_) {}
           } else {
             // Pro ostatní prohlížeče spustit přímo
-            HeadingService.start();
+            if (HeadingService.isSupported()) HeadingService.start();
           }
         } catch(_) {
           LocationService.startWatch();
+          __dbShouldFollowUser = true;
           // Spustit i HeadingService pokud je k dispozici
-          HeadingService.start();
+          if (HeadingService.isSupported()) HeadingService.start();
         }
       });
       btn.dataset.dbListenerAttached = '1';
@@ -5064,10 +5141,21 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // ===== SMĚR NATOČENÍ (HEADING) – mobilní zařízení =====
   const HeadingService = (() => {
+    const mobileUA = /Mobi|Android|iPhone|iPad|iPod/i;
     let listening = false;
-    let lastHeading = null;
+    let filteredHeading = null;
     const listeners = new Set();
     function normalize(deg){ if (deg == null || isNaN(deg)) return null; let d = ((deg % 360) + 360) % 360; return d; }
+    function isSupported(){
+      if (!mobileUA.test(navigator.userAgent || '')) return false;
+      if (typeof DeviceOrientationEvent === 'undefined') return false;
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') return true;
+      return 'ondeviceorientationabsolute' in window || 'ondeviceorientation' in window;
+    }
+    function shortestDiff(from, to){
+      const diff = ((to - from + 540) % 360) - 180;
+      return diff;
+    }
     function onOrientation(e){
       // iOS: webkitCompassHeading (0 = sever, roste s hodinami)
       let h = null;
@@ -5085,29 +5173,38 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       h = normalize(h);
       if (h === null) return;
-      lastHeading = h;
-      listeners.forEach(fn => { try { fn(lastHeading); } catch(_) {} });
+      if (filteredHeading === null) {
+        filteredHeading = h;
+      } else {
+        const diff = shortestDiff(filteredHeading, h);
+        if (Math.abs(diff) < 1.2) return; // ignorovat drobný šum
+        filteredHeading = normalize(filteredHeading + diff * 0.35);
+      }
+      listeners.forEach(fn => { try { fn(filteredHeading); } catch(_) {} });
     }
-    function start(){ if (listening) return; listening = true; window.addEventListener('deviceorientation', onOrientation, { passive: true }); }
+    function start(){ if (listening || !isSupported()) return; listening = true; window.addEventListener('deviceorientation', onOrientation, { passive: true }); }
     function stop(){ if (!listening) return; listening = false; window.removeEventListener('deviceorientation', onOrientation); }
     function onUpdate(fn){ listeners.add(fn); return () => listeners.delete(fn); }
-    function get(){ return lastHeading; }
-    return { start, stop, onUpdate, get };
+    function get(){ return filteredHeading; }
+    return { start, stop, onUpdate, get, isSupported };
   })();
 
   // Aktivovat pouze na mobilech
-  if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+  if (HeadingService.isSupported()) {
     // Nezačínat automaticky - počkat na oprávnění
     // HeadingService.start();
-    
+
     HeadingService.onUpdate((deg) => {
       __dbCurrentHeading = deg;
       if (__dbHeadingMarker && typeof deg === 'number') {
         const el = __dbHeadingMarker.getElement();
         if (el) {
-          try { 
+          try {
             // Rotovat celý marker podle skutečného headingu
-            el.style.transform = `rotate(${deg}deg)`; 
+            const rotator = el.querySelector('.db-heading-rotator');
+            if (rotator) {
+              rotator.style.setProperty('--db-heading-rotation', `${deg}deg`);
+            }
           } catch(_) {}
         }
       }
