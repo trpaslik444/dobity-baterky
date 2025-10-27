@@ -9613,6 +9613,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 setTimeout(() => {
   console.log('[DB Map] Registering favorites star button click listener OUTSIDE DOMContentLoaded');
   document.addEventListener('click', async (event) => {
+    console.log('[DB Map] Click detected on:', event.target, 'has db-favorite-star-btn:', event.target.classList.contains('db-favorite-star-btn'));
     const starBtn = event.target.closest('.db-favorite-star-btn');
     if (!starBtn) {
       return;
