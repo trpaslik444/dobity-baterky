@@ -4016,32 +4016,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     }
     
-    // Event listener pro AC checkbox
-    const acCheckbox = document.getElementById('db-filter-ac');
-    if (acCheckbox) {
-      acCheckbox.addEventListener('change', () => {
-        filterState.ac = !!acCheckbox.checked;
-        updateResetButtonVisibility();
-        saveFilterSettings();
-        if (typeof renderCards === 'function') {
-          renderCards('', null, false);
-        }
-      });
-    }
-    
-    // Event listener pro DC checkbox
-    const dcCheckbox = document.getElementById('db-filter-dc');
-    if (dcCheckbox) {
-      dcCheckbox.addEventListener('change', () => {
-        filterState.dc = !!dcCheckbox.checked;
-        updateResetButtonVisibility();
-        saveFilterSettings();
-        if (typeof renderCards === 'function') {
-          renderCards('', null, false);
-        }
-      });
-    }
-    
     // Event listener pro "DB doporučuje" checkbox
     const recommendedEl = document.getElementById('db-map-toggle-recommended');
     if (recommendedEl) {
@@ -7653,6 +7627,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       const p = f.properties || {};
       if (p.post_type !== 'charging_location') return true;
       
+      // Poznámka: AC/DC filtry jsou záměrně ODSTRAŇOVÁNY z UI, protože filtrování podle typu proudu 
+      // probíhá přes výběr konkrétních konektorů (Type 2, CCS, CHAdeMO, etc.). To umožňuje 
+      // přesnější filtrování - uživatel vybere konkrétní konektor, který automaticky implikuje AC/DC typ.
       
       // 1. Filtrování podle výkonu
       const maxKw = getStationMaxKw(p);
