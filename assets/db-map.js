@@ -9609,35 +9609,26 @@ document.addEventListener('DOMContentLoaded', async function() {
   
 }); // Konec DOMContentLoaded handleru
 
-// Event listener pro favorites star button - mimo DOMContentLoaded
-setTimeout(() => {
-  console.log('[DB Map] Inside setTimeout, about to register listener');
-  console.log('[DB Map] Registering favorites star button click listener OUTSIDE DOMContentLoaded');
-  document.addEventListener('click', async (event) => {
-    console.log('[DB Map] Click detected on:', event.target, 'has db-favorite-star-btn:', event.target.classList.contains('db-favorite-star-btn'));
-    const starBtn = event.target.closest('.db-favorite-star-btn');
-    console.log('[DB Map] starBtn:', starBtn);
-    if (!starBtn) {
-      return;
-    }
-    
-    console.log('[DB Map] Star button clicked!');
-    event.preventDefault();
-    event.stopPropagation();
-    
-    const postId = starBtn.getAttribute('data-db-favorite-post-id');
-    if (!postId) {
-      console.log('[DB Map] No post ID found');
-      return;
-    }
-    
-    console.log('[DB Map] Post ID:', postId);
-    
-    // Pokud handleFavoritesToggle existuje, zavolat ho
-    if (typeof handleFavoritesToggle === 'function') {
-      await handleFavoritesToggle(event);
-    } else {
-      console.log('[DB Map] handleFavoritesToggle not found');
+// Event listener pro favorites star button - inline onclick handler
+setInterval(() => {
+  document.querySelectorAll('.db-favorite-star-btn').forEach(btn => {
+    if (!btn.dataset._listenerAttached) {
+      btn.dataset._listenerAttached = 'true';
+      btn.addEventListener('click', async (event) => {
+        console.log('[DB Map] Star button clicked via direct listener!');
+        event.preventDefault();
+        event.stopPropagation();
+        
+        const postId = btn.getAttribute('data-db-favorite-post-id');
+        console.log('[DB Map] Post ID:', postId);
+        
+        // Otevřít favorites panel pomocí handleFavoritesToggle
+        if (typeof handleFavoritesToggle === 'function') {
+          await handleFavoritesToggle(event);
+        } else {
+          console.log('[DB Map] handleFavoritesToggle not found');
+        }
+      });
     }
   });
-}, 1000);
+}, 2000);
