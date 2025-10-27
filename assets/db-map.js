@@ -9569,6 +9569,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }, 60000); // Každou minutu
   
+  console.log('[DB Map] About to register event listener');
+  
   // Event listener pro klikání na hvězdičku favorites
   console.log('[DB Map] Registering favorites star button click listener');
   document.addEventListener('click', async (event) => {
