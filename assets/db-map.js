@@ -71,6 +71,18 @@ const LocationService = (() => {
 // Auto-start, pokud je již povoleno
 LocationService.autoStartIfGranted();
 
+function escapeHtml(str) {
+  if (str === null || typeof str === 'undefined') {
+    return '';
+  }
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 /**
  * Upravit isochrones podle frontend nastavení rychlosti chůze
  */
@@ -652,6 +664,1125 @@ document.addEventListener('DOMContentLoaded', async function() {
     let mobileSearchController = null;
     let desktopSearchController = null;
   let lastRenderedFeatures = [];
+  const FAVORITES_LAST_FOLDER_KEY = 'dbFavoritesLastFolder';
+  const favoritesState = {
+    enabled: !!(dbMapData && dbMapData.favorites && dbMapData.favorites.enabled),
+    restUrl: (dbMapData && dbMapData.favorites && dbMapData.favorites.restUrl) || '/wp-json/db/v1/favorites',
+    maxCustomFolders: (dbMapData && dbMapData.favorites && dbMapData.favorites.maxCustomFolders) || 0,
+    defaultLimit: (dbMapData && dbMapData.favorites && dbMapData.favorites.defaultLimit) || 0,
+    customLimit: (dbMapData && dbMapData.favorites && dbMapData.favorites.customLimit) || 0,
+    folders: new Map(),
+    assignments: new Map(),
+    isActive: false,
+    activeFolderId: null,
+    lastActivatedFolderId: null,
+    previousFeatures: [],
+    activeFeatures: [],
+    fetchedOnce: false,
+    isPanelOpen: false,
+    isLoading: false,
+    loadingPromise: null,
+    previousLoadMode: null,
+  };
+  let favoritesPanel = null;
+  let favoritesOverlay = null;
+  let favoritesBanner = null;
+  let favoritesButton = null;
+  let favoritesCountBadge = null;
+  let favoritesCreateForm = null;
+  let favoritesCreateButton = null;
+  let favoritesEmptyHint = null;
+  let favoritesExitButton = null;
+  let favoritesLists = { default: null, custom: null };
+  let favoritesAssignModal = null;
+  let favoritesAssignOverlay = null;
+  let favoritesAssignPostId = null;
+  let favoritesAssignProps = null;
+
+  function initializeFavoritesState() {
+    if (!favoritesState.enabled) {
+      return;
+    }
+    try {
+      const data = dbMapData && dbMapData.favorites ? dbMapData.favorites : null;
+      if (data && Array.isArray(data.folders)) {
+        data.folders.forEach(folder => {
+          if (!folder || !folder.id) return;
+          favoritesState.folders.set(String(folder.id), {
+            id: String(folder.id),
+            name: folder.name || '',
+            icon: folder.icon || '★',
+            limit: folder.limit || 0,
+            type: folder.type || 'custom',
+            count: folder.count || 0,
+          });
+        });
+      }
+      if (data && data.assignments && typeof data.assignments === 'object') {
+        Object.entries(data.assignments).forEach(([id, folderId]) => {
+          const numericId = parseInt(id, 10);
+          if (Number.isFinite(numericId) && folderId) {
+            favoritesState.assignments.set(numericId, String(folderId));
+          }
+        });
+      }
+      try {
+        const storedFolder = localStorage.getItem(FAVORITES_LAST_FOLDER_KEY);
+        if (storedFolder) {
+          favoritesState.lastActivatedFolderId = storedFolder;
+        }
+      } catch (_) {
+        favoritesState.lastActivatedFolderId = null;
+      }
+      recomputeFavoriteCounts();
+      favoritesState.fetchedOnce = true;
+    } catch (err) {
+      console.error('[DB Map] Favorites init failed', err);
+    }
+  }
+
+  function recomputeFavoriteCounts() {
+    favoritesState.folders.forEach(folder => {
+      folder.count = 0;
+    });
+    favoritesState.assignments.forEach(folderId => {
+      const folder = favoritesState.folders.get(String(folderId));
+      if (folder) {
+        folder.count = (folder.count || 0) + 1;
+      }
+    });
+  }
+
+  function getFavoriteFolder(folderId) {
+    if (!folderId) return null;
+    return favoritesState.folders.get(String(folderId)) || null;
+  }
+
+  function getFavoriteFolderForProps(props) {
+    if (!favoritesState.enabled || !props) {
+      return null;
+    }
+    if (props.favorite_folder) {
+      return {
+        id: String(props.favorite_folder.id || props.favorite_folder_id || ''),
+        name: props.favorite_folder.name || '',
+        icon: props.favorite_folder.icon || '★',
+        type: props.favorite_folder.type || 'custom',
+        limit: props.favorite_folder.limit || 0,
+        count: props.favorite_folder.count || props.favorite_folder.items_count || props.favorite_folder.count_total || 0,
+      };
+    }
+    const numericId = Number.parseInt(props.id, 10);
+    const assignment = Number.isFinite(numericId)
+      ? favoritesState.assignments.get(numericId)
+      : favoritesState.assignments.get(props.id);
+    const folderId = props.favorite_folder_id || assignment;
+    if (!folderId) {
+      return null;
+    }
+    const fromState = getFavoriteFolder(folderId);
+    return fromState ? { ...fromState } : null;
+  }
+
+  function getFavoriteStarIconHtml(active) {
+    const fill = active ? '#FFB400' : 'none';
+    const stroke = '#FFB400';
+    return `
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" fill="${fill}" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polygon>
+      </svg>
+    `;
+  }
+
+  function getFavoriteStarButtonHtml(props, context) {
+    if (!favoritesState.enabled || !props || !props.id) {
+      return '';
+    }
+    const folder = getFavoriteFolderForProps(props);
+    const active = !!folder;
+    const title = active
+      ? `Uloženo ve složce „${escapeHtml(folder?.name || '')}“`
+      : 'Přidat do oblíbených';
+    return `
+      <button type="button" class="db-favorite-star-btn${active ? ' active' : ''}" data-db-favorite-trigger="${context}" data-db-favorite-context="${context}" data-db-favorite-post-id="${props.id}" aria-pressed="${active ? 'true' : 'false'}" title="${title}">
+        ${getFavoriteStarIconHtml(active)}
+      </button>
+    `;
+  }
+
+  function getFavoriteChipHtml(props, context) {
+    if (!favoritesState.enabled) {
+      return '';
+    }
+    const folder = getFavoriteFolderForProps(props);
+    if (!folder) {
+      return '';
+    }
+    const icon = escapeHtml(folder.icon || '★');
+    const name = escapeHtml(folder.name || '');
+    return `
+      <div class="db-favorite-chip db-favorite-chip--${context}" data-db-favorite-context="${context}" data-db-favorite-post-id="${props.id}">
+        <span class="db-favorite-chip__icon">${icon}</span>
+        <span class="db-favorite-chip__label">${name}</span>
+      </div>
+    `;
+  }
+
+  function getFavoriteMarkerBadgeHtml(props, active) {
+    if (!favoritesState.enabled) {
+      return '';
+    }
+    const folder = getFavoriteFolderForProps(props);
+    if (!folder) {
+      return '';
+    }
+    const icon = escapeHtml(folder.icon || '★');
+    const size = active ? 20 : 16;
+    return `
+      <div class="db-marker-favorite${active ? ' db-marker-favorite--active' : ''}" data-db-favorite-post-id="${props.id}" aria-hidden="true" style="width:${size}px;height:${size}px;">
+        <span>${icon}</span>
+      </div>
+    `;
+  }
+
+  function refreshFavoriteUi(postId, folder) {
+    if (!postId) {
+      return;
+    }
+    const selector = `[data-db-favorite-post-id="${postId}"]`;
+    document.querySelectorAll(selector).forEach((element) => {
+      if (element.classList.contains('db-favorite-star-btn')) {
+        const isActive = !!folder;
+        const context = element.getAttribute('data-db-favorite-context') || '';
+        element.classList.toggle('active', isActive);
+        element.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        element.innerHTML = getFavoriteStarIconHtml(isActive);
+        const title = isActive
+          ? `Uloženo ve složce „${escapeHtml(folder?.name || '')}“`
+          : 'Přidat do oblíbených';
+        element.setAttribute('title', title);
+        if (context) {
+          const chipSelector = `.db-favorite-chip[data-db-favorite-post-id="${postId}"][data-db-favorite-context="${context}"]`;
+          let chip = document.querySelector(chipSelector);
+          if (isActive && !chip) {
+            const html = getFavoriteChipHtml({ id: postId, favorite_folder: folder }, context);
+            if (html) {
+              if (context === 'card') {
+                const cardEl = element.closest('.db-map-card');
+                if (cardEl) {
+                  const titleEl = cardEl.querySelector('.db-map-card-title');
+                  if (titleEl) {
+                    titleEl.insertAdjacentHTML('beforebegin', html);
+                  } else {
+                    cardEl.insertAdjacentHTML('afterbegin', html);
+                  }
+                }
+              } else if (context === 'sheet') {
+                const sheet = document.getElementById('db-mobile-sheet');
+                const header = sheet ? sheet.querySelector('.sheet-header') : null;
+                if (header) {
+                  header.insertAdjacentHTML('afterend', html);
+                }
+              } else if (context === 'detail') {
+                const modal = document.getElementById('db-detail-modal');
+                const titleRow = modal ? modal.querySelector('.title-row') : null;
+                if (titleRow) {
+                  titleRow.insertAdjacentHTML('afterend', html);
+                }
+              }
+            }
+            chip = document.querySelector(chipSelector);
+          }
+          if (chip && isActive) {
+            const iconEl = chip.querySelector('.db-favorite-chip__icon');
+            if (iconEl) {
+              iconEl.textContent = folder.icon || '★';
+            }
+            const label = chip.querySelector('.db-favorite-chip__label');
+            if (label) {
+              label.textContent = folder.name || '';
+            }
+          } else if (chip && !isActive) {
+            chip.remove();
+          }
+        }
+      } else if (element.classList.contains('db-favorite-chip')) {
+        if (!folder) {
+          element.remove();
+        } else {
+          const iconEl = element.querySelector('.db-favorite-chip__icon');
+          if (iconEl) {
+            iconEl.textContent = folder.icon || '★';
+          }
+          const label = element.querySelector('.db-favorite-chip__label');
+          if (label) {
+            label.textContent = folder.name || '';
+          }
+        }
+      }
+    });
+  }
+
+  function getTotalFavoriteCount() {
+    let total = 0;
+    favoritesState.folders.forEach(folder => {
+      total += folder.count || 0;
+    });
+    return total;
+  }
+
+  async function fetchFavoritesState(force = false) {
+    if (!favoritesState.enabled) {
+      return favoritesState;
+    }
+    if (favoritesState.loadingPromise) {
+      return favoritesState.loadingPromise;
+    }
+    if (!force && favoritesState.fetchedOnce) {
+      return favoritesState;
+    }
+    favoritesState.isLoading = true;
+    const promise = (async () => {
+      try {
+        const res = await fetch(favoritesState.restUrl, {
+          method: 'GET',
+          credentials: 'same-origin',
+          headers: {
+            'Accept': 'application/json',
+            'X-WP-Nonce': dbMapData?.restNonce || '',
+          },
+        });
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        favoritesState.folders.clear();
+        favoritesState.assignments.clear();
+        if (data && Array.isArray(data.folders)) {
+          data.folders.forEach(folder => {
+            if (!folder || !folder.id) return;
+            favoritesState.folders.set(String(folder.id), {
+              id: String(folder.id),
+              name: folder.name || '',
+              icon: folder.icon || '★',
+              limit: folder.limit || 0,
+              type: folder.type || 'custom',
+              count: folder.count || 0,
+            });
+          });
+        }
+        if (data && data.assignments && typeof data.assignments === 'object') {
+          Object.entries(data.assignments).forEach(([id, folderId]) => {
+            const numericId = parseInt(id, 10);
+            if (Number.isFinite(numericId) && folderId) {
+              favoritesState.assignments.set(numericId, String(folderId));
+            }
+          });
+        }
+        recomputeFavoriteCounts();
+        favoritesState.fetchedOnce = true;
+        updateFavoritesButtonState();
+        if (favoritesState.isPanelOpen) {
+          renderFavoritesPanel();
+        }
+      } catch (err) {
+        console.error('[DB Map] Favorites fetch failed', err);
+      } finally {
+        favoritesState.isLoading = false;
+        favoritesState.loadingPromise = null;
+      }
+      return favoritesState;
+    })();
+    favoritesState.loadingPromise = promise;
+    return promise;
+  }
+
+  initializeFavoritesState();
+
+  function updateFavoritesButtonState() {
+    if (!favoritesState.enabled) {
+      if (favoritesButton) favoritesButton.classList.remove('favorites-active');
+      if (favoritesCountBadge) favoritesCountBadge.style.display = 'none';
+      return;
+    }
+    if (favoritesButton && !document.body.contains(favoritesButton)) {
+      favoritesButton = null;
+      favoritesCountBadge = null;
+    }
+    if (!favoritesButton) {
+      favoritesButton = document.getElementById('db-favorites-btn');
+      favoritesCountBadge = favoritesButton ? favoritesButton.querySelector('.db-favorites-count-badge') : null;
+    }
+    let count = getTotalFavoriteCount();
+    if (favoritesState.isActive && favoritesState.activeFolderId) {
+      const folder = getFavoriteFolder(favoritesState.activeFolderId);
+      count = folder ? (folder.count || 0) : 0;
+    }
+    if (favoritesCountBadge) {
+      if (count > 0) {
+        favoritesCountBadge.textContent = String(count);
+        favoritesCountBadge.style.display = 'inline-flex';
+      } else {
+        favoritesCountBadge.style.display = 'none';
+      }
+    }
+    if (favoritesButton) {
+      if (favoritesState.isActive) {
+        favoritesButton.classList.add('favorites-active');
+      } else {
+        favoritesButton.classList.remove('favorites-active');
+      }
+    }
+  }
+
+  function fitMapToFeatures(list) {
+    try {
+      if (!map || !Array.isArray(list) || list.length === 0) {
+        return;
+      }
+      const coords = list
+        .map(f => Array.isArray(f?.geometry?.coordinates) ? [f.geometry.coordinates[1], f.geometry.coordinates[0]] : null)
+        .filter(point => Array.isArray(point) && Number.isFinite(point[0]) && Number.isFinite(point[1]));
+      if (!coords.length) {
+        return;
+      }
+      if (coords.length === 1) {
+        map.setView(coords[0], Math.max(map.getZoom() || 12, 12), { animate: true, duration: 0.6 });
+        return;
+      }
+      const bounds = L.latLngBounds(coords.map(([lat, lng]) => L.latLng(lat, lng)));
+      map.fitBounds(bounds.pad(0.15), { padding: [60, 60], animate: true, duration: 0.6 });
+    } catch (err) {
+      console.error('[DB Map] fitMapToFeatures failed', err);
+    }
+  }
+
+  async function waitForMapReady() {
+    if (!map || typeof map.whenReady !== 'function') {
+      return;
+    }
+    await new Promise((resolve) => {
+      map.whenReady(() => resolve());
+    });
+  }
+
+  function updateFavoritesBanner(folder, isEmpty = false) {
+    if (!favoritesState.enabled) {
+      return;
+    }
+    if (!favoritesBanner) {
+      favoritesBanner = document.createElement('div');
+      favoritesBanner.className = 'db-favorites-banner';
+      mapDiv.appendChild(favoritesBanner);
+    }
+    if (!folder) {
+      favoritesBanner.textContent = '';
+      favoritesBanner.style.display = 'none';
+      return;
+    }
+    const icon = escapeHtml(folder.icon || '★');
+    const label = escapeHtml(folder.name || '');
+    const count = folder.count || 0;
+    const limit = folder.limit || 0;
+    const statusText = isEmpty ? 'Žádná místa v této složce' : `${count}${limit ? ` / ${limit}` : ''}`;
+    favoritesBanner.innerHTML = `
+      <div class="db-favorites-banner__content">
+        <span class="db-favorites-banner__icon">${icon}</span>
+        <span class="db-favorites-banner__label">${label}</span>
+        <span class="db-favorites-banner__count">${statusText}</span>
+      </div>
+    `;
+    favoritesBanner.style.display = 'flex';
+  }
+
+  function hideFavoritesBanner() {
+    if (favoritesBanner) {
+      favoritesBanner.style.display = 'none';
+      favoritesBanner.innerHTML = '';
+    }
+  }
+
+  function getFavoritesButtonHtml() {
+    return `
+      <button class="db-map-topbar-btn" title="Oblíbené" type="button" id="db-favorites-btn">
+        <span class="db-topbar-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+        </span>
+        <span class="db-favorites-count-badge" aria-hidden="true">0</span>
+      </button>
+    `;
+  }
+
+  function renderFavoritesFolderItem(folder) {
+    const active = favoritesState.isActive && String(favoritesState.activeFolderId) === String(folder.id);
+    const icon = escapeHtml(folder.icon || '★');
+    const name = escapeHtml(folder.name || '');
+    const count = folder.count || 0;
+    const limit = folder.limit || 0;
+    const badge = limit ? `${count} / ${limit}` : `${count}`;
+    return `
+      <button type="button" class="db-favorites-folder${active ? ' active' : ''}" data-folder-id="${folder.id}">
+        <span class="db-favorites-folder__icon">${icon}</span>
+        <span class="db-favorites-folder__meta">
+          <span class="db-favorites-folder__name">${name}</span>
+          <span class="db-favorites-folder__count">${badge}</span>
+        </span>
+      </button>
+    `;
+  }
+
+  function showFavoritesCreateForm(show) {
+    if (!favoritesCreateButton || !favoritesCreateForm) return;
+    if (show) {
+      favoritesCreateButton.classList.add('db-favorites-hidden');
+      favoritesCreateForm.classList.remove('db-favorites-hidden');
+      const iconInput = favoritesCreateForm.querySelector('input[name="icon"]');
+      if (iconInput) iconInput.focus();
+    } else {
+      favoritesCreateForm.reset();
+      favoritesCreateForm.classList.add('db-favorites-hidden');
+      favoritesCreateButton.classList.remove('db-favorites-hidden');
+    }
+  }
+
+  function ensureFavoritesPanel() {
+    if (!favoritesState.enabled) {
+      return null;
+    }
+    if (!favoritesOverlay) {
+      favoritesOverlay = document.createElement('div');
+      favoritesOverlay.className = 'db-favorites-overlay';
+      favoritesOverlay.style.display = 'none';
+      favoritesOverlay.addEventListener('click', () => closeFavoritesPanel());
+      mapDiv.appendChild(favoritesOverlay);
+    }
+    if (!favoritesPanel) {
+      favoritesPanel = document.createElement('div');
+      favoritesPanel.className = 'db-favorites-panel';
+      favoritesPanel.style.display = 'none';
+      favoritesPanel.innerHTML = `
+        <div class="db-favorites-panel__header">
+          <div>
+            <div class="db-favorites-panel__title">Favorites</div>
+            <div class="db-favorites-panel__subtitle">Organizujte si oblíbená místa</div>
+          </div>
+          <button type="button" class="db-favorites-panel__close" id="db-favorites-close" aria-label="Zavřít">
+            <span aria-hidden="true">&times;</span>
+          </button>
+        </div>
+        <div class="db-favorites-panel__section" data-section="default">
+          <div class="db-favorites-panel__section-title">Default folders</div>
+          <div class="db-favorites-panel__list" data-favorites-list="default"></div>
+        </div>
+        <div class="db-favorites-panel__section" data-section="custom">
+          <div class="db-favorites-panel__section-title">User folders</div>
+          <div class="db-favorites-panel__list" data-favorites-list="custom"></div>
+        </div>
+        <div class="db-favorites-empty-hint db-favorites-hidden" data-favorites-empty>Žádné vlastní složky zatím nemáte.</div>
+        <button type="button" class="db-favorites-create-btn" id="db-favorites-create">Create a new folder</button>
+        <form class="db-favorites-create-form db-favorites-hidden" id="db-favorites-create-form">
+          <div class="db-favorites-field">
+            <label for="db-favorites-icon-input">Ikona</label>
+            <input id="db-favorites-icon-input" name="icon" maxlength="4" placeholder="⭐️" autocomplete="off" />
+          </div>
+          <div class="db-favorites-field">
+            <label for="db-favorites-name-input">Název složky</label>
+            <input id="db-favorites-name-input" name="name" maxlength="60" required autocomplete="off" placeholder="Moje trasa" />
+          </div>
+          <div class="db-favorites-create-actions">
+            <button type="submit" class="db-favorites-submit">Uložit</button>
+            <button type="button" class="db-favorites-cancel">Zrušit</button>
+          </div>
+        </form>
+        <button type="button" class="db-favorites-exit db-favorites-hidden" id="db-favorites-exit">Zobrazit všechny body</button>
+      `;
+      favoritesPanel.addEventListener('click', (e) => e.stopPropagation());
+      mapDiv.appendChild(favoritesPanel);
+
+      favoritesLists.default = favoritesPanel.querySelector('[data-favorites-list="default"]');
+      favoritesLists.custom = favoritesPanel.querySelector('[data-favorites-list="custom"]');
+      favoritesCreateButton = favoritesPanel.querySelector('#db-favorites-create');
+      favoritesCreateForm = favoritesPanel.querySelector('#db-favorites-create-form');
+      favoritesEmptyHint = favoritesPanel.querySelector('[data-favorites-empty]');
+      favoritesExitButton = favoritesPanel.querySelector('#db-favorites-exit');
+
+      const closeBtn = favoritesPanel.querySelector('#db-favorites-close');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => closeFavoritesPanel());
+      }
+      if (favoritesCreateButton) {
+        favoritesCreateButton.addEventListener('click', () => showFavoritesCreateForm(true));
+      }
+      if (favoritesExitButton) {
+        favoritesExitButton.addEventListener('click', () => {
+          deactivateFavoritesMode();
+          closeFavoritesPanel();
+        });
+      }
+      if (favoritesCreateForm) {
+        favoritesCreateForm.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const formData = new FormData(favoritesCreateForm);
+          const icon = (formData.get('icon') || '').toString();
+          const name = (formData.get('name') || '').toString();
+          if (!name.trim()) {
+            alert('Zadejte prosím název složky.');
+            return;
+          }
+          try {
+            await createFavoritesFolder(name.trim(), icon.trim());
+            showFavoritesCreateForm(false);
+          } catch (err) {
+            console.error('[DB Map] create folder failed', err);
+            alert('Nepodařilo se vytvořit složku. Zkuste to prosím znovu.');
+          }
+        });
+        const cancelBtn = favoritesCreateForm.querySelector('.db-favorites-cancel');
+        if (cancelBtn) {
+          cancelBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            showFavoritesCreateForm(false);
+          });
+        }
+      }
+    }
+    return favoritesPanel;
+  }
+
+  function renderFavoritesPanel() {
+    if (!favoritesState.enabled) {
+      return;
+    }
+    const panel = ensureFavoritesPanel();
+    if (!panel) return;
+    const defaultList = favoritesLists.default;
+    const customList = favoritesLists.custom;
+    if (!defaultList || !customList) return;
+
+    if (!favoritesState.fetchedOnce && favoritesState.isLoading) {
+      defaultList.innerHTML = '<div class="db-favorites-loading">Načítám…</div>';
+      customList.innerHTML = '';
+      return;
+    }
+
+    const defaultItems = [];
+    const customItems = [];
+    favoritesState.folders.forEach(folder => {
+      const markup = renderFavoritesFolderItem(folder);
+      if (folder.type === 'custom') {
+        customItems.push(markup);
+      } else {
+        defaultItems.push(markup);
+      }
+    });
+
+    defaultList.innerHTML = defaultItems.length ? defaultItems.join('') : '<div class="db-favorites-empty-row">Žádná složka</div>';
+    customList.innerHTML = customItems.length ? customItems.join('') : '<div class="db-favorites-empty-row">Zatím žádné složky</div>';
+
+    panel.querySelectorAll('.db-favorites-folder').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const folderId = btn.getAttribute('data-folder-id');
+        if (!folderId) return;
+        closeFavoritesPanel();
+        activateFavoritesFolder(folderId);
+      });
+    });
+
+    const customTotal = Array.from(favoritesState.folders.values()).filter(f => f.type === 'custom').length;
+    if (favoritesCreateButton) {
+      const limit = favoritesState.maxCustomFolders || 0;
+      const reached = limit && customTotal >= limit;
+      favoritesCreateButton.disabled = reached;
+      favoritesCreateButton.textContent = reached ? 'Limit složek dosažen' : 'Create a new folder';
+    }
+    if (favoritesEmptyHint) {
+      favoritesEmptyHint.classList.toggle('db-favorites-hidden', customTotal > 0);
+    }
+    if (favoritesExitButton) {
+      favoritesExitButton.classList.toggle('db-favorites-hidden', !favoritesState.isActive);
+    }
+  }
+
+  function openFavoritesPanel() {
+    const panel = ensureFavoritesPanel();
+    if (!panel) return;
+    favoritesState.isPanelOpen = true;
+    renderFavoritesPanel();
+    panel.style.display = 'block';
+    if (favoritesOverlay) favoritesOverlay.style.display = 'block';
+    mapDiv.classList.add('favorites-panel-open');
+  }
+
+  function closeFavoritesPanel() {
+    if (favoritesPanel) favoritesPanel.style.display = 'none';
+    if (favoritesOverlay) favoritesOverlay.style.display = 'none';
+    favoritesState.isPanelOpen = false;
+    showFavoritesCreateForm(false);
+    mapDiv.classList.remove('favorites-panel-open');
+  }
+
+  function resolveDefaultFavoritesFolderId() {
+    try {
+      if (!favoritesState.enabled) {
+        return null;
+      }
+      if (favoritesState.activeFolderId) {
+        return String(favoritesState.activeFolderId);
+      }
+      if (favoritesState.lastActivatedFolderId) {
+        const stored = getFavoriteFolder(favoritesState.lastActivatedFolderId);
+        if (stored) {
+          return String(stored.id);
+        }
+      }
+      const folders = Array.from(favoritesState.folders.values());
+      if (!folders.length) {
+        return null;
+      }
+      const nonEmpty = folders.find(folder => (folder?.count || 0) > 0);
+      if (nonEmpty) {
+        return String(nonEmpty.id);
+      }
+      return String(folders[0].id);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function favoritesFolderHasAssignments(folderId) {
+    if (!folderId) {
+      return false;
+    }
+    const ids = getAssignmentsForFolder(folderId);
+    if (ids.length > 0) {
+      return true;
+    }
+    const folder = getFavoriteFolder(folderId);
+    return !!(folder && (folder.count || 0) > 0);
+  }
+
+  async function handleFavoritesToggle(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    if (!favoritesState.enabled) {
+      alert('Pro ukládání oblíbených se prosím přihlašte.');
+      return;
+    }
+    const wantsPanel = !!(event && (event.metaKey || event.ctrlKey || event.shiftKey));
+    ensureFavoritesPanel();
+    if (favoritesState.isPanelOpen) {
+      closeFavoritesPanel();
+      return;
+    }
+    await fetchFavoritesState();
+    if (!favoritesState.isActive && !wantsPanel) {
+      const candidateId = resolveDefaultFavoritesFolderId();
+      if (candidateId && favoritesFolderHasAssignments(candidateId)) {
+        await activateFavoritesFolder(candidateId);
+        return;
+      }
+    }
+    renderFavoritesPanel();
+    openFavoritesPanel();
+  }
+
+  function getAssignmentsForFolder(folderId) {
+    const result = [];
+    const target = String(folderId);
+    favoritesState.assignments.forEach((value, key) => {
+      if (String(value) === target) {
+        result.push(key);
+      }
+    });
+    return result;
+  }
+
+  async function activateFavoritesFolder(folderId) {
+    if (!favoritesState.enabled) {
+      return;
+    }
+    if (inFlightController) {
+      try { inFlightController.abort(); } catch (_) {}
+      inFlightController = null;
+    }
+    if (favoritesState.previousLoadMode === null) {
+      favoritesState.previousLoadMode = loadMode;
+    }
+    loadMode = 'favorites';
+    await fetchFavoritesState();
+    const ids = getAssignmentsForFolder(folderId);
+    const folder = getFavoriteFolder(folderId);
+    favoritesState.previousFeatures = Array.isArray(features) ? features.slice(0) : [];
+    favoritesState.activeFolderId = String(folderId);
+    favoritesState.isActive = true;
+    updateFavoritesButtonState();
+    if (!ids.length) {
+      features = [];
+      window.features = features;
+      favoritesState.activeFeatures = [];
+      clearMarkers();
+      renderCards('', null, false);
+      updateFavoritesBanner(folder, true);
+      try {
+        localStorage.setItem(FAVORITES_LAST_FOLDER_KEY, String(folderId));
+        favoritesState.lastActivatedFolderId = String(folderId);
+      } catch (_) {}
+      return;
+    }
+    document.body.classList.add('db-loading');
+    try {
+      const base = (dbMapData?.restUrl) || '/wp-json/db/v1/map';
+      const url = new URL(base, window.location.origin);
+      url.searchParams.set('ids', ids.join(','));
+      url.searchParams.set('included', 'charging_location,rv_spot,poi');
+      const res = await fetch(url.toString(), {
+        headers: {
+          'Accept': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || '',
+        },
+        credentials: 'same-origin',
+      });
+      const data = await res.json();
+      const fetchedFeatures = Array.isArray(data?.features) ? data.features : [];
+      fetchedFeatures.forEach(f => {
+        const fid = f?.properties?.id;
+        if (fid != null) {
+          featureCache.set(fid, f);
+        }
+      });
+      favoritesState.activeFeatures = fetchedFeatures.slice(0);
+      features = fetchedFeatures;
+      window.features = features;
+      clearMarkers();
+      renderCards('', null, false);
+      await waitForMapReady();
+      fitMapToFeatures(fetchedFeatures);
+      updateFavoritesBanner(folder);
+      try {
+        localStorage.setItem(FAVORITES_LAST_FOLDER_KEY, String(folderId));
+        favoritesState.lastActivatedFolderId = String(folderId);
+      } catch (_) {}
+    } catch (err) {
+      console.error('[DB Map] favorites folder fetch failed', err);
+    } finally {
+      document.body.classList.remove('db-loading');
+    }
+  }
+
+  function deactivateFavoritesMode() {
+    if (!favoritesState.isActive) {
+      return;
+    }
+    favoritesState.isActive = false;
+    favoritesState.activeFolderId = null;
+    favoritesState.activeFeatures = [];
+    hideFavoritesBanner();
+    updateFavoritesButtonState();
+    if (favoritesState.previousLoadMode !== null) {
+      loadMode = favoritesState.previousLoadMode;
+    }
+    favoritesState.previousLoadMode = null;
+    if (favoritesState.previousFeatures && favoritesState.previousFeatures.length) {
+      features = favoritesState.previousFeatures.slice(0);
+      window.features = features;
+      clearMarkers();
+      renderCards('', null, false);
+    } else {
+      features = [];
+      window.features = features;
+      clearMarkers();
+      renderCards('', null, false);
+      if (typeof fetchAndRenderRadius === 'function') {
+        const center = map ? map.getCenter() : null;
+        if (center) {
+          fetchAndRenderRadius({ lat: center.lat, lng: center.lng });
+        }
+      }
+    }
+    favoritesState.previousFeatures = [];
+  }
+
+  async function createFavoritesFolder(name, icon) {
+    if (!favoritesState.enabled) {
+      return null;
+    }
+    await fetchFavoritesState(true);
+    try {
+      const res = await fetch(favoritesState.restUrl + '/folders', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || '',
+        },
+        body: JSON.stringify({ name, icon }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (data && Array.isArray(data.folders)) {
+        favoritesState.folders.clear();
+        data.folders.forEach(folder => {
+          if (!folder || !folder.id) return;
+          favoritesState.folders.set(String(folder.id), {
+            id: String(folder.id),
+            name: folder.name || '',
+            icon: folder.icon || '★',
+            limit: folder.limit || 0,
+            type: folder.type || 'custom',
+            count: folder.count || 0,
+          });
+        });
+      }
+      if (data && data.assignments && typeof data.assignments === 'object') {
+        favoritesState.assignments.clear();
+        Object.entries(data.assignments).forEach(([id, folderId]) => {
+          const numericId = parseInt(id, 10);
+          if (Number.isFinite(numericId) && folderId) {
+            favoritesState.assignments.set(numericId, String(folderId));
+          }
+        });
+      }
+      recomputeFavoriteCounts();
+      favoritesState.fetchedOnce = true;
+      updateFavoritesButtonState();
+      renderFavoritesPanel();
+    } catch (err) {
+      console.error('[DB Map] createFavoritesFolder failed', err);
+      throw err;
+    }
+  }
+
+  function patchFeatureFavoriteState(postId, folder) {
+    const update = (feature) => {
+      if (!feature || !feature.properties) return;
+      if (folder) {
+        feature.properties.favorite_folder_id = folder.id;
+        feature.properties.favorite_folder = {
+          id: folder.id,
+          name: folder.name || '',
+          icon: folder.icon || '★',
+          type: folder.type || 'custom',
+          limit: folder.limit || 0,
+        };
+      } else {
+        delete feature.properties.favorite_folder_id;
+        delete feature.properties.favorite_folder;
+      }
+    };
+    const cached = featureCache.get(postId);
+    if (cached) {
+      update(cached);
+      featureCache.set(postId, cached);
+    }
+    features = features.map(f => {
+      if (f && f.properties && f.properties.id === postId) {
+        update(f);
+      }
+      return f;
+    });
+    favoritesState.activeFeatures = favoritesState.activeFeatures.map(f => {
+      if (f && f.properties && f.properties.id === postId) {
+        update(f);
+      }
+      return f;
+    });
+    refreshFavoriteUi(postId, folder);
+  }
+
+  async function assignFavoriteToFolder(postId, folderId, options = {}) {
+    if (!favoritesState.enabled) {
+      return null;
+    }
+    const force = options.force === true;
+    try {
+      const res = await fetch(favoritesState.restUrl + '/assign', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || '',
+        },
+        body: JSON.stringify({ post_id: postId, folder_id: folderId, force }),
+      });
+      if (res.status === 409) {
+        const payload = await res.json();
+        if (payload && payload.current_folder && !force) {
+          const currentFolder = getFavoriteFolder(payload.current_folder);
+          const proceed = confirm(`Toto místo je již ve složce "${currentFolder?.name || ''}". Chcete jej přesunout?`);
+          if (proceed) {
+            return assignFavoriteToFolder(postId, folderId, { force: true });
+          }
+          return null;
+        }
+      }
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const folder = data?.folder || getFavoriteFolder(folderId) || {
+        id: folderId,
+        name: '',
+        icon: '★',
+        type: 'custom',
+        limit: 0,
+      };
+      favoritesState.assignments.set(postId, String(folderId));
+      recomputeFavoriteCounts();
+      updateFavoritesButtonState();
+      renderFavoritesPanel();
+      patchFeatureFavoriteState(postId, folder);
+      if (favoritesAssignProps && favoritesAssignProps.id === postId) {
+        favoritesAssignProps.favorite_folder_id = folder.id;
+        favoritesAssignProps.favorite_folder = folder;
+      }
+      renderCards('', activeFeatureId, false);
+      if (favoritesState.isActive && favoritesState.activeFolderId) {
+        activateFavoritesFolder(favoritesState.activeFolderId);
+      }
+      updateFavoritesBanner(favoritesState.isActive ? getFavoriteFolder(favoritesState.activeFolderId) : null,
+        favoritesState.isActive && favoritesState.activeFeatures.length === 0);
+      return folder;
+    } catch (err) {
+      console.error('[DB Map] assign favorite failed', err);
+      alert('Nepodařilo se uložit oblíbené. Zkuste to prosím znovu.');
+      return null;
+    }
+  }
+
+  async function removeFavorite(postId) {
+    if (!favoritesState.enabled) {
+      return;
+    }
+    try {
+      const res = await fetch(`${favoritesState.restUrl}/assign/${postId}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: {
+          'X-WP-Nonce': dbMapData?.restNonce || '',
+        },
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      favoritesState.assignments.delete(postId);
+      recomputeFavoriteCounts();
+      updateFavoritesButtonState();
+      renderFavoritesPanel();
+      patchFeatureFavoriteState(postId, null);
+      renderCards('', activeFeatureId, false);
+      if (favoritesState.isActive && favoritesState.activeFolderId) {
+        activateFavoritesFolder(favoritesState.activeFolderId);
+      }
+      updateFavoritesBanner(favoritesState.isActive ? getFavoriteFolder(favoritesState.activeFolderId) : null,
+        favoritesState.isActive && favoritesState.activeFeatures.length === 0);
+    } catch (err) {
+      console.error('[DB Map] remove favorite failed', err);
+      alert('Nepodařilo se odebrat z oblíbených. Zkuste to prosím znovu.');
+    }
+  }
+
+  function ensureFavoritesAssignModal() {
+    if (!favoritesAssignOverlay) {
+      favoritesAssignOverlay = document.createElement('div');
+      favoritesAssignOverlay.className = 'db-favorites-assign-overlay';
+      favoritesAssignOverlay.style.display = 'none';
+      favoritesAssignOverlay.addEventListener('click', () => closeFavoritesAssignModal());
+      document.body.appendChild(favoritesAssignOverlay);
+    }
+    if (!favoritesAssignModal) {
+      favoritesAssignModal = document.createElement('div');
+      favoritesAssignModal.className = 'db-favorites-assign';
+      favoritesAssignModal.style.display = 'none';
+      favoritesAssignModal.innerHTML = `
+        <div class="db-favorites-assign__header">
+          <div class="db-favorites-assign__title">Favorites</div>
+          <button type="button" class="db-favorites-assign__close" aria-label="Zavřít">&times;</button>
+        </div>
+        <div class="db-favorites-assign__list"></div>
+        <button type="button" class="db-favorites-assign__create db-favorites-assign__action">Create a new folder</button>
+        <button type="button" class="db-favorites-assign__remove db-favorites-assign__action">Odebrat z oblíbených</button>
+      `;
+      favoritesAssignModal.addEventListener('click', (event) => event.stopPropagation());
+      document.body.appendChild(favoritesAssignModal);
+      const closeBtn = favoritesAssignModal.querySelector('.db-favorites-assign__close');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', () => closeFavoritesAssignModal());
+      }
+      const createBtn = favoritesAssignModal.querySelector('.db-favorites-assign__create');
+      if (createBtn) {
+        createBtn.addEventListener('click', () => {
+          closeFavoritesAssignModal();
+          handleFavoritesToggle();
+          showFavoritesCreateForm(true);
+        });
+      }
+      const removeBtn = favoritesAssignModal.querySelector('.db-favorites-assign__remove');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', () => {
+          if (favoritesAssignPostId != null) {
+            removeFavorite(favoritesAssignPostId);
+          }
+          closeFavoritesAssignModal();
+        });
+      }
+    }
+    return favoritesAssignModal;
+  }
+
+  async function openFavoritesAssignModal(postId, props) {
+    if (!favoritesState.enabled) {
+      alert('Pro používání oblíbených se prosím přihlašte.');
+      return;
+    }
+    await fetchFavoritesState();
+    const modal = ensureFavoritesAssignModal();
+    if (!modal) return;
+    favoritesAssignPostId = postId;
+    favoritesAssignProps = props || null;
+    const list = modal.querySelector('.db-favorites-assign__list');
+    if (list) {
+      const folders = Array.from(favoritesState.folders.values());
+      list.innerHTML = folders.map(folder => `
+        <button type="button" class="db-favorites-assign__item${props && props.favorite_folder_id && String(props.favorite_folder_id) === String(folder.id) ? ' selected' : ''}" data-folder-id="${folder.id}">
+          <span class="db-favorites-assign__icon">${escapeHtml(folder.icon || '★')}</span>
+          <span class="db-favorites-assign__text">
+            <span class="db-favorites-assign__name">${escapeHtml(folder.name || '')}</span>
+            <span class="db-favorites-assign__count">${folder.count || 0}${folder.limit ? ` / ${folder.limit}` : ''}</span>
+          </span>
+        </button>
+      `).join('');
+      list.querySelectorAll('.db-favorites-assign__item').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const folderId = btn.getAttribute('data-folder-id');
+          if (!folderId) return;
+          const folder = await assignFavoriteToFolder(postId, folderId);
+          if (folder) {
+            closeFavoritesAssignModal();
+          }
+        });
+      });
+    }
+    const removeBtn = modal.querySelector('.db-favorites-assign__remove');
+    if (removeBtn) {
+      const hasAssignment = favoritesState.assignments.has(postId);
+      removeBtn.style.display = hasAssignment ? 'inline-flex' : 'none';
+    }
+    favoritesAssignOverlay.style.display = 'block';
+    modal.style.display = 'flex';
+  }
+
+  function closeFavoritesAssignModal() {
+    if (favoritesAssignOverlay) favoritesAssignOverlay.style.display = 'none';
+    if (favoritesAssignModal) favoritesAssignModal.style.display = 'none';
+    favoritesAssignPostId = null;
+    favoritesAssignProps = null;
+  }
   function selectFeaturesForView() {
     try {
       if (!map) return [];
@@ -942,10 +2073,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   async function fetchAndRenderRadius(center, includedTypesCsv = null) {
+    if (favoritesState.isActive) {
+      return;
+    }
     const previousCenter = lastSearchCenter ? { ...lastSearchCenter } : null;
 
-    
-    if (inFlightController) { 
+
+    if (inFlightController) {
       try { inFlightController.abort(); } catch(_) {} 
     }
     inFlightController = new AbortController();
@@ -959,6 +2093,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   async function fetchAndRenderRadiusWithFixedRadius(center, includedTypesCsv = null, fixedRadiusKm = null) {
+    if (favoritesState.isActive) {
+      return;
+    }
     const previousCenter = lastSearchCenter ? { ...lastSearchCenter } : null;
 
     
@@ -975,6 +2112,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
+    if (favoritesState.isActive) {
+      return;
+    }
+
     // Zobrazení středu mapy na obrazovce (s aktuálním radiusem)
     showMapCenterDebug(center, radiusKm);
 
@@ -1567,9 +2708,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-filter-btn">
         <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Oblíbené" type="button" id="db-favorites-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-      </button>
+      ${getFavoritesButtonHtml()}
     `;
   } else {
     // Desktop verze - bez tlačítka "Moje poloha" (je v Leaflet controls)
@@ -1589,14 +2728,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-filter-btn">
         <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Oblíbené" type="button" id="db-favorites-btn">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-      </button>
+      ${getFavoritesButtonHtml()}
     `;
   }
   mapDiv.style.position = 'relative';
   mapDiv.style.zIndex = '1';
   mapDiv.appendChild(topbar);
+  updateFavoritesButtonState();
 
   // Centralizovaný handler topbar tlačítek - díky delegaci zůstává funkční i po výměně obsahu
   topbar.addEventListener('click', (event) => {
@@ -1617,6 +2755,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         break;
       case 'db-filter-btn':
         handleFilterToggle(event);
+        break;
+      case 'db-favorites-btn':
+        handleFavoritesToggle(event);
         break;
       default:
         break;
@@ -1661,9 +2802,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-filter-btn">
               <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
             </button>
-            <button class="db-map-topbar-btn" title="Oblíbené" type="button" id="db-favorites-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            </button>
+            ${getFavoritesButtonHtml()}
           `;
         } else {
           // Desktop verze
@@ -1683,11 +2822,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-filter-btn">
               <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
             </button>
-            <button class="db-map-topbar-btn" title="Oblíbené" type="button" id="db-favorites-btn">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-            </button>
+            ${getFavoritesButtonHtml()}
           `;
         }
+        updateFavoritesButtonState();
       }
     });
   }, 500); // 500ms delay před přidáním resize listeneru
@@ -3018,12 +4156,14 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   function openMobileSheet(feature) {
     if (window.innerWidth > 900) return;
-    
+
     const p = feature.properties || {};
     const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
     const lat = coords ? coords[1] : null;
     const lng = coords ? coords[0] : null;
-    
+    const favoriteButtonHtml = getFavoriteStarButtonHtml(p, 'sheet');
+    const favoriteChipHtml = getFavoriteChipHtml(p, 'sheet');
+
   // Získat barvu čtverečku podle typu místa (stejně jako piny na mapě)
   const getSquareColor = (props) => {
     if (props.post_type === 'charging_location') {
@@ -3082,15 +4222,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Nový obsah s kompaktním designem
     const finalHTML = `
       <div class="sheet-header">
-        <div class="sheet-icon" style="background: ${getSquareColor(p)}; width: 48px; height: 48px;">
-          ${getTypeIcon(p)}
+        <div class="sheet-header-main">
+          <div class="sheet-icon" style="background: ${getSquareColor(p)}; width: 48px; height: 48px;">
+            ${getTypeIcon(p)}
+          </div>
+          <div class="sheet-content-wrapper">
+            <div class="sheet-title">${p.title || ''}</div>
+            ${p.post_type === 'charging_location' ? generateMobileConnectorsSection(p) : ''}
+          </div>
         </div>
-        <div class="sheet-content-wrapper">
-          <div class="sheet-title">${p.title || ''}</div>
-          ${p.post_type === 'charging_location' ? generateMobileConnectorsSection(p) : ''}
-        </div>
+        ${favoriteButtonHtml || ''}
       </div>
-      
+      ${favoriteChipHtml || ''}
+
       <div class="sheet-actions-row">
         <button class="btn-icon" type="button" data-db-action="open-navigation" title="Navigace">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -3156,6 +4300,21 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const detailBtn = mobileSheet.querySelector('[data-db-action="open-detail"]');
     if (detailBtn) detailBtn.addEventListener('click', () => openDetailModal(feature));
+
+    if (favoritesState.enabled) {
+      const favoriteBtn = mobileSheet.querySelector(`[data-db-favorite-trigger="sheet"][data-db-favorite-post-id="${p.id}"]`);
+      if (favoriteBtn) {
+        favoriteBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openFavoritesAssignModal(p.id, p);
+        });
+      }
+      const folder = getFavoriteFolderForProps(p);
+      if (folder) {
+        refreshFavoriteUi(p.id, folder);
+      }
+    }
 
     // Otevřít sheet
     requestAnimationFrame(() => mobileSheet.classList.add('open'));
@@ -4705,6 +5864,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const distanceText = (typeof feature._distance !== 'undefined') ? (feature._distance/1000).toFixed(2) + ' km' : '';
     const label = getMainLabel(p);
     const subtitle = [distanceText, p.address || '', label].filter(Boolean).join(' • ');
+    const favoriteButtonHtml = getFavoriteStarButtonHtml(p, 'detail');
+    const favoriteChipHtml = getFavoriteChipHtml(p, 'detail');
     // Preferuj hlavní fotku jako hero (image z enrichmentu nebo první z poi_photos)
     let heroImageUrl = p.image || '';
     if (!heroImageUrl && Array.isArray(p.poi_photos) && p.poi_photos.length > 0) {
@@ -5151,11 +6312,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         </div>
         ${thumbsHtml}
         <div class="title-row">
-          <div class="title-icon" style="background: ${getDetailSquareColor(p)};">
-            ${getDetailIcon(p)}
+          <div class="title-row-main">
+            <div class="title-icon" style="background: ${getDetailSquareColor(p)};">
+              ${getDetailIcon(p)}
+            </div>
+            <div class="title">${p.title || ''}</div>
+          </div>
+          ${favoriteButtonHtml || ''}
         </div>
-        <div class="title">${p.title || ''}</div>
-        </div>
+        ${favoriteChipHtml || ''}
         <div class="subtitle">${subtitle}</div>
         ${infoRows.join('')}
         ${photosSection}
@@ -5165,7 +6330,22 @@ document.addEventListener('DOMContentLoaded', async function() {
         </div>
         <div class="desc">${p.description || '<span style="color:#aaa;">(Popis zatím není k dispozici)</span>'}</div>
       </div>`;
-    
+
+    if (favoritesState.enabled) {
+      const favoriteBtn = detailModal.querySelector(`[data-db-favorite-trigger="detail"][data-db-favorite-post-id="${p.id}"]`);
+      if (favoriteBtn) {
+        favoriteBtn.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openFavoritesAssignModal(p.id, p);
+        });
+      }
+      const folder = getFavoriteFolderForProps(p);
+      if (folder) {
+        refreshFavoriteUi(p.id, folder);
+      }
+    }
+
     // Fallback injekce hero obrázku po renderu (případ, kdy heroImageUrl nebyl k dispozici při sestavení)
     (async () => {
       try {
@@ -5540,34 +6720,188 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Placeholder: zde lze napojit na skutečné oblíbené
     });
   }
+  // Vyhledávání na mapě
+  let searchQuery = '';
+  const searchForm = topbar.querySelector('form.db-map-searchbox');
+  const searchInput = topbar.querySelector('#db-map-search-input');
+  const searchBtn = topbar.querySelector('#db-map-search-btn');
+  // lastSearchResults už inicializováno na začátku
+  // Kontrola, zda existují elementy před přidáním event listenerů
+  if (searchForm && searchInput && searchBtn) {
+    function doSearch(e) {
+      if (e) e.preventDefault();
+      removeDesktopAutocomplete();
+      searchQuery = searchInput.value.trim().toLowerCase();
+      renderCards(searchQuery, null, true);
+      // Pokud je nalezeno přesně jedno místo, přibliž a zvýrazni
+      if (lastSearchResults.length === 1) {
+        const idx = features.indexOf(lastSearchResults[0]);
+        highlightMarker(idx);
+        map.setView([
+          lastSearchResults[0].geometry.coordinates[1],
+          lastSearchResults[0].geometry.coordinates[0]
+        ], 15, {animate:true});
+      }
+    }
+    
+    // Přidat autocomplete pro desktop
+    const handleDesktopAutocompleteInput = debounce((value) => {
+      showDesktopAutocomplete(value, searchInput);
+    }, 250);
+
+    searchInput.addEventListener('input', function() {
+      const query = this.value.trim();
+      if (query.length >= 2) {
+        handleDesktopAutocompleteInput(query);
+      } else {
+        removeDesktopAutocomplete();
+      }
+    });
+
+    searchInput.addEventListener('focus', function() {
+      const query = this.value.trim();
+      if (query.length >= 2) {
+        showDesktopAutocomplete(query, searchInput);
+      }
+    });
+
+    searchInput.addEventListener('blur', function() {
+      // Dát malé zpoždění, aby kliknutí na autocomplete položku fungovalo
+      setTimeout(() => {
+        removeDesktopAutocomplete();
+      }, 200);
+    });
+    
+    searchForm.addEventListener('submit', doSearch);
+    searchBtn.addEventListener('click', doSearch);
+    searchInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        removeDesktopAutocomplete();
+        doSearch(e);
+      }
+      if (e.key === 'Escape') {
+        removeDesktopAutocomplete();
+      }
+    });
+  }
+
+  // Načti GeoJSON body
+  const restUrl = dbMapData?.restUrl || '/wp-json/db/v1/map';
+  // Zkusit najít správnou cestu k ikonám
+  // Základní cesta k ikonám – preferuj absolutní cestu ve WP
+  let iconsBase = dbMapData?.iconsBase || '/wp-content/plugins/dobity-baterky/assets/icons/';
+  
+  // Pokud je cesta relativní, použít WordPress plugin URL
+  if (iconsBase.startsWith('assets/')) {
+    // Zkusit najít WordPress plugin URL
+    const scripts = document.querySelectorAll('script[src*="dobity-baterky"]');
+    if (scripts.length > 0) {
+      const scriptSrc = scripts[0].src;
+      const pluginUrl = scriptSrc.substring(0, scriptSrc.lastIndexOf('/assets/'));
+      iconsBase = pluginUrl + '/assets/icons/';
+
+    } else {
+      // Fallback na aktuální cestu
+      const currentPath = window.location.pathname;
+      const basePath = currentPath.substring(0, currentPath.lastIndexOf('/'));
+      iconsBase = basePath + '/' + iconsBase;
+
+    }
+  }
+  // Charger inline SVG recolor – načtení a cache (abychom nemuseli mít <img> s bílou výplní)
+  let __dbChargerSvgColored = null;
+  let __dbChargerSvgLoading = false;
+  function ensureChargerSvgColoredLoaded() {
+    if (__dbChargerSvgColored !== null || __dbChargerSvgLoading) return;
+    try {
+      // Barva výplně/obrysu pro ikonu nabíječky: na produkci je modrá (#049FE8)
+      const color = (dbMapData && dbMapData.chargerIconColor) || '#049FE8';
+      // Nový název souboru bez vnitřního fill: "charger ivon no fill.svg"
+      const chargerSvgFile = 'charger ivon no fill.svg';
+      const url = (iconsBase || '') + encodeURIComponent(chargerSvgFile);
+      if (!url) return;
+      __dbChargerSvgLoading = true;
+      fetch(url).then(r => r.text()).then(svg => {
+        try {
+          let s = svg
+            .replace(/<svg([^>]*)width="[^"]*"/, '<svg$1')
+            .replace(/<svg([^>]*)height="[^"]*"/, '<svg$1')
+            .replace(/<svg /, '<svg width="100%" height="100%" style="display:block;" ', 1)
+            // Překolorovat pouze vnořené elementy, nikoliv hlavní <svg>
+            .replace(/(<(path|g|rect|circle|polygon|ellipse|line|polyline)[^>]*?)\sfill="[^"]*"/gi, `$1`)
+            .replace(/(<(path|g|rect|circle|polygon|ellipse|line|polyline)[^>]*?)\sstroke="[^"]*"/gi, `$1`)
+            .replace(/<(path|g|rect|circle|polygon|ellipse|line|polyline)([^>]*)>/gi, `<$1$2 fill="${color}" stroke="${color}">`);
+          __dbChargerSvgColored = s;
+        } catch(_) {}
+      }).catch(() => {}).finally(() => { __dbChargerSvgLoading = false; });
+    } catch(_) {}
+  }
+  function getChargerColoredSvg() {
+    ensureChargerSvgColoredLoaded();
+    return __dbChargerSvgColored;
+  }
   // Vykreslení živé polohy do mapy
   let __dbUserMarker = null;
   let __dbUserAccuracy = null;
   let __dbFirstFixDone = false;
   let __dbHeadingMarker = null;
   let __dbCurrentHeading = null; // degrees 0..360
+  let __dbShouldFollowUser = true;
+  let __dbAutoPanning = false;
+  let __dbFollowEventsBound = false;
+  let __dbAutoPanToken = 0;
 
   LocationService.onUpdate((p) => {
     if (!map || !p) return;
     const latlng = [p.lat, p.lng];
+    if (!__dbFollowEventsBound && map) {
+      const disableFollow = () => { if (!__dbAutoPanning) __dbShouldFollowUser = false; };
+      map.on('dragstart zoomstart touchstart movestart mousedown wheel', disableFollow);
+      map.on('moveend', () => { __dbAutoPanning = false; });
+      __dbFollowEventsBound = true;
+    }
     if (!__dbUserMarker) {
       __dbUserMarker = L.circleMarker(latlng, { radius: 6, color: '#049FE8', fillColor: '#049FE8', fillOpacity: 1, className: 'db-live-loc' }).addTo(map);
       __dbUserAccuracy = L.circle(latlng, { radius: p.acc || 50, color: '#049FE8', weight: 1, fillColor: '#049FE8', fillOpacity: 0.12 }).addTo(map);
-      // Vytvořit marker směru (šípka) – DivIcon s rotací dle headingu
-      const arrowHtml = '<div class="db-heading-wrapper">\
-          <div class="db-heading-fov"></div>\
-          <div class="db-live-dot"><span></span></div>\
-        </div>';
-      __dbHeadingMarker = L.marker(latlng, { icon: L.divIcon({ className: 'db-heading-container', html: arrowHtml, iconSize: [120,120], iconAnchor: [60,60] }), interactive: false }).addTo(map);
+      if (HeadingService.isSupported()) {
+        const arrowHtml = '<div class="db-heading-rotator" style="--db-heading-rotation: 0deg;">\
+            <div class="db-heading-wrapper">\
+              <div class="db-heading-fov"></div>\
+              <div class="db-live-dot"><span></span></div>\
+            </div>\
+          </div>';
+        __dbHeadingMarker = L.marker(latlng, { icon: L.divIcon({ className: 'db-heading-container', html: arrowHtml, iconSize: [120,120], iconAnchor: [60,60] }), interactive: false }).addTo(map);
+        HeadingService.start();
+      }
     } else {
       __dbUserMarker.setLatLng(latlng);
       __dbUserAccuracy.setLatLng(latlng).setRadius(p.acc || 50);
       if (__dbHeadingMarker) __dbHeadingMarker.setLatLng(latlng);
     }
     if (!__dbFirstFixDone && (p.acc || 9999) <= 2000) {
-      try { map.fitBounds(__dbUserAccuracy.getBounds(), { maxZoom: 15 }); } catch(_) {}
+      try {
+        const autoPanRun = ++__dbAutoPanToken;
+        __dbAutoPanning = true;
+        map.fitBounds(__dbUserAccuracy.getBounds(), { maxZoom: 15 });
+        setTimeout(() => { if (__dbAutoPanToken === autoPanRun) __dbAutoPanning = false; }, 800);
+      } catch(_) {
+        __dbAutoPanning = false;
+      }
       __dbFirstFixDone = true;
-      // TODO: případné doplnění: debounce načítání okolních dat
+    } else if (__dbShouldFollowUser && map && __dbUserMarker) {
+      try {
+        const current = __dbUserMarker.getLatLng();
+        const next = L.latLng(latlng[0], latlng[1]);
+        const moved = !current || map.distance(current, next) > Math.max((p.acc || 0) / 2, 3);
+        if (moved) {
+          const autoPanRun = ++__dbAutoPanToken;
+          __dbAutoPanning = true;
+          map.panTo(next, { animate: true, duration: 0.6, easeLinearity: 0.25 });
+          setTimeout(() => { if (__dbAutoPanToken === autoPanRun) __dbAutoPanning = false; }, 800);
+        }
+      } catch(_) {
+        __dbAutoPanning = false;
+      }
     }
   });
 
@@ -5586,35 +6920,46 @@ document.addEventListener('DOMContentLoaded', async function() {
                 const latlng = [last.lat, last.lng];
                 if (__dbUserAccuracy) {
                   __dbUserAccuracy.setLatLng(latlng).setRadius(last.acc || 50);
+                  const autoPanRun = ++__dbAutoPanToken;
+                  __dbAutoPanning = true;
                   map.fitBounds(__dbUserAccuracy.getBounds(), { maxZoom: 15 });
+                  setTimeout(() => { if (__dbAutoPanToken === autoPanRun) __dbAutoPanning = false; }, 800);
                 } else {
+                  const autoPanRun = ++__dbAutoPanToken;
+                  __dbAutoPanning = true;
                   map.setView(latlng, Math.max(map.getZoom() || 13, 15));
+                  setTimeout(() => { if (__dbAutoPanToken === autoPanRun) __dbAutoPanning = false; }, 800);
                 }
-              } catch(_) {}
+              } catch(_) {
+                __dbAutoPanning = false;
+              }
             }
             LocationService.startWatch();
+            __dbShouldFollowUser = true;
             // Spustit i HeadingService pokud je k dispozici
-            HeadingService.start();
+            if (HeadingService.isSupported()) HeadingService.start();
             return;
           }
           // prompt nebo unknown – watchPosition vyvolá dialog
           LocationService.startWatch();
+          __dbShouldFollowUser = true;
           // iOS 13+ vyžaduje explicitní povolení pro orientaci zařízení – vyžádej při kliknutí
           if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-            try { 
+            try {
               const permission = await DeviceOrientationEvent.requestPermission();
               if (permission === 'granted') {
-                HeadingService.start();
+                if (HeadingService.isSupported()) HeadingService.start();
               }
             } catch(_) {}
           } else {
             // Pro ostatní prohlížeče spustit přímo
-            HeadingService.start();
+            if (HeadingService.isSupported()) HeadingService.start();
           }
         } catch(_) {
           LocationService.startWatch();
+          __dbShouldFollowUser = true;
           // Spustit i HeadingService pokud je k dispozici
-          HeadingService.start();
+          if (HeadingService.isSupported()) HeadingService.start();
         }
       });
       btn.dataset.dbListenerAttached = '1';
@@ -5623,10 +6968,21 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // ===== SMĚR NATOČENÍ (HEADING) – mobilní zařízení =====
   const HeadingService = (() => {
+    const mobileUA = /Mobi|Android|iPhone|iPad|iPod/i;
     let listening = false;
-    let lastHeading = null;
+    let filteredHeading = null;
     const listeners = new Set();
     function normalize(deg){ if (deg == null || isNaN(deg)) return null; let d = ((deg % 360) + 360) % 360; return d; }
+    function isSupported(){
+      if (!mobileUA.test(navigator.userAgent || '')) return false;
+      if (typeof DeviceOrientationEvent === 'undefined') return false;
+      if (typeof DeviceOrientationEvent.requestPermission === 'function') return true;
+      return 'ondeviceorientationabsolute' in window || 'ondeviceorientation' in window;
+    }
+    function shortestDiff(from, to){
+      const diff = ((to - from + 540) % 360) - 180;
+      return diff;
+    }
     function onOrientation(e){
       // iOS: webkitCompassHeading (0 = sever, roste s hodinami)
       let h = null;
@@ -5644,29 +7000,38 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       h = normalize(h);
       if (h === null) return;
-      lastHeading = h;
-      listeners.forEach(fn => { try { fn(lastHeading); } catch(_) {} });
+      if (filteredHeading === null) {
+        filteredHeading = h;
+      } else {
+        const diff = shortestDiff(filteredHeading, h);
+        if (Math.abs(diff) < 1.2) return; // ignorovat drobný šum
+        filteredHeading = normalize(filteredHeading + diff * 0.35);
+      }
+      listeners.forEach(fn => { try { fn(filteredHeading); } catch(_) {} });
     }
-    function start(){ if (listening) return; listening = true; window.addEventListener('deviceorientation', onOrientation, { passive: true }); }
+    function start(){ if (listening || !isSupported()) return; listening = true; window.addEventListener('deviceorientation', onOrientation, { passive: true }); }
     function stop(){ if (!listening) return; listening = false; window.removeEventListener('deviceorientation', onOrientation); }
     function onUpdate(fn){ listeners.add(fn); return () => listeners.delete(fn); }
-    function get(){ return lastHeading; }
-    return { start, stop, onUpdate, get };
+    function get(){ return filteredHeading; }
+    return { start, stop, onUpdate, get, isSupported };
   })();
 
   // Aktivovat pouze na mobilech
-  if (/Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+  if (HeadingService.isSupported()) {
     // Nezačínat automaticky - počkat na oprávnění
     // HeadingService.start();
-    
+
     HeadingService.onUpdate((deg) => {
       __dbCurrentHeading = deg;
       if (__dbHeadingMarker && typeof deg === 'number') {
         const el = __dbHeadingMarker.getElement();
         if (el) {
-          try { 
+          try {
             // Rotovat celý marker podle skutečného headingu
-            el.style.transform = `rotate(${deg}deg)`; 
+            const rotator = el.querySelector('.db-heading-rotator');
+            if (rotator) {
+              rotator.style.setProperty('--db-heading-rotation', `${deg}deg`);
+            }
           } catch(_) {}
         }
       }
@@ -6029,10 +7394,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // searchAddressMarker už inicializován na začátku
 
   // --- ÚPRAVA VYHLEDÁVACÍHO ŘÁDKU ---
-  // Inicializace searchInput a searchForm
-  const searchInput = document.getElementById('db-map-search-input');
-  const searchForm = document.querySelector('.db-map-searchbox');
-  const searchBtn = document.querySelector('#db-map-search-btn');
+  // Použít globální searchInput z řádku 6726
   
   if (searchInput && searchInput.parentNode) {
     createAddressAutocomplete(searchInput, function(result) {
@@ -6487,6 +7849,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const styleAttr = styleParts.join(';');
         const dbLogo = isRecommended(p) ? `<div style="position:absolute;right:-4px;bottom:-4px;width:${overlaySize}px;height:${overlaySize}px;">${getDbLogoHtml(overlaySize)}</div>` : '';
         const markerClass = active ? 'db-marker db-marker-active' : 'db-marker';
+        const favoriteBadge = getFavoriteMarkerBadgeHtml(p, active);
         return `
           <div class="${markerClass}" data-idx="${i}" style="${styleAttr}">
             <svg class="db-marker-pin" width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
@@ -6496,6 +7859,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
               ${p.svg_content ? (p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content) : (p.icon_slug ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : (p.post_type === 'charging_location' ? '⚡' : ''))}
             </div>
+            ${favoriteBadge}
             ${dbLogo}
           </div>`;
       }
@@ -6782,6 +8146,19 @@ document.addEventListener('DOMContentLoaded', async function() {
             </div>
         </div>
       `;
+      if (favoritesState.enabled) {
+        const starHtml = getFavoriteStarButtonHtml(p, 'card');
+        if (starHtml) {
+          card.insertAdjacentHTML('afterbegin', starHtml);
+        }
+        const chipHtml = getFavoriteChipHtml(p, 'card');
+        if (chipHtml) {
+          const titleEl = card.querySelector('.db-map-card-title');
+          if (titleEl) {
+            titleEl.insertAdjacentHTML('beforebegin', chipHtml);
+          }
+        }
+      }
       // Klik na titulek (anchor) nesmí bublat, aby neaktivoval zvýraznění karty
       const titleAnchor = card.querySelector('.db-map-card-title[href]');
       if (titleAnchor) {
@@ -6861,6 +8238,16 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         });
       });
+      if (favoritesState.enabled) {
+        const favoriteBtn = card.querySelector(`[data-db-favorite-trigger="card"][data-db-favorite-post-id="${p.id}"]`);
+        if (favoriteBtn) {
+          favoriteBtn.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            ev.stopPropagation();
+            openFavoritesAssignModal(p.id, p);
+          });
+        }
+      }
       cardsWrap.appendChild(card);
     });
     
