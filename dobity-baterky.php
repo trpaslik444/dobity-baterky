@@ -483,6 +483,13 @@ add_action('wp_enqueue_scripts', function() {
         }
     }
     
+    // Debug - zobrazit payload v HTML komentáři
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        echo '<!-- Favorites Payload Debug: ' . esc_html( json_encode( $favorites_payload ) ) . ' -->' . "\n";
+        echo '<!-- is_user_logged_in: ' . ( is_user_logged_in() ? 'YES' : 'NO' ) . ' -->' . "\n";
+        echo '<!-- class_exists: ' . ( class_exists( '\\DB\\Favorites_Manager' ) ? 'YES' : 'NO' ) . ' -->' . "\n";
+    }
+    
     wp_localize_script( 'db-map', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
         'restNonce' => wp_create_nonce( 'wp_rest' ),
