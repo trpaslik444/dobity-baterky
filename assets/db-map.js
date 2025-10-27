@@ -4016,6 +4016,32 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     }
     
+    // Event listener pro AC checkbox
+    const acCheckbox = document.getElementById('db-filter-ac');
+    if (acCheckbox) {
+      acCheckbox.addEventListener('change', () => {
+        filterState.ac = !!acCheckbox.checked;
+        updateResetButtonVisibility();
+        saveFilterSettings();
+        if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
+      });
+    }
+    
+    // Event listener pro DC checkbox
+    const dcCheckbox = document.getElementById('db-filter-dc');
+    if (dcCheckbox) {
+      dcCheckbox.addEventListener('change', () => {
+        filterState.dc = !!dcCheckbox.checked;
+        updateResetButtonVisibility();
+        saveFilterSettings();
+        if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
+      });
+    }
+    
     // Event listener pro "DB doporučuje" checkbox
     const recommendedEl = document.getElementById('db-map-toggle-recommended');
     if (recommendedEl) {
