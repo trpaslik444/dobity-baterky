@@ -466,6 +466,19 @@ add_action('wp_enqueue_scripts', function() {
     wp_enqueue_script( 'db-ondemand', plugins_url( 'assets/ondemand-processor.js', DB_PLUGIN_FILE ), array('jquery'), DB_PLUGIN_VERSION, true );
     
     // Data pro JS
+    // Příprava favorites payload
+    $favorites_payload = array(
+        'enabled' => false,
+    );
+    if ( is_user_logged_in() && class_exists( '\\DB\\Favorites_Manager' ) ) {
+        try {
+            $favorites_manager = Favorites_Manager::get_instance();
+            $favorites_payload = $favorites_manager->get_localized_payload( get_current_user_id() );
+        } catch ( \Throwable $e ) {
+            $favorites_payload = array( 'enabled' => false );
+        }
+    }
+    
     wp_localize_script( 'db-map', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
         'restNonce' => wp_create_nonce( 'wp_rest' ),
@@ -496,6 +509,7 @@ add_action('wp_enqueue_scripts', function() {
         'accountUrl' => is_user_logged_in() ? admin_url('profile.php') : wp_login_url(),
         'logoutUrl' => is_user_logged_in() ? wp_logout_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ) : '',
         'loginUrl' => is_user_logged_in() ? '' : wp_login_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ),
+        'favorites' => $favorites_payload,
     ) );
     
     // On-Demand Processor data
