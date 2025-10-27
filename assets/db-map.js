@@ -622,7 +622,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   let lastRenderedFeatures = [];
   const FAVORITES_LAST_FOLDER_KEY = 'dbFavoritesLastFolder';
   const favoritesState = {
-    enabled: !!(dbMapData && dbMapData.favorites && dbMapData.favorites.enabled),
+    enabled: true, // Favorites jsou vždy povolené - login se kontroluje na backendu
     restUrl: (dbMapData && dbMapData.favorites && dbMapData.favorites.restUrl) || '/wp-json/db/v1/favorites',
     maxCustomFolders: (dbMapData && dbMapData.favorites && dbMapData.favorites.maxCustomFolders) || 0,
     defaultLimit: (dbMapData && dbMapData.favorites && dbMapData.favorites.defaultLimit) || 0,
@@ -1330,10 +1330,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       event.preventDefault();
       event.stopPropagation();
     }
-    if (!favoritesState.enabled) {
-      alert('Pro ukládání oblíbených se prosím přihlašte.');
-      return;
-    }
+    // Kontrola enabled odstraněna - favorites jsou vždy dostupné, login se kontroluje na backendu
     const wantsPanel = !!(event && (event.metaKey || event.ctrlKey || event.shiftKey));
     ensureFavoritesPanel();
     if (favoritesState.isPanelOpen) {
@@ -1364,9 +1361,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   async function activateFavoritesFolder(folderId) {
-    if (!favoritesState.enabled) {
-      return;
-    }
+    // Kontrola enabled odstraněna - favorites jsou vždy dostupné
     if (inFlightController) {
       try { inFlightController.abort(); } catch (_) {}
       inFlightController = null;
