@@ -640,6 +640,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     loadingPromise: null,
     previousLoadMode: null,
   };
+  
+  // Debug: zkontrolovat načtené favorites data
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('[DB Map] Favorites enabled:', favoritesState.enabled);
+    console.log('[DB Map] dbMapData.favorites:', dbMapData && dbMapData.favorites);
+  }
   let favoritesPanel = null;
   let favoritesOverlay = null;
   let favoritesBanner = null;
