@@ -1932,9 +1932,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       <button type="button" class="db-filter-modal__close" aria-label="Zavřít">&times;</button>
       <h2 class="db-filter-modal__title">Filtry</h2>
       <div class="db-filter-modal__body">
-        <div class="db-filter-reset-section" id="db-filter-reset-section" style="display: none;">
-          <button type="button" id="db-filter-reset" class="db-filter-btn db-filter-btn--secondary">Vymazat filtry</button>
-        </div>
+        <button type="button" id="db-filter-reset" class="db-filter-modal__reset" disabled>Resetovat filtry (0)</button>
         
         <div class="db-filter-section">
           <div class="db-filter-section__title">Výkon (kW)</div>
@@ -2328,6 +2326,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       const count = filterState.providers.size;
       btn.textContent = count > 0 ? `Provozovatel (${count})` : 'Vybrat provozovatele...';
     }
+    
+    // Aktualizovat reset tlačítko
+    updateResetButtonVisibility();
   }
 
   function normalizeConnectorType(str) {
@@ -2630,6 +2631,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     }
     
+    // Aplikovat provider button
+    const providerBtn = document.getElementById('db-open-provider-modal');
+    if (providerBtn) {
+      const count = filterState.providers.size;
+      providerBtn.textContent = count > 0 ? `Provozovatel (${count})` : 'Vybrat provozovatele...';
+    }
+    
     // Aktualizovat viditelnost reset tlačítka
     updateResetButtonVisibility();
   }
@@ -2644,11 +2652,26 @@ document.addEventListener('DOMContentLoaded', async function() {
            showOnlyRecommended;
   }
   
-  // Funkce pro zobrazení/skrytí reset tlačítka
+  // Funkce pro počítání aktivních filtrů
+  function countActiveFilters() {
+    let count = 0;
+    if (filterState.connectors.size > 0) count += filterState.connectors.size;
+    if (filterState.amenities.size > 0) count += filterState.amenities.size;
+    if (filterState.access.size > 0) count += filterState.access.size;
+    if (filterState.providers.size > 0) count += filterState.providers.size;
+    if (filterState.powerMin > 0) count++;
+    if (filterState.powerMax < 400) count++;
+    if (showOnlyRecommended) count++;
+    return count;
+  }
+  
+  // Funkce pro aktualizaci reset tlačítka
   function updateResetButtonVisibility() {
-    const resetSection = document.getElementById('db-filter-reset-section');
-    if (resetSection) {
-      resetSection.style.display = hasActiveFilters() ? 'block' : 'none';
+    const resetBtn = document.getElementById('db-filter-reset');
+    if (resetBtn) {
+      const count = countActiveFilters();
+      resetBtn.textContent = `Resetovat filtry (${count})`;
+      resetBtn.disabled = count === 0;
     }
   }
   

@@ -65,7 +65,7 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  z-index: 1001;
+  z-index: 999; /* Nižší než modal filtrů (10000) */
   background: rgba(255, 255, 255, 0.95);
   border-radius: 8px;
   padding: 16px;
@@ -1993,14 +1993,8 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   outline: none;
 }
 
-/* Filter reset section */
-.db-filter-reset-section {
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(4, 159, 232, 0.2);
-}
-
-.db-filter-reset-section .db-filter-btn {
+/* Filter reset button */
+.db-filter-modal__reset {
   width: 100%;
   background: #FF6A4B;
   color: white;
@@ -2012,11 +2006,18 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   font-size: 0.9rem;
   cursor: pointer;
   transition: all 0.2s ease;
+  margin-bottom: 1rem;
 }
 
-.db-filter-reset-section .db-filter-btn:hover {
+.db-filter-modal__reset:hover:not(:disabled) {
   background: #e55a3f;
   transform: translateY(-1px);
+}
+
+.db-filter-modal__reset:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* Filter sections */
