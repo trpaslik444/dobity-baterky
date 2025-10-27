@@ -315,6 +315,11 @@ if ( file_exists( __DIR__ . '/includes/REST_Map.php' ) ) {
     }
 }
 
+// Favorites Manager - načítá se před REST API
+if ( file_exists( __DIR__ . '/includes/Favorites_Manager.php' ) ) {
+    require_once __DIR__ . '/includes/Favorites_Manager.php';
+}
+
 // Favorites REST API
 if ( file_exists( __DIR__ . '/includes/REST_Favorites.php' ) ) {
     require_once __DIR__ . '/includes/REST_Favorites.php';
