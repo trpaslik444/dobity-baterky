@@ -9608,3 +9608,33 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
   
 }); // Konec DOMContentLoaded handleru
+
+// Event listener pro favorites star button - mimo DOMContentLoaded
+setTimeout(() => {
+  console.log('[DB Map] Registering favorites star button click listener OUTSIDE DOMContentLoaded');
+  document.addEventListener('click', async (event) => {
+    const starBtn = event.target.closest('.db-favorite-star-btn');
+    if (!starBtn) {
+      return;
+    }
+    
+    console.log('[DB Map] Star button clicked!');
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const postId = starBtn.getAttribute('data-db-favorite-post-id');
+    if (!postId) {
+      console.log('[DB Map] No post ID found');
+      return;
+    }
+    
+    console.log('[DB Map] Post ID:', postId);
+    
+    // Pokud handleFavoritesToggle existuje, zavolat ho
+    if (typeof handleFavoritesToggle === 'function') {
+      await handleFavoritesToggle(event);
+    } else {
+      console.log('[DB Map] handleFavoritesToggle not found');
+    }
+  });
+}, 1000);
