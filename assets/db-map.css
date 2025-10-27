@@ -2,6 +2,175 @@
 /* Import Google Fonts pro typografii z brandbooku */
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Patrick+Hand&display=swap');
 
+/* ===== SMART LOADING MANAGER STYLES ===== */
+.db-manual-load-container {
+  position: absolute;
+  bottom: 25vh; /* 1/4 od spodní hrany */
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: none;
+  animation: slideInFromBottom 0.3s ease-out;
+}
+
+.db-manual-load-btn {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  border: none;
+  backdrop-filter: none;
+  width: 120px; /* Pevná šířka v pixelech */
+}
+
+.db-manual-load-btn button {
+  background: #049FE8; /* Modrá z brandbooku */
+  color: #FFACC4; /* Růžová z brandbooku */
+  border: none;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(4, 159, 232, 0.3);
+}
+
+.db-manual-load-btn button:hover {
+  background: #0378b8; /* Tmavší modrá při hover */
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(4, 159, 232, 0.4);
+}
+
+.db-manual-load-btn button:active {
+  transform: translateY(0);
+}
+
+.db-manual-load-btn .icon {
+  display: none; /* Skrytý pin */
+}
+
+.db-manual-load-btn .text {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.db-loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 999; /* Nižší než modal filtrů (10000) */
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  border: 1px solid #049FE8;
+  backdrop-filter: blur(10px);
+  display: none;
+  align-items: center;
+  gap: 10px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.db-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #049FE8;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.db-loading-indicator span {
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 500;
+  color: #333;
+  font-size: 13px;
+}
+
+/* Auto-load toggle button - přesunuto do menu */
+.db-auto-load-toggle {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #049FE8;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(10px);
+  margin-left: 10px;
+}
+
+.db-auto-load-on {
+  background: linear-gradient(135deg, #049FE8 0%, #007BB5 100%);
+  color: white;
+}
+
+.db-auto-load-off {
+  background: rgba(255, 255, 255, 0.95);
+  color: #666;
+}
+
+.db-auto-load-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(4, 159, 232, 0.3);
+}
+
+/* Animations */
+@keyframes slideInFromBottom {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .db-manual-load-container {
+    bottom: 25vh; /* Zachovat 1/4 od spodní hrany */
+    left: 50%;
+    transform: translateX(-50%);
+    right: auto;
+  }
+  
+  .db-manual-load-btn {
+    width: 120px; /* Pevná šířka zachována */
+  }
+  
+  .db-manual-load-btn button {
+    font-size: 13px; /* Mírně menší font na mobilu */
+    padding: 10px 14px;
+  }
+}
+
 html, body {
   height: 100%;
   min-height: 100vh;
@@ -1764,85 +1933,341 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   }
 } 
 
-/* Filtry - jezdec s 2 kuličkami */
-#db-map-filter-panel {
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 #f1f5f9;
-}
-
-#db-map-filter-panel::-webkit-scrollbar {
-  width: 6px;
-}
-
-#db-map-filter-panel::-webkit-scrollbar-track {
-  background: #f1f5f9;
-  border-radius: 3px;
-}
-
-#db-map-filter-panel::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
-}
-
-#db-map-filter-panel::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Oprava problému s mapou v pozadí filtrů */
+/* Filter Modal - sjednocený design s licenčním modalem */
 #db-map-filter-panel {
   pointer-events: auto;
   touch-action: none;
 }
 
-#db-map-filter-panel * {
-  pointer-events: auto;
-  touch-action: none;
+#db-map-filter-panel.open {
+  display: flex;
 }
 
-/* Jezdec pozadí - každý range pokrývá svou polovinu */
-#db-power-min {
+#db-map-filter-panel .db-filter-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+}
+
+#db-map-filter-panel .db-filter-modal__content {
+  position: relative;
+  width: min(90vw, 480px);
+  max-height: 90vh;
+  background: rgba(254, 249, 223, 0.92);
+  border-radius: 18px;
+  padding: 2.5rem 2rem;
+  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
+  color: #1f2933;
+  /* Zajistit scrollování */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* Zabraň overflow na content */
+}
+
+#db-map-filter-panel .db-filter-modal__title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 1.5rem;
+  color: #049FE8;
+  flex-shrink: 0; /* Zabránit zmenšení nadpisu */
+}
+
+#db-map-filter-panel .db-filter-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding-right: 0.5rem; /* Prostor pro scrollbar */
+}
+
+#db-map-filter-panel .db-filter-modal__close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: rgba(4, 159, 232, 0.9);
+  border: none;
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  line-height: 1;
+  transition: background 0.2s ease;
+}
+
+#db-map-filter-panel .db-filter-modal__close:hover,
+#db-map-filter-panel .db-filter-modal__close:focus {
+  background: #024b9b;
+  outline: none;
+}
+
+/* Filter reset button */
+.db-filter-modal__reset {
+  width: 100%;
+  background: #FF6A4B;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-family: 'Montserrat', sans-serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 1rem;
+}
+
+.db-filter-modal__reset:hover:not(:disabled) {
+  background: #e55a3f;
+  transform: translateY(-1px);
+}
+
+.db-filter-modal__reset:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Filter sections */
+.db-filter-section {
+  margin-bottom: 1.5rem;
+}
+
+.db-filter-section--disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.db-filter-section__title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 0.75rem;
+}
+
+/* Provider filter button */
+.db-filter-provider-btn {
+  background: #FEF9E8; /* Béžový background podle brandbooku */
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: 'Montserrat', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  text-align: center;
+}
+
+.db-filter-provider-btn:hover {
+  background: #FEF9E8; /* Ponechat béžový při hover */
+  border-color: #049FE8;
+  color: #049FE8;
+}
+
+.db-filter-provider-btn:active {
+  transform: scale(0.98);
+}
+
+/* Checkboxes */
+.db-filter-checkboxes {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.db-filter-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.db-filter-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #049FE8;
+}
+
+/* Power range slider */
+.db-filter-power-range {
+  margin: 1rem 0;
+}
+
+.db-filter-power-track {
+  position: relative;
+  height: 40px;
+  margin: 10px 0;
+}
+
+.db-filter-power-track::before {
+  content: '';
   position: absolute;
   top: 50%;
   left: 0;
-  width: 50%;
+  right: 0;
   height: 4px;
-  background: transparent;
-  appearance: none;
-  -webkit-appearance: none;
+  background: #e5e7eb;
+  border-radius: 2px;
   transform: translateY(-50%);
-  z-index: 3;
-  pointer-events: auto;
-  touch-action: none;
 }
 
-#db-power-max {
+.db-filter-power-fill {
   position: absolute;
   top: 50%;
+  left: 0;
   right: 0;
-  width: 50%;
+  height: 4px;
+  background: #FF6A4B;
+  border-radius: 2px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.db-filter-power-slider {
+  position: absolute;
+  top: 50%;
   height: 4px;
   background: transparent;
   appearance: none;
   -webkit-appearance: none;
   transform: translateY(-50%);
-  z-index: 3;
   pointer-events: auto;
-  touch-action: none;
+  cursor: pointer;
 }
 
-/* Jezdec pozadí - Firefox */
-#db-power-min::-moz-range-track,
-#db-power-max::-moz-range-track {
+.db-filter-power-slider--min {
+  left: 0;
+  width: 50%;
+  z-index: 3;
+}
+
+.db-filter-power-slider--max {
+  right: 0;
+  width: 50%;
+  z-index: 3;
+}
+
+.db-filter-power-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  background: #FF6A4B;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  transition: all 0.2s ease;
+}
+
+.db-filter-power-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+
+.db-filter-power-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  background: #FF6A4B;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.db-filter-power-slider::-webkit-slider-track,
+.db-filter-power-slider::-moz-range-track {
   background: transparent;
   border: none;
 }
 
-/* Jezdec pozadí - Webkit */
-#db-power-min::-webkit-slider-track,
-#db-power-max::-webkit-slider-track {
-  background: transparent;
+.db-filter-power-values {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: #666;
+  margin-top: 0.5rem;
+}
+
+/* Connector list */
+.db-filter-connector-list {
+  max-height: 120px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px;
+  background: #FEF9E8; /* Béžový background podle brandbooku */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center; /* Vycentrovat ikony */
+  align-items: center;
+  gap: 8px;
+}
+
+/* Filter actions */
+.db-filter-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.db-filter-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
   border: none;
-} 
+}
+
+.db-filter-btn--primary {
+  background: #049FE8;
+  color: #fff;
+}
+
+.db-filter-btn--primary:hover {
+  background: #024b9b;
+}
+
+.db-filter-btn--secondary {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+}
+
+.db-filter-btn--secondary:hover {
+  background: #e5e7eb;
+}
+
+/* Responsivní design */
+@media (max-width: 768px) {
+  #db-map-filter-panel .db-filter-modal__content {
+    width: calc(100vw - 40px);
+    padding: 1.5rem 1rem;
+  }
+  
+  .db-filter-checkboxes {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .db-filter-actions {
+    flex-direction: column;
+  }
+}
 
 /* Tlačítko přepínání seznamu poskytovatelů */
 #db-provider-toggle {
@@ -1862,45 +2287,6 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 
 #db-provider-toggle:active {
   transform: scale(0.95);
-} 
-
-/* Jezdec s vizuálním vyplněním pro výkon */
-#db-power-min::-webkit-slider-thumb,
-#db-power-max::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  background: #FF6A4B;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 3px solid #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  transition: all 0.2s ease;
-}
-
-#db-power-min::-webkit-slider-thumb:hover,
-#db-power-max::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-}
-
-#db-power-min::-moz-range-thumb,
-#db-power-max::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  background: #FF6A4B;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 3px solid #fff;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-  transition: all 0.2s ease;
-}
-
-#db-power-min::-moz-range-thumb:hover,
-#db-power-max::-moz-range-thumb:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 
 /* Ikony konektorů */
