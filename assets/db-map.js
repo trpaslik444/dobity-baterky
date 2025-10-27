@@ -1349,6 +1349,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     renderFavoritesPanel();
     openFavoritesPanel();
   }
+  
+  // Zveřejnit handleFavoritesToggle na window pro externí přístup
+  window.handleFavoritesToggle = handleFavoritesToggle;
 
   function getAssignmentsForFolder(folderId) {
     const result = [];
