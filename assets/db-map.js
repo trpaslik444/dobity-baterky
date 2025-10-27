@@ -1744,6 +1744,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     favoritesAssignPostId = null;
     favoritesAssignProps = null;
   }
+  
+  // Zveřejnit openFavoritesAssignModal na window pro externí přístup
+  window.openFavoritesAssignModal = openFavoritesAssignModal;
   function selectFeaturesForView() {
     try {
       if (!map) return [];
@@ -9625,18 +9628,25 @@ setInterval(() => {
         const postId = btn.getAttribute('data-db-favorite-post-id');
         console.log('[DB Map] Post ID:', postId);
         
-        // Jednoduše zavolat handleFavoritesToggle přímo
+        // Získat props z featureCache nebo features
+        const feature = featureCache && featureCache.get ? featureCache.get(postId) : null;
+        const props = feature && feature.properties ? feature.properties : null;
+        
+        // Otevřít modál pro výběr složky oblíbených
         try {
-          if (window.handleFavoritesToggle) {
-            await window.handleFavoritesToggle(event);
-          } else if (typeof handleFavoritesToggle === 'function') {
-            await handleFavoritesToggle(event);
+          if (window.openFavoritesAssignModal) {
+            await window.openFavoritesAssignModal(postId, props);
+          } else if (typeof openFavoritesAssignModal === 'function') {
+            await openFavoritesAssignModal(postId, props);
           } else {
-            console.log('[DB Map] handleFavoritesToggle not found as window or local function');
-            console.log('[DB Map] Available functions:', Object.keys(window).filter(k => k.includes('Favorites')));
+            console.log('[DB Map] openFavoritesAssignModal not found');
+            // Fallback na handleFavoritesToggle
+            if (window.handleFavoritesToggle) {
+              await window.handleFavoritesToggle(event);
+            }
           }
         } catch (err) {
-          console.error('[DB Map] Error calling handleFavoritesToggle:', err);
+          console.error('[DB Map] Error opening favorites assign modal:', err);
         }
       });
     }
