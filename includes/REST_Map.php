@@ -238,63 +238,117 @@ class REST_Map {
         } else {
             $types = ['charging_location','rv_spot','poi'];
         }
-        
-        error_log('DB Map REST: Post types ke zpracování: ' . print_r($types, true));
-        
-        // DEBUG: Kontrola existence postů s danými post_types
-        foreach ($types as $pt) {
-            $count = wp_count_posts($pt);
-            error_log('DB Map REST: Post count pro ' . $pt . ': ' . print_r($count, true));
-            
-            // DEBUG: Kontrola meta klíčů na prvním existujícím postu
-            if ($count->publish > 0) {
-                $sample_post = get_posts([
-                    'post_type' => $pt,
-                    'post_status' => 'publish',
-                    'posts_per_page' => 1,
-                    'orderby' => 'ID',
-                    'order' => 'ASC'
-                ]);
-                if (!empty($sample_post)) {
-                    $sample = $sample_post[0];
-                    $keys = $this->get_latlng_keys_for_type($pt);
-                    $sample_lat = get_post_meta($sample->ID, $keys['lat'], true);
-                    $sample_lng = get_post_meta($sample->ID, $keys['lng'], true);
-                    error_log('DB Map REST: Vzorek post ' . $pt . ' ID ' . $sample->ID . ' - ' . $keys['lat'] . ': ' . $sample_lat . ', ' . $keys['lng'] . ': ' . $sample_lng);
+
+        $ids_param = $request->get_param('ids');
+        $ids_filter = [];
+        if (is_string($ids_param) && $ids_param !== '') {
+            $ids_filter = array_map('absint', explode(',', $ids_param));
+        } elseif (is_array($ids_param)) {
+            $ids_filter = array_map('absint', $ids_param);
+        }
+        $ids_filter = array_values(array_filter(array_unique($ids_filter)));
+        $has_ids_filter = !empty($ids_filter);
+
+        if ($has_ids_filter) {
+            $limit = max(1, count($ids_filter));
+            $offset = 0;
+        }
+
+        $ids_by_type = [];
+        if ($has_ids_filter) {
+            foreach ($ids_filter as $candidate_id) {
+                $ptype = get_post_type($candidate_id);
+                if (!$ptype) {
+                    continue;
                 }
-                
-                // DEBUG: Kontrola rozsahu souřadnic
-                $keys = $this->get_latlng_keys_for_type($pt);
-                global $wpdb;
-                $min_lat = $wpdb->get_var($wpdb->prepare(
-                    "SELECT MIN(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta} 
-                     WHERE meta_key = %s AND post_id IN (
-                         SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                     )",
-                    $keys['lat'], $pt
-                ));
-                $max_lat = $wpdb->get_var($wpdb->prepare(
-                    "SELECT MAX(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta} 
-                     WHERE meta_key = %s AND post_id IN (
-                         SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                     )",
-                    $keys['lat'], $pt
-                ));
-                $min_lng = $wpdb->get_var($wpdb->prepare(
-                    "SELECT MIN(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta} 
-                     WHERE meta_key = %s AND post_id IN (
-                         SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                     )",
-                    $keys['lng'], $pt
-                ));
-                $max_lng = $wpdb->get_var($wpdb->prepare(
-                    "SELECT MAX(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta} 
-                     WHERE meta_key = %s AND post_id IN (
-                         SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                     )",
-                    $keys['lng'], $pt
-                ));
-                error_log('DB Map REST: Rozsah souřadnic pro ' . $pt . ' - lat: [' . $min_lat . ', ' . $max_lat . '], lng: [' . $min_lng . ', ' . $max_lng . ']');
+                if (!in_array($ptype, $types, true)) {
+                    continue;
+                }
+                if (!isset($ids_by_type[$ptype])) {
+                    $ids_by_type[$ptype] = [];
+                }
+                $ids_by_type[$ptype][] = $candidate_id;
+            }
+        }
+
+        $favorite_assignments = [];
+        $favorite_folders_index = [];
+        $current_user_id = get_current_user_id();
+        if ($current_user_id > 0 && class_exists('\\DB\\Favorites_Manager')) {
+            try {
+                $favorites_manager = Favorites_Manager::get_instance();
+                $state = $favorites_manager->get_state($current_user_id);
+                $favorite_assignments = $state['assignments'] ?? [];
+                $folders = $favorites_manager->get_folders($current_user_id);
+                foreach ($folders as $folder) {
+                    if (isset($folder['id'])) {
+                        $favorite_folders_index[(string) $folder['id']] = $folder;
+                    }
+                }
+            } catch ( \Throwable $e ) {
+                $favorite_assignments = [];
+                $favorite_folders_index = [];
+            }
+        }
+
+        error_log('DB Map REST: Post types ke zpracování: ' . print_r($types, true));
+
+        if (!$has_ids_filter) {
+            // DEBUG: Kontrola existence postů s danými post_types
+            foreach ($types as $pt) {
+                $count = wp_count_posts($pt);
+                error_log('DB Map REST: Post count pro ' . $pt . ': ' . print_r($count, true));
+
+                // DEBUG: Kontrola meta klíčů na prvním existujícím postu
+                if ($count->publish > 0) {
+                    $sample_post = get_posts([
+                        'post_type' => $pt,
+                        'post_status' => 'publish',
+                        'posts_per_page' => 1,
+                        'orderby' => 'ID',
+                        'order' => 'ASC'
+                    ]);
+                    if (!empty($sample_post)) {
+                        $sample = $sample_post[0];
+                        $keys = $this->get_latlng_keys_for_type($pt);
+                        $sample_lat = get_post_meta($sample->ID, $keys['lat'], true);
+                        $sample_lng = get_post_meta($sample->ID, $keys['lng'], true);
+                        error_log('DB Map REST: Vzorek post ' . $pt . ' ID ' . $sample->ID . ' - ' . $keys['lat'] . ': ' . $sample_lat . ', ' . $keys['lng'] . ': ' . $sample_lng);
+                    }
+
+                    // DEBUG: Kontrola rozsahu souřadnic
+                    $keys = $this->get_latlng_keys_for_type($pt);
+                    global $wpdb;
+                    $min_lat = $wpdb->get_var($wpdb->prepare(
+                        "SELECT MIN(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
+                         WHERE meta_key = %s AND post_id IN (
+                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
+                         )",
+                        $keys['lat'], $pt
+                    ));
+                    $max_lat = $wpdb->get_var($wpdb->prepare(
+                        "SELECT MAX(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
+                         WHERE meta_key = %s AND post_id IN (
+                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
+                         )",
+                        $keys['lat'], $pt
+                    ));
+                    $min_lng = $wpdb->get_var($wpdb->prepare(
+                        "SELECT MIN(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
+                         WHERE meta_key = %s AND post_id IN (
+                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
+                         )",
+                        $keys['lng'], $pt
+                    ));
+                    $max_lng = $wpdb->get_var($wpdb->prepare(
+                        "SELECT MAX(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
+                         WHERE meta_key = %s AND post_id IN (
+                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
+                         )",
+                        $keys['lng'], $pt
+                    ));
+                    error_log('DB Map REST: Rozsah souřadnic pro ' . $pt . ' - lat: [' . $min_lat . ', ' . $max_lat . '], lng: [' . $min_lng . ', ' . $max_lng . ']');
+                }
             }
         }
 
@@ -320,7 +374,11 @@ class REST_Map {
         if ($lat !== null && $lng !== null && $radius_km > 0) {
             $use_radius = true;
         }
-        
+
+        if ($has_ids_filter) {
+            $use_radius = false;
+        }
+
         // Pro režim "all" necháme $use_radius = false a pokračujeme
         if (!$use_radius) {
             error_log('DB Map REST: Režim "all" - načítám všechna data bez radius filtru');
@@ -354,6 +412,17 @@ class REST_Map {
                 'orderby'        => 'date', // Seřadit podle data pro lepší pokrytí
                 'order'          => 'DESC',
             ];
+
+            if ($has_ids_filter) {
+                $ids_for_type = $ids_by_type[$pt] ?? [];
+                if (empty($ids_for_type)) {
+                    continue;
+                }
+                $args['post__in'] = $ids_for_type;
+                $args['orderby'] = 'post__in';
+                $args['order'] = 'ASC';
+                $args['posts_per_page'] = count($ids_for_type);
+            }
 
             // Dočasně vypneme meta query - necháme všechno na Haversine
             // if ($use_radius) {
@@ -506,6 +575,24 @@ class REST_Map {
                     'author' => $post->post_author,
                     'status' => $post->post_status,
                 ];
+
+                if ($has_ids_filter || !empty($favorite_assignments)) {
+                    $fav_id = $favorite_assignments[$post->ID] ?? null;
+                    if ($fav_id) {
+                        $fav_id = (string) $fav_id;
+                        $properties['favorite_folder_id'] = $fav_id;
+                        if (isset($favorite_folders_index[$fav_id])) {
+                            $folder_meta = $favorite_folders_index[$fav_id];
+                            $properties['favorite_folder'] = [
+                                'id' => $folder_meta['id'] ?? $fav_id,
+                                'name' => $folder_meta['name'] ?? '',
+                                'icon' => $folder_meta['icon'] ?? '',
+                                'type' => $folder_meta['type'] ?? 'custom',
+                                'limit' => $folder_meta['limit'] ?? 0,
+                            ];
+                        }
+                    }
+                }
 
                 // Pro POI přidáme také term metadata pro ikony
                 if ($pt === 'poi') {
@@ -770,7 +857,19 @@ class REST_Map {
         }
 
         $total_before_limit = count($features);
-        if ($use_radius) {
+        if ($has_ids_filter) {
+            $order_map = [];
+            foreach ($ids_filter as $order_idx => $order_id) {
+                $order_map[$order_id] = $order_idx;
+            }
+            usort($features, function($a, $b) use ($order_map) {
+                $aId = $a['properties']['id'] ?? 0;
+                $bId = $b['properties']['id'] ?? 0;
+                $aPos = $order_map[$aId] ?? PHP_INT_MAX;
+                $bPos = $order_map[$bId] ?? PHP_INT_MAX;
+                return $aPos <=> $bPos;
+            });
+        } elseif ($use_radius) {
             usort($features, function($a,$b) use($lat,$lng){
                 [$alng,$alat] = $a['geometry']['coordinates'];
                 [$blng,$blat] = $b['geometry']['coordinates'];

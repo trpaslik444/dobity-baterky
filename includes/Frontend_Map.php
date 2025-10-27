@@ -66,6 +66,19 @@ class Frontend_Map {
         // }
         
         // Data pro JS
+        $favorites_payload = array(
+            'enabled' => false,
+        );
+
+        if ( is_user_logged_in() && class_exists( '\\DB\\Favorites_Manager' ) ) {
+            try {
+                $favorites_manager = Favorites_Manager::get_instance();
+                $favorites_payload = $favorites_manager->get_localized_payload( get_current_user_id() );
+            } catch ( \Throwable $e ) {
+                $favorites_payload = array( 'enabled' => false );
+            }
+        }
+
         wp_localize_script( 'db-map', 'dbMapData', array(
             'restUrl'   => rest_url( 'db/v1/map' ),
             'searchUrl' => rest_url( 'db/v1/map-search' ),
@@ -80,6 +93,7 @@ class Frontend_Map {
             'ajaxUrl'   => admin_url('admin-ajax.php'),
             'googleApiKey' => get_option('db_google_api_key'),
             'chargerIconColor' => get_option('db_charger_icon_color', '#049FE8'),
+            'favorites' => $favorites_payload,
         ) );
         
     }
