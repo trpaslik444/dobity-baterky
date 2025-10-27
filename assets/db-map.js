@@ -8548,15 +8548,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         lastSearchRadiusKm = FIXED_RADIUS_KM;
         window.smartLoadingManager.hideManualLoadButton();
       } else {
-        // Jsme uvnitř načtené oblasti - jen překreslit z cache
-        const visible = selectFeaturesForView();
-        if (visible && visible.length > 0) {
-          features = visible;
-          window.features = features;
-          // POZOR: Nevolat renderCards() při pohybu mapy - způsobuje nekonečnou smyčku!
-          // renderCards('', null, false);
-          lastRenderedFeatures = features.slice(0);
-        }
+        // Jsme uvnitř načtené oblasti - NENÍ POTŘEBA měnit features
+        // features musí zůstat jako všechny načtené body (ne jen viditelný viewport)
+        // Jinak by se body ztratily při pohybu po mapě
         window.smartLoadingManager.hideManualLoadButton();
       }
       

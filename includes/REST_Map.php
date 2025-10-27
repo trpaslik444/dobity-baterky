@@ -716,6 +716,13 @@ class REST_Map {
                                     $power = floatval($charger_powers[$charger_term->name]);
                                 }
                             }
+                            // Fallback: zkusit získat z taxonomy term meta, pokud není v post meta
+                            if ($power == 0) {
+                                $term_power = get_term_meta($charger_term->term_id, 'power', true);
+                                if ($term_power && is_numeric($term_power)) {
+                                    $power = floatval($term_power);
+                                }
+                            }
                             
                             // SVG ikony dočasně zakázány - čekáme na správné ikony
                             $svg_icon = null;
