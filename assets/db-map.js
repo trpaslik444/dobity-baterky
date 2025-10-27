@@ -2014,6 +2014,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     filterPanel.classList.add('open');
     document.body.classList.add('db-filter-modal-open');
     
+    // Zavřít mobile sheet pokud je otevřený
+    const mobileSheet = document.getElementById('db-mobile-sheet');
+    if (mobileSheet && mobileSheet.classList.contains('open')) {
+      mobileSheet.classList.remove('open');
+    }
+    
     // Inicializovat filtry při otevření modalu
     setTimeout(() => {
       // Inicializovat slidery
@@ -7058,7 +7064,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!window.smartLoadingManager) return;
       
       // Pokud ještě neproběhlo počáteční načítání, nefetchovat
+      // ALE: načíst data při prvním pohybu po inicializaci, pokud ještě nebyla načtena
       if (!initialLoadCompleted) {
+        // Spustit počáteční fetch při prvním moveend/zoomend
+        const c = map.getCenter();
+        try {
+          await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
+          lastSearchCenter = { lat: c.lat, lng: c.lng };
+          lastSearchRadiusKm = FIXED_RADIUS_KM;
+          initialLoadCompleted = true;
+        } catch (e) {
+          console.error('[DB Map] Initial load in onViewportChanged failed:', e);
+        }
         return;
       }
       
