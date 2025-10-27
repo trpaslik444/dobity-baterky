@@ -89,6 +89,18 @@ class REST_Map {
             },
         ) );
 
+        // Providers endpoint
+        register_rest_route( 'db/v1', '/providers', array(
+            'methods'  => 'GET',
+            'callback' => array( $this, 'handle_providers' ),
+            'permission_callback' => function ( $request ) {
+                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                    return false;
+                }
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
+        ) );
+
         // Externí detaily POI (Google Places / Tripadvisor)
         register_rest_route( 'db/v1', '/poi-external/(?P<id>\d+)', array(
             'methods'  => 'GET',
@@ -2797,5 +2809,59 @@ class REST_Map {
         $ids[] = $make('poi',               'Test Market',    -0.003, -0.001);
 
         return rest_ensure_response(['ok'=>true,'created'=>$ids]);
+    }
+    
+    /**
+     * Providers endpoint - získá všechny provozovatele seřazené podle počtu nabíjecích bodů
+     */
+    public function handle_providers($request) {
+        global $wpdb;
+        
+        // Načíst všechny provider termy z taxonomie 'provider'
+        $terms = get_terms(array(
+            'taxonomy' => 'provider',
+            'hide_empty' => false,
+        ));
+        
+        if (is_wp_error($terms) || empty($terms)) {
+            return rest_ensure_response([
+                'providers' => []
+            ]);
+        }
+        
+        $providers_with_count = [];
+        
+        foreach ($terms as $term) {
+            // Počítat kolik charging_location má tento provider
+            $count = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) 
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                WHERE p.post_type = 'charging_location'
+                AND p.post_status = 'publish'
+                AND tr.term_taxonomy_id = %d",
+                $term->term_taxonomy_id
+            ));
+            
+            // Načíst friendly name a logo z term meta
+            $friendly_name = get_term_meta($term->term_id, 'provider_friendly_name', true);
+            $logo = get_term_meta($term->term_id, 'provider_logo', true);
+            
+            $providers_with_count[] = [
+                'name' => $term->name,
+                'nickname' => $friendly_name,
+                'icon' => $logo,
+                'count' => (int)$count
+            ];
+        }
+        
+        // Seřadit podle počtu bodů (nejvíc bodů na začátku)
+        usort($providers_with_count, function($a, $b) {
+            return $b['count'] - $a['count'];
+        });
+        
+        return rest_ensure_response([
+            'providers' => $providers_with_count
+        ]);
     }
 } 

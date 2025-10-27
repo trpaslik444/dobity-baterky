@@ -1994,7 +1994,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   providerModal.className = 'db-provider-modal';
   providerModal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10004;align-items:center;justify-content:center;';
   providerModal.innerHTML = `
-    <div class="db-provider-modal__content" style="background:white;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
+    <div class="db-provider-modal__content" style="background:#FEF9E8;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
       <div class="db-provider-modal__header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-shrink:0;">
         <h3 style="margin:0;color:#049FE8;font-size:1.3rem;font-weight:600;">Vyberte provozovatele</h3>
         <button type="button" class="db-provider-modal__close" style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:background 0.2s;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='none'">&times;</button>
@@ -2175,7 +2175,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const iconDiv = document.createElement('div');
       iconDiv.className = 'db-connector-icon';
       iconDiv.dataset.value = String(v);
-      iconDiv.style.cssText = 'display:inline-block;width:32px;height:32px;margin:4px;border:2px solid #e5e7eb;border-radius:6px;cursor:pointer;transition:all 0.2s;background:transparent;';
+      iconDiv.style.cssText = 'display:flex;align-items:center;justify-content:center;width:48px;height:48px;margin:4px;border:2px solid #e5e7eb;border-radius:6px;cursor:pointer;transition:all 0.2s;background:transparent;';
       iconDiv.title = String(v);
       
       // Zobrazit ikonu pokud je k dispozici
@@ -2266,20 +2266,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     const grid = document.getElementById('db-provider-grid');
     if (!modal || !grid) return;
     
-    // Naplnit grid provozovateli
+    // Naplnit grid provozovateli (již seřazené podle počtu bodů z databáze)
     grid.innerHTML = '';
     const providers = window.dbProviderData || [];
     
-    providers.sort((a, b) => {
-      const nameA = (a.nickname || a.name).toLowerCase();
-      const nameB = (b.nickname || b.name).toLowerCase();
-      return nameA.localeCompare(nameB);
-    }).forEach(provider => {
+    // Provozovatelé jsou již seřazeni podle počtu bodů, neřadit abecedně
+    providers.forEach(provider => {
       const providerDiv = document.createElement('div');
       providerDiv.className = 'db-provider-item';
       const isSelected = filterState.providers.has(provider.name);
       
-      providerDiv.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px;border:2px solid ${isSelected ? '#FF6A4B' : '#e5e7eb'};border-radius:8px;cursor:pointer;transition:all 0.2s;background:${isSelected ? '#fff5f5' : 'white'};`;
+      providerDiv.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px;border:2px solid ${isSelected ? '#FF6A4B' : '#e5e7eb'};border-radius:8px;cursor:pointer;transition:all 0.2s;background:${isSelected ? '#FFF1F5' : '#FEF9E8'};`;
       
       if (provider.icon) {
         const iconUrl = getIconUrl(provider.icon);
@@ -2299,11 +2296,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (wasSelected) {
           filterState.providers.delete(provider.name);
           providerDiv.style.border = '2px solid #e5e7eb';
-          providerDiv.style.background = 'white';
+          providerDiv.style.background = '#FEF9E8';
         } else {
           filterState.providers.add(provider.name);
           providerDiv.style.border = '2px solid #FF6A4B';
-          providerDiv.style.background = '#fff5f5';
+          providerDiv.style.background = '#FFF1F5';
         }
         updateProviderSelectedCount();
       });
@@ -2425,10 +2422,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     return maxKw || 0;
   }
-  function populateFilterOptions() {
+  async function populateFilterOptions() {
     
     const connectorSet = new Set();
-    const providerMap = new Map(); // provider -> { name, nickname, icon }
     let minPower = 0;
     let maxPower = 400;
     
@@ -2440,18 +2436,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         const arr = Array.isArray(p.connectors) ? p.connectors : (Array.isArray(p.konektory) ? p.konektory : []);
         arr.forEach(c => { const key = getConnectorTypeKey(c); if (key) connectorSet.add(key); });
         
-        // Získat provozovatele
-        const provider = p.provider || p.operator_original;
-        if (provider) {
-          if (!providerMap.has(provider)) {
-            providerMap.set(provider, {
-              name: provider,
-              nickname: p.provider_nickname || p.operator_nickname,
-              icon: p.provider_icon || p.operator_icon || ''
-            });
-          }
-        }
-        
         // Najít min/max výkon pro dynamický rozsah
         const power = getStationMaxKw(p);
         if (power > 0) {
@@ -2461,8 +2445,26 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
     
-    // Uložit provider data pro pozdější použití
-    window.dbProviderData = Array.from(providerMap.values());
+    // Načíst všechny provozovatele z databáze seřazené podle počtu bodů
+    try {
+      const response = await fetch('/wp-json/db/v1/providers', {
+        headers: {
+          'X-WP-Nonce': dbMapData.restNonce
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data && Array.isArray(data.providers)) {
+          // Seřadit podle počtu bodů (nejvíc bodů na začátku)
+          const sorted = data.providers.sort((a, b) => (b.count || 0) - (a.count || 0));
+          window.dbProviderData = sorted;
+        }
+      }
+    } catch (e) {
+      console.warn('[DB Map] Failed to load providers:', e);
+      // Fallback na prázdné pole
+      window.dbProviderData = [];
+    }
     
     
     

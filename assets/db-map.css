@@ -2039,7 +2039,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 
 /* Provider filter button */
 .db-filter-provider-btn {
-  background: white;
+  background: #FEF9E8; /* Béžový background podle brandbooku */
   border: 2px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px 16px;
@@ -2054,7 +2054,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 }
 
 .db-filter-provider-btn:hover {
-  background: #f9fafb;
+  background: #FEF9E8; /* Ponechat béžový při hover */
   border-color: #049FE8;
   color: #049FE8;
 }
@@ -2192,7 +2192,12 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 8px;
-  background: #fff;
+  background: #FEF9E8; /* Béžový background podle brandbooku */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center; /* Vycentrovat ikony */
+  align-items: center;
+  gap: 8px;
 }
 
 /* Filter actions */
