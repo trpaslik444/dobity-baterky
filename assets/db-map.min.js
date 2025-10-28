@@ -27,6 +27,9 @@ const performanceMonitor = {
 // Optimalizace: Event delegation pro snížení počtu listenerů
 let eventDelegationInitialized = false;
 
+// Intersection Observer pro lazy loading nearby data
+let nearbyObserver = null;
+
 function initEventDelegation() {
   if (eventDelegationInitialized) return;
   eventDelegationInitialized = true;
