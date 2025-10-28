@@ -3578,12 +3578,13 @@ body.db-loading::after {
   transform: translate(-50%, -50%);
   width: min(420px, 92vw);
   background: #FEF9DF; /* Brand beige */
-  border-radius: 20px;
-  box-shadow: 0 40px 90px rgba(15, 23, 42, 0.3);
-  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid #FCE67D; /* Brand yellow border */
+  box-shadow: 0 16px 60px rgba(4,159,232,0.18), 0 10px 30px rgba(0,0,0,0.2);
+  padding: 24px;
   display: none;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
   z-index: 1310;
 }
 
@@ -3596,16 +3597,24 @@ body.db-loading::after {
 
 .db-favorites-assign__title {
   font-weight: 700;
-  font-size: 1.1rem;
-  color: #B45309;
+  font-size: 1.4rem;
+  color: #049FE8; /* Brand blue */
 }
 
 .db-favorites-assign__close {
   border: none;
-  background: transparent;
-  font-size: 1.5rem;
-  color: #B45309;
+  background: #FF8DAA; /* Brand dark pink */
+  color: white;
+  font-size: 1.4rem;
   cursor: pointer;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(255,141,170,0.35);
+  transition: filter 0.2s ease;
 }
 
 .db-favorites-assign__list {
@@ -3621,10 +3630,10 @@ body.db-loading::after {
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-radius: 14px;
-  border: 1px solid #FDE68A;
-  background: #FFFBEB;
+  border: 1px solid #FCE67D; /* Brand yellow */
+  background: white;
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
   font-size: 0.95rem;
@@ -3633,14 +3642,14 @@ body.db-loading::after {
 .db-favorites-assign__item:hover,
 .db-favorites-assign__item:focus {
   transform: translateY(-1px);
-  box-shadow: 0 10px 24px rgba(251, 191, 36, 0.25);
+  box-shadow: 0 10px 24px rgba(4,159,232,0.25); /* Brand blue shadow */
   outline: none;
 }
 
 .db-favorites-assign__item.selected {
-  border-color: #F97316;
-  background: #FFF7ED;
-  box-shadow: 0 12px 28px rgba(249, 115, 22, 0.25);
+  border-color: #049FE8; /* Brand blue */
+  background: #FEF9DF; /* Brand beige */
+  box-shadow: 0 12px 28px rgba(4,159,232,0.25);
 }
 
 .db-favorites-assign__icon {
@@ -3657,7 +3666,7 @@ body.db-loading::after {
 
 .db-favorites-assign__name {
   font-weight: 600;
-  color: #92400E;
+  color: #049FE8; /* Brand blue */
 }
 
 .db-favorites-assign__count {
@@ -3677,8 +3686,8 @@ body.db-loading::after {
 }
 
 .db-favorites-assign__create {
-  background: #F97316;
-  color: #fff;
+  background: #FF6A4B; /* Brand orange CTA */
+  color: white;
 }
 
 .db-favorites-assign__remove {
@@ -3697,4 +3706,112 @@ body.db-loading::after {
 .db-favorites-assign__remove:hover,
 .db-favorites-assign__remove:focus {
   box-shadow: 0 8px 18px rgba(239, 68, 68, 0.25);
+}
+
+/* Create form styles */
+.db-favorites-assign__create-form {
+  background: white;
+  border-radius: 14px;
+  border: 1px solid #FCE67D;
+  padding: 20px;
+  margin-top: 16px;
+}
+
+.db-favorites-assign__form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.db-favorites-assign__form-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #049FE8;
+}
+
+.db-favorites-assign__cancel-create {
+  border: none;
+  background: #FF8DAA;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.db-favorites-assign__form-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.db-favorites-assign__input {
+  padding: 12px 16px;
+  border: 1px solid #FCE67D;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  background: white;
+  color: #049FE8;
+}
+
+.db-favorites-assign__input:focus {
+  outline: none;
+  border-color: #049FE8;
+  box-shadow: 0 0 0 3px rgba(4,159,232,0.1);
+}
+
+.db-favorites-assign__form-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.db-favorites-assign__cancel-btn {
+  padding: 8px 16px;
+  border: 1px solid #FCE67D;
+  background: white;
+  color: #049FE8;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.db-favorites-assign__save-btn {
+  padding: 8px 16px;
+  border: none;
+  background: #FF6A4B;
+  color: white;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* Animace pro notifikace */
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideOut {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(100%);
+    opacity: 0;
+  }
 }
