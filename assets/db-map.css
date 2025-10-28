@@ -1068,7 +1068,7 @@ body.db-modal-open { overflow: hidden !important; }
   left: 50%;
   transform: translateX(-50%);
   bottom: 6px; /* menší mezera od spodku */
-  background: #F5F1E8; /* Béžový background podle brandbooku */
+  background: #FEF9DF; /* Brand beige */
   border-radius: 16px; /* horní i spodní, protože není nalepený */
   box-shadow: 0 8px 32px rgba(0,0,0,0.15);
   z-index: 10003; /* Nad licenčním barem */
@@ -1186,8 +1186,8 @@ body.has-attribution #db-mobile-sheet.open {
 #db-mobile-sheet .btn-icon { 
   width: 40px;
   height: 40px;
-  background: #FF8DAA; /* Růžové tlačítko podle brandbooku */
-  color: #049FE8; /* Modrý symbol */
+  background: #FF8DAA; /* Brand dark pink */
+  color: #FFFFFF; /* White icon */
   border: none; 
   border-radius: 8px; 
   display: flex;
@@ -1202,6 +1202,7 @@ body.has-attribution #db-mobile-sheet.open {
 #db-mobile-sheet .btn-icon svg {
   width: 20px;
   height: 20px;
+  color: #FFFFFF;
   stroke: currentColor;
 }
 
@@ -1303,7 +1304,7 @@ body.has-attribution #db-mobile-sheet.open {
 }
 
 #db-mobile-sheet .nearby-item-time {
-  color: #FF8DAA;
+  color: #FF6A4B; /* Brand CTA orange */
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -1366,33 +1367,9 @@ body.has-attribution #db-mobile-sheet.open {
 .db-map-topbar-btn.active { background: #FF8DAA; color: #fff; transform: scale(1.05); }
 
 /* Detail modal (80% výšky od spodní hrany) */
-#db-detail-modal { 
-  position: fixed; 
-  inset: 0; 
-  background: rgba(0,0,0,.4); 
-  display: none; 
-  align-items: flex-end; 
-  justify-content: center; 
-  z-index: 10001; 
-  /* Overlay nesmí scrollovat, scroll patří jen kartě */
-  overflow: hidden;
-}
+#db-detail-modal { position: fixed; inset: 0; background: rgba(4,159,232,0.12); display: none; align-items: flex-end; justify-content: center; z-index: 10001; overflow: hidden; }
 #db-detail-modal.open { display: flex; }
-#db-detail-modal .modal-card { 
-  width: 100%; 
-  max-width: 720px; 
-  height: 80vh; /* 80% výšky obrazovky */
-  background: #F5F1E8; /* Béžový background podle brandbooku */
-  border-radius: 20px 20px 0 0; 
-  overflow-y: auto; 
-  -webkit-overflow-scrolling: touch; /* plynulé scrollování na iOS */
-  overscroll-behavior: contain; /* nepropagovat scroll do pozadí */
-  touch-action: pan-y; /* umožnit vertikální gesto */
-  box-shadow: 0 -10px 30px rgba(0,0,0,.35);
-  padding-bottom: 0;
-  box-sizing: border-box;
-  pointer-events: auto; /* interakce zachytává karta, ne backdrop */
-}
+#db-detail-modal .modal-card { width: 100%; max-width: 720px; height: 80vh; background: #FEF9DF; border-radius: 20px 20px 0 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; box-shadow: 0 -10px 30px rgba(0,0,0,.35); padding-bottom: 0; box-sizing: border-box; pointer-events: auto; }
 
 /* Pokud je aktivní isochrones legenda, posuň modal kartu výše o její výšku */
 body.has-isochrones #db-detail-modal .modal-card {
@@ -2769,22 +2746,13 @@ body.db-loading::after {
   line-height: 1;
 }
 
-.db-map-topbar-btn.favorites-active {
-  background: rgba(255, 191, 107, 0.25);
-  color: #B45309;
-}
+.db-map-topbar-btn.favorites-active { background: #FF8DAA; color: #FFFFFF; }
 
 .db-map-topbar-btn.favorites-active svg {
   color: inherit;
 }
 
-.db-favorites-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.35);
-  z-index: 1200;
-  display: none;
-}
+.db-favorites-overlay { position: absolute; inset: 0; background: rgba(4, 159, 232, 0.18); z-index: 1200; display: none; }
 
 .db-favorites-panel {
   position: absolute;
@@ -2820,15 +2788,11 @@ body.db-loading::after {
   gap: 12px;
 }
 
-.db-favorites-panel__title {
-  font-weight: 700;
-  font-size: 1.2rem;
-  color: #B45309;
-}
+.db-favorites-panel__title { font-weight: 700; font-size: 1.2rem; color: #049FE8; }
 
 .db-favorites-panel__subtitle {
   font-size: 0.85rem;
-  color: #6B7280;
+  color: #6B7280; /* neutral ok */
   margin-top: 4px;
 }
 
@@ -2861,13 +2825,7 @@ body.db-loading::after {
   gap: 10px;
 }
 
-.db-favorites-panel__section-title {
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #6B7280;
-}
+.db-favorites-panel__section-title { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #049FE8; }
 
 .db-favorites-panel__list {
   display: flex;
@@ -2893,28 +2851,16 @@ body.db-loading::after {
   flex: 1;
 }
 
-.db-favorites-folder__name {
-  font-weight: 600;
-  color: #92400E;
-}
+.db-favorites-folder__name { font-weight: 600; color: #049FE8; }
 
-.db-favorites-folder__count {
-  font-size: 0.85rem;
-  color: #6B7280;
-}
+.db-favorites-folder__count { font-size: 0.85rem; color: #FF6A4B; }
 
 /* Brand delete button inside favorites meta */
 .db-favorites-folder__delete { border:2px solid #FF8DAA; background:#FFACC4; color:#FF6A4B; border-radius:9999px; padding:6px 12px; font-weight:700; font-size:.8rem; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease; }
 
 .db-favorites-folder__delete:hover, .db-favorites-folder__delete:focus { background:#FF8DAA; border-color:#FF6A4B; color:#FFFFFF; box-shadow:0 6px 16px rgba(255,141,170,.35); transform: translateY(-1px); outline:none; }
 
-.db-favorites-empty-hint {
-  padding: 12px;
-  background: #FEF3C7;
-  border-radius: 12px;
-  color: #92400E;
-  font-size: 0.9rem;
-}
+.db-favorites-empty-hint { padding: 12px; background: #FEF9DF; border-radius: 12px; color: #FF6A4B; font-size: 0.9rem; }
 
 .db-favorites-hidden {
   display: none !important;
@@ -3175,13 +3121,7 @@ body.db-loading::after {
   line-height: 1;
 }
 
-.db-favorites-assign-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  z-index: 1500;
-  display: none;
-}
+.db-favorites-assign-overlay { position: fixed; inset: 0; background: rgba(4, 159, 232, 0.22); z-index: 1500; display: none; }
 
 .db-favorites-assign {
   position: fixed;
@@ -3301,7 +3241,7 @@ body.db-loading::after {
 .db-favorites-assign__action:hover,
 .db-favorites-assign__action:focus {
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(249, 115, 22, 0.25);
+  box-shadow: 0 8px 18px rgba(255, 106, 75, 0.25);
   outline: none;
 }
 
