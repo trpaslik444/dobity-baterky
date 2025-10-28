@@ -597,12 +597,12 @@ body.db-license-modal-open {
 .db-map-topbar {
   display: flex;
   align-items: center;
-  background: #049FE8; /* Primární modrá */
-  color: #fff;
-  border-radius: 2em;
-  box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3);
-  padding: 0.5em 1.5em 0.5em 0.5em;
-  gap: 1em;
+  background: transparent; /* Bez backgroundu – samostatná tlačítka */
+  color: #049FE8;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.5em;
+  gap: 0.5em;
   position: absolute;
   top: calc(1em + env(safe-area-inset-top, 0px));
   right: 2em;
@@ -621,12 +621,12 @@ body.db-license-modal-open {
     top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px) + 8px) !important;
     left: 0 !important;
     right: 0 !important;
-    background: #049FE8 !important; /* Primární modrá z brandbooku */
-    color: #fff !important;
+    background: transparent !important; /* Bez backgroundu – samostatná tlačítka */
+    color: #049FE8 !important;
     border-radius: 0 !important;
-    box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3) !important;
+    box-shadow: none !important;
     padding: 0.75rem 1rem !important;
-    gap: 0 !important; /* Odstranění gap pro rovnoměrné rozmístění */
+    gap: 0.5rem !important;
   z-index: 900; /* topbar mobile */
     /* PWA safe area pro notchy */
     padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
@@ -666,18 +666,19 @@ body.db-license-modal-open {
     padding-top: 0 !important;
   }
   
-  /* Topbar tlačítka na mobilu - rovnoměrné rozmístění */
+  /* Topbar tlačítka na mobilu - zachovat brand růžovou a modrou ikonu */
   .db-map-topbar .db-map-topbar-btn {
-    background: transparent !important;
-    color: #fff !important;
-    box-shadow: none !important;
+    background: #FFACC4 !important;
+    color: #049FE8 !important;
+    box-shadow: 0 1px 4px rgba(255, 172, 196, 0.3) !important;
     margin: 0 !important;
-    width: 2.5rem !important;
-    height: 2.5rem !important;
-    flex: 1 !important; /* Rovnoměrné roztažení */
+    width: 40px !important;
+    height: 40px !important;
+    flex: 0 0 40px !important; /* pevný čtverec */
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    border-radius: 12px !important;
   }
   
   .db-map-topbar .db-map-topbar-btn:hover {
@@ -732,9 +733,9 @@ body.db-license-modal-open {
 }
 
 .db-map-topbar-btn {
-  width: 2.7em;
-  height: 2.7em;
-  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   background: #FFACC4; /* Světle růžová */
   border: none;
   box-shadow: 0 1px 4px rgba(255, 172, 196, 0.3);
@@ -749,7 +750,7 @@ body.db-license-modal-open {
 
 .db-map-topbar-btn:hover, .db-map-topbar-btn:focus {
   background: #FF8DAA; /* Tmavě růžová */
-  color: #fff;
+  color: #049FE8; /* Zachovat modrou ikonu */
   box-shadow: 0 2px 8px rgba(255, 141, 170, 0.4);
   transform: scale(1.05);
 }
@@ -1374,8 +1375,8 @@ body.has-attribution #db-mobile-sheet.open {
 #db-mobile-sheet .btn-icon { 
   width: 40px;
   height: 40px;
-  background: #FF8DAA; /* Brand dark pink */
-  color: #FFFFFF; /* White icon */
+  background: #FFACC4; /* Brand pink */
+  color: #049FE8; /* Blue icon */
   border: none; 
   border-radius: 8px; 
   display: flex;
@@ -1383,20 +1384,20 @@ body.has-attribution #db-mobile-sheet.open {
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(255, 141, 170, 0.3);
+  box-shadow: 0 2px 8px rgba(255, 172, 196, 0.3);
   flex-shrink: 0;
 }
 
 #db-mobile-sheet .btn-icon svg {
   width: 20px;
   height: 20px;
-  color: #FFFFFF;
+  color: #049FE8;
   stroke: currentColor;
 }
 
 #db-mobile-sheet .btn-icon:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 141, 170, 0.4);
+  box-shadow: 0 4px 12px rgba(255, 172, 196, 0.4);
 }
 
 #db-mobile-sheet .btn-icon:active {
@@ -1550,14 +1551,48 @@ body.has-attribution #db-mobile-sheet.open {
 }
 
 /* List režim – header s ovládáním */
-#db-list-header { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px)); z-index: 910; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #049FE8; }
+#db-list-header { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px)); z-index: 910; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: transparent; }
 #db-list-header .db-map-topbar-btn { margin-left: 0; }
-.db-map-topbar-btn.active { background: #FF8DAA; color: #fff; transform: scale(1.05); }
+.db-map-topbar-btn.active { background: #FFACC4; color: #049FE8; transform: scale(1.05); }
+
+/* Specifické aktivní stavy: Filtry a Oblíbené = brand žlutá s modrou ikonou */
+#db-filter-btn.active,
+#db-favorites-btn.active,
+.db-map-topbar-btn.favorites-active {
+  background: #FCE67D !important; /* Brand yellow */
+  color: #049FE8 !important;      /* Blue icon */
+  box-shadow: 0 2px 8px rgba(252, 230, 125, 0.4) !important;
+}
+/* Stejné aktivní žluté pro tlačítka v list headeru (nemají ID) */
+.db-map-topbar-btn[title="Filtry"].active,
+.db-map-topbar-btn[title="Oblíbené"].active {
+  background: #FCE67D !important;
+  color: #049FE8 !important;
+  box-shadow: 0 2px 8px rgba(252, 230, 125, 0.4) !important;
+}
 
 /* Detail modal (80% výšky od spodní hrany) */
 #db-detail-modal { position: fixed; inset: 0; background: rgba(4,159,232,0.12); display: none; align-items: flex-end; justify-content: center; z-index: 1200; overflow: hidden; }
 #db-detail-modal.open { display: flex; }
-#db-detail-modal .modal-card { width: 100%; max-width: 720px; height: 80vh; background: #FEF9DF; border: 2px solid #FCE67D; border-radius: 20px 20px 0 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; box-shadow: 0 -10px 30px rgba(4,159,232,.18), 0 -6px 18px rgba(0,0,0,.2); padding-bottom: 0; box-sizing: border-box; pointer-events: auto; font-family: 'Montserrat', sans-serif; }
+#db-detail-modal .modal-card { 
+  width: 100%; 
+  max-width: 720px; 
+  height: 80vh; 
+  background: #FEF9DF; 
+  border: 2px solid #FCE67D; 
+  border-radius: 20px 20px 0 0; 
+  overflow-y: auto; 
+  -webkit-overflow-scrolling: touch; 
+  overscroll-behavior: contain; 
+  touch-action: pan-y; 
+  box-shadow: 0 -10px 30px rgba(4,159,232,.18), 0 -6px 18px rgba(0,0,0,.2); 
+  padding-bottom: 0; 
+  box-sizing: border-box; 
+  pointer-events: auto; 
+  font-family: 'Montserrat', sans-serif; 
+  display: flex;
+  flex-direction: column;
+}
 
 /* Pokud je aktivní isochrones legenda, posuň modal kartu výše o její výšku */
 body.has-isochrones #db-detail-modal .modal-card {
@@ -1583,6 +1618,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 }
 #db-detail-modal .close-btn { position: sticky; top: 0; margin-left: auto; margin-right: 8px; margin-top: 8px; z-index: 2; width: 40px; height: 40px; border-radius: 20px; border: none; background: #FF8DAA; color: #049FE8; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(255,141,170,.4); }
 #db-detail-modal .hero { position: relative; height: 240px; background: #e5e7eb; overflow: hidden; border-radius: 18px 18px 0 0; }
+#db-detail-modal .hero { flex: 0 0 auto; }
 #db-detail-modal .hero .hero-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 #db-detail-modal .hero-thumbs { display:flex; gap:6px; padding:6px 16px 0 16px; }
 #db-detail-modal .hero-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
@@ -1604,7 +1640,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   right: 0;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: 8px; /* čtvercový formát */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1691,7 +1727,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   justify-content: center;
 }
 
-/* Admin panel - zvýrazněný */
+/* Admin panel - zvýrazněný a na spodku */
 #db-detail-modal .db-admin-panel {
   background: #FF6A4B; /* Oranžový background pro admin panel */
   color: white;
@@ -1699,6 +1735,8 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   padding: 16px;
   border-radius: 12px;
   border-left: 4px solid #FF8DAA;
+  margin-top: auto; /* přesune na spodek díky flexboxu */
+  order: 9999; /* zobraz jako poslední prvek v modalu */
 }
 
 #db-detail-modal .db-admin-panel h3 {
@@ -1933,6 +1971,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 #db-map-filter-panel {
   pointer-events: auto;
   touch-action: none;
+  z-index: 20000 !important; /* nad listview */
 }
 
 #db-map-filter-panel.open {
@@ -2641,7 +2680,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
     right: 2em !important;
     left: auto !important;
     width: auto !important;
-    border-radius: 2em !important;
+    border-radius: 0 !important;
   }
   
   /* Mapa na desktopu */
@@ -3162,10 +3201,10 @@ body.db-loading::after {
   color: inherit;
 }
 
-.db-favorites-overlay { position: absolute; inset: 0; background: rgba(4, 159, 232, 0.18); z-index: 1100; display: none; }
+.db-favorites-overlay { position: fixed; inset: 0; background: rgba(4, 159, 232, 0.18); z-index: 15000; display: none; }
 
 .db-favorites-panel {
-  position: absolute;
+  position: fixed;
   top: 72px;
   right: 16px;
   width: min(340px, calc(100% - 32px));
@@ -3177,7 +3216,7 @@ body.db-loading::after {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  z-index: 1110; /* favorites panel above overlay */
+  z-index: 15010; /* favorites panel above overlay */
   overflow-y: auto;
 }
 
@@ -3406,30 +3445,29 @@ body.db-loading::after {
 }
 
 .db-favorite-star-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
-  border: 1px solid #FCD34D;
-  background: #fff7ed;
-  color: #B45309;
+  width: auto;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #049FE8;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .db-favorite-star-btn:hover,
 .db-favorite-star-btn:focus {
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(249, 115, 22, 0.25);
   outline: none;
 }
 
 .db-favorite-star-btn.active {
-  background: #F97316;
-  border-color: #F97316;
-  color: #fff;
+  background: transparent;
+  color: #049FE8;
 }
 
 .db-favorite-chip {
@@ -3512,13 +3550,13 @@ body.db-loading::after {
   position: absolute;
   top: -8px;
   left: -8px;
-  background: #FFFFFF;
+  background: transparent;
   border-radius: 9999px;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.25);
+  box-shadow: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #B45309;
+  color: #049FE8;
   font-size: 0.85rem;
   pointer-events: none;
 }

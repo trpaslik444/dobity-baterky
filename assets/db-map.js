@@ -781,7 +781,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   function getFavoriteStarIconHtml(active) {
     const fill = active ? '#FCE67D' : 'none';
-    const stroke = active ? '#FCE67D' : 'currentColor';
+    const stroke = active ? '#FCE67D' : '#049FE8';
     return `
       <svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
         <path d="M23.9986 5L17.8856 17.4776L4 19.4911L14.0589 29.3251L11.6544 43L23.9986 36.4192L36.3454 43L33.9586 29.3251L44 19.4911L30.1913 17.4776L23.9986 5Z" fill="${fill}" stroke="${stroke}" stroke-width="4" stroke-linejoin="round" />
@@ -832,7 +832,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       return '';
     }
     const icon = escapeHtml(folder.icon || '★');
-    const size = active ? 20 : 16;
+    const size = active ? 24 : 20;
     return `
       <div class="db-marker-favorite${active ? ' db-marker-favorite--active' : ''}" data-db-favorite-post-id="${props.id}" aria-hidden="true" style="width:${size}px;height:${size}px;">
         <span>${icon}</span>
@@ -859,7 +859,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (context) {
           const chipSelector = `.db-favorite-chip[data-db-favorite-post-id="${postId}"][data-db-favorite-context="${context}"]`;
           let chip = document.querySelector(chipSelector);
-          if (isActive && !chip) {
+          if (isActive && !chip && context !== 'sheet') {
             const html = getFavoriteChipHtml({ id: postId, favorite_folder: folder }, context);
             if (html) {
               if (context === 'card') {
@@ -873,20 +873,21 @@ document.addEventListener('DOMContentLoaded', async function() {
                   }
                 }
               } else if (context === 'sheet') {
-                const sheet = document.getElementById('db-mobile-sheet');
-                const header = sheet ? sheet.querySelector('.sheet-header') : null;
-                if (header) {
-                  header.insertAdjacentHTML('afterend', html);
-                }
+                // chip do sheet modalu nevkládat
               } else if (context === 'detail') {
                 const modal = document.getElementById('db-detail-modal');
                 const titleRow = modal ? modal.querySelector('.title-row') : null;
-                if (titleRow) {
-                  titleRow.insertAdjacentHTML('afterend', html);
-                }
+                // chip ve detail modalu nevkládat
               }
             }
             chip = document.querySelector(chipSelector);
+          }
+          // Odstranit případný existující chip v detail modalu
+          if (chip && context === 'detail') {
+            chip.remove();
+          }
+          if (chip && context === 'sheet') {
+            chip.remove();
           }
           if (chip && isActive) {
             const iconEl = chip.querySelector('.db-favorite-chip__icon');
@@ -999,6 +1000,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!favoritesState.enabled) {
       if (favoritesButton) favoritesButton.classList.remove('favorites-active');
       if (favoritesCountBadge) favoritesCountBadge.style.display = 'none';
+      // Deactivate list header favorites button if present
+      try {
+        const favBtn2 = document.querySelector('#db-list-header .db-map-topbar-btn[title="Oblíbené"]');
+        if (favBtn2) favBtn2.classList.remove('active');
+      } catch(_) {}
       return;
     }
     if (favoritesButton && !document.body.contains(favoritesButton)) {
@@ -1017,12 +1023,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     // badge dočasně vypnut
     if (favoritesButton) {
       // Změň barvu tlačítka (currentColor ovládá fill/obrys ikony)
-      favoritesButton.style.color = favoritesState.isActive ? '#FCE67D' : 'inherit';
+      favoritesButton.style.color = '#049FE8';
+      favoritesButton.classList.toggle('favorites-active', !!favoritesState.isActive);
+      favoritesButton.classList.toggle('active', !!favoritesState.isActive);
       const iconWrap = favoritesButton.querySelector('.db-topbar-icon');
       if (iconWrap) {
         iconWrap.innerHTML = getTopbarStarSvg(!!favoritesState.isActive);
       }
     }
+    // Sync list header favorites button visual active state
+    try {
+      const favBtn2 = document.querySelector('#db-list-header #db-list-favorites-btn');
+      if (favBtn2) favBtn2.classList.toggle('active', !!favoritesState.isActive);
+    } catch(_) {}
   }
 
   function fitMapToFeatures(list) {
@@ -1157,7 +1170,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       favoritesOverlay.className = 'db-favorites-overlay';
       favoritesOverlay.style.display = 'none';
       favoritesOverlay.addEventListener('click', () => closeFavoritesPanel());
-      mapDiv.appendChild(favoritesOverlay);
+      document.body.appendChild(favoritesOverlay);
     }
     if (!favoritesPanel) {
       favoritesPanel = document.createElement('div');
@@ -1185,7 +1198,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         <button type="button" class="db-favorites-exit db-favorites-hidden" id="db-favorites-exit">Zobrazit všechny body</button>
       `;
       favoritesPanel.addEventListener('click', (e) => e.stopPropagation());
-      mapDiv.appendChild(favoritesPanel);
+      document.body.appendChild(favoritesPanel);
 
       favoritesLists.default = favoritesPanel.querySelector('[data-favorites-list="default"]');
       favoritesLists.custom = favoritesPanel.querySelector('[data-favorites-list="custom"]');
@@ -3244,20 +3257,25 @@ document.addEventListener('DOMContentLoaded', async function() {
   `;
   document.body.appendChild(providerModal);
   
-  mapDiv.appendChild(filterPanel);
-  mapDiv.appendChild(mapOverlay);
+  // Umístit nad vše do body, aby nepodléhalo stacking contextu listview/mapy
+  document.body.appendChild(filterPanel);
+  document.body.appendChild(mapOverlay);
   
   // Event handlery pro modal
   const closeFilterModal = () => {
     filterPanel.style.display = 'none';
     filterPanel.classList.remove('open');
     document.body.classList.remove('db-filter-modal-open');
+    // Po zavření zrekapitulovat skutečný stav filtrů (ponechá žluté zvýraznění, pokud jsou aktivní)
+    try { updateResetButtonVisibility(); } catch(_) {}
   };
 
   const openFilterModal = () => {
     filterPanel.style.display = 'flex';
     filterPanel.classList.add('open');
     document.body.classList.add('db-filter-modal-open');
+    // Nech behavioru řídit se podle skutečného stavu filtrů
+    try { updateResetButtonVisibility(); } catch(_) {}
     
     // Zavřít mobile sheet pokud je otevřený
     const mobileSheet = document.getElementById('db-mobile-sheet');
@@ -3935,6 +3953,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       resetBtn.textContent = `Resetovat filtry (${count})`;
       resetBtn.disabled = count === 0;
     }
+    // Aktualizovat vizuální stav tlačítek Filtry (topbar + list header)
+    try {
+      const isActive = hasActiveFilters();
+      const mainFilterBtn = document.getElementById('db-filter-btn');
+      if (mainFilterBtn) mainFilterBtn.classList.toggle('active', isActive);
+      const listHeaderFilterBtn = document.querySelector('#db-list-header #db-list-filter-btn');
+      if (listHeaderFilterBtn) listHeaderFilterBtn.classList.toggle('active', isActive);
+    } catch(_) {}
   }
   
   function attachFilterHandlers() {
@@ -6694,21 +6720,25 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (listHeader) return;
     listHeader = document.createElement('div');
     listHeader.id = 'db-list-header';
+    // Reuse the same topbar button set to ensure identical icons and IDs
     listHeader.innerHTML = `
       <button class="db-map-topbar-btn" title="Menu" type="button" id="db-list-menu-toggle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Mapa" type="button">
+      <button class="db-map-topbar-btn" title="Vyhledávání" type="button" id="db-list-search-toggle">
+        <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m22.241 24-7.414-7.414c-1.559 1.169-3.523 1.875-5.652 1.885h-.002c-.032 0-.07.001-.108.001-5.006 0-9.065-4.058-9.065-9.065 0-.038 0-.076.001-.114v.006c0-5.135 4.163-9.298 9.298-9.298s9.298 4.163 9.298 9.298c-.031 2.129-.733 4.088-1.904 5.682l.019-.027 7.414 7.414zm-12.942-21.487c-3.72.016-6.73 3.035-6.73 6.758 0 3.732 3.025 6.758 6.758 6.758s6.758-3.025 6.758-6.758c0-1.866-.756-3.555-1.979-4.778-1.227-1.223-2.92-1.979-4.79-1.979-.006 0-.012 0-.017 0h.001z"/></svg>
+      </button>
+      <button class="db-map-topbar-btn" title="Mapa" type="button" id="db-list-map-toggle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 9 18 15 22 23 18 23 2 15 6 9 2 1 6"/></svg>
       </button>
       <button class="db-map-topbar-btn" title="Moje poloha" type="button" id="db-list-locate-btn">
         <svg width="20px" height="20px" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M249.6 417.088l319.744 43.072 39.168 310.272L845.12 178.88 249.6 417.088zm-129.024 47.168a32 32 0 01-7.68-61.44l777.792-311.04a32 32 0 0141.6 41.6l-310.336 775.68a32 32 0 01-61.44-7.808L512 516.992l-391.424-52.736z"/></svg>
       </button>
       <div style="flex:1"></div>
-      <button class="db-map-topbar-btn" title="Filtry" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="12" y2="3"/></svg>
+      <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-list-filter-btn">
+        <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Oblíbené" type="button">
+      <button class="db-map-topbar-btn" title="Oblíbené" type="button" id="db-list-favorites-btn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
       </button>
     `;
@@ -6723,8 +6753,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         mainMenuBtn.click();
       }
     });
-    
-    const mapBtn = listHeader.querySelector('.db-map-topbar-btn[title="Mapa"]');
+    // search toggle mirrors topbar behavior
+    const listSearchBtn = listHeader.querySelector('#db-list-search-toggle');
+    if (listSearchBtn) listSearchBtn.addEventListener('click', () => {
+      const mainSearchBtn = document.querySelector('#db-search-toggle');
+      if (mainSearchBtn) mainSearchBtn.click();
+    });
+
+    const mapBtn = listHeader.querySelector('#db-list-map-toggle');
     if (mapBtn) mapBtn.addEventListener('click', () => {
       root.classList.remove('db-list-mode');
       setTimeout(() => map.invalidateSize(), 200);
@@ -6801,20 +6837,26 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
     
-    const filterBtn2 = listHeader.querySelector('.db-map-topbar-btn[title="Filtry"]');
-    if (filterBtn2) filterBtn2.addEventListener('click', () => {
-      const isVisible = filterPanel.classList.contains('open');
-      if (isVisible) {
-        closeFilterModal();
-      } else {
-        openFilterModal();
+    const filterBtn2 = listHeader.querySelector('#db-list-filter-btn');
+    if (filterBtn2) filterBtn2.addEventListener('click', (e) => {
+      // Mirror topbar filter behavior
+      handleFilterToggle(e);
+    });
+    const favBtn2 = listHeader.querySelector('#db-list-favorites-btn');
+    if (favBtn2) favBtn2.addEventListener('click', (e) => {
+      // Mirror topbar favorites behavior
+      handleFavoritesToggle(e);
+    });
+
+    // Po vytvoření headeru ihned synchronizovat vizuální stav podle aktuálních dat
+    try {
+      const isFiltersActive = hasActiveFilters && hasActiveFilters();
+      if (filterBtn2) filterBtn2.classList.toggle('active', !!isFiltersActive);
+      if (favoritesState && favoritesState.enabled) {
+        const activeFav = !!favoritesState.isActive;
+        if (favBtn2) favBtn2.classList.toggle('active', activeFav);
       }
-    });
-    const favBtn2 = listHeader.querySelector('.db-map-topbar-btn[title="Oblíbené"]');
-    if (favBtn2) favBtn2.addEventListener('click', () => {
-      favBtn2.classList.toggle('active');
-      // Placeholder: zde lze napojit na skutečné oblíbené
-    });
+    } catch(_) {}
   }
   // Vyhledávání na mapě
   let searchQuery = '';
