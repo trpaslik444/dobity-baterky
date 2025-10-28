@@ -1659,14 +1659,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         body: JSON.stringify({ post_id: postId, folder_id: folderId, force }),
       });
       if (res.status === 409) {
-        const payload = await res.json();
-        if (payload && payload.current_folder && !force) {
-          const currentFolder = getFavoriteFolder(payload.current_folder);
-          const proceed = confirm(`Toto místo je již ve složce "${currentFolder?.name || ''}". Chcete jej přesunout?`);
-          if (proceed) {
-            return assignFavoriteToFolder(postId, folderId, { force: true });
-          }
-          return null;
+        const payload = await res.json().catch(() => null);
+        if (!force) {
+          // Pokud server hlásí konflikt (přesun mezi složkami), automaticky potvrď a zopakuj s force
+          return assignFavoriteToFolder(postId, folderId, { force: true });
         }
       }
       if (!res.ok) {
