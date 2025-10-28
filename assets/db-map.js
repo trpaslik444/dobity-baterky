@@ -1283,6 +1283,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               
               // Aktualizovat badge pouze u konkrétního pinu
               patchFeatureFavoriteState(favoritesAssignPostId, newFolder);
+              clearMarkers();
               renderCards('', activeFeatureId, false);
               refreshFavoriteUi(favoritesAssignPostId, newFolder);
               
@@ -1896,6 +1897,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       updateFavoritesButtonState();
       renderFavoritesPanel();
       patchFeatureFavoriteState(postId, folder);
+      clearMarkers();
       renderCards('', activeFeatureId, false);
       refreshFavoriteUi(postId, folder);
       if (favoritesAssignProps && favoritesAssignProps.id === postId) {
@@ -1935,6 +1937,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       updateFavoritesButtonState();
       renderFavoritesPanel();
       patchFeatureFavoriteState(postId, null);
+      clearMarkers();
       renderCards('', activeFeatureId, false);
       refreshFavoriteUi(postId, null);
       if (favoritesState.isActive && favoritesState.activeFolderId) {
