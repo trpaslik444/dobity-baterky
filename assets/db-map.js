@@ -162,36 +162,38 @@ function renderIsochrones(geojson, ranges, userSettings = null, options = {}) {
   // Přidat na mapu
   isochronesLayer.addTo(window.map);
   
-  // Přidat legendu s hezkými časy (použít user_settings pokud jsou k dispozici)
-  if (!document.getElementById('db-isochrones-legend')) {
-    const legend = document.createElement('div');
-    legend.id = 'db-isochrones-legend';
-    
+  // Přidat legendu inline do attribution baru
+  const attributionBar = document.querySelector('.db-attribution');
+  if (attributionBar && !attributionBar.querySelector('.db-isochrones-inline')) {
     // Získat zobrazované časy z user_settings nebo použít defaultní
     const displayTimes = userSettings?.display_times_min || [10, 20, 30];
     
-    legend.innerHTML = `
-      <div style="background: white; padding: 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); font-size: 12px;">
-        <strong>Dochozí okruhy:</strong><br>
-        <span style="color: #10b981;">●</span> ~${displayTimes[0]} min<br>
-        <span style="color: #f59e0b;">●</span> ~${displayTimes[1]} min<br>
-        <span style="color: #ef4444;">●</span> ~${displayTimes[2]} min
-      </div>
+    const isochronesInline = document.createElement('div');
+    isochronesInline.className = 'db-isochrones-inline';
+    isochronesInline.innerHTML = `
+      <span class="db-legend__title">Dochozí okruhy:</span>
+      <span class="db-legend__item">
+        <span class="db-legend__dot db-legend__dot--ok">●</span>
+        <span>~${displayTimes[0]} min</span>
+      </span>
+      <span class="db-legend__item">
+        <span class="db-legend__dot db-legend__dot--mid">●</span>
+        <span>~${displayTimes[1]} min</span>
+      </span>
+      <span class="db-legend__item">
+        <span class="db-legend__dot db-legend__dot--bad">●</span>
+        <span>~${displayTimes[2]} min</span>
+      </span>
     `;
-    legend.style.position = 'absolute';
-    legend.style.bottom = '10px';
-    legend.style.right = '10px';
-    // Pokud je otevřen detail modal, vykreslit legendu do overlaye nad mapou a pod kartou
-    // Jinak vykreslit do mapového kontejneru
-    const modal = document.getElementById('db-detail-modal');
-    const isModalOpen = modal && modal.classList.contains('open');
-    if (isModalOpen) {
-      legend.style.zIndex = '1';
-      modal.appendChild(legend);
+    
+    // Přidat před licence tlačítko
+    const licenseTrigger = attributionBar.querySelector('.db-license-trigger');
+    if (licenseTrigger) {
+      attributionBar.insertBefore(isochronesInline, licenseTrigger);
     } else {
-      legend.style.zIndex = '1000';
-      document.getElementById('db-map').appendChild(legend);
+      attributionBar.appendChild(isochronesInline);
     }
+    
     // Označit body class, aby se modal karta posunula výše
     try { document.body.classList.add('has-isochrones'); } catch(_) {}
   }
@@ -215,9 +217,14 @@ function clearIsochrones(force = false) {
     isochronesLayer = null;
   }
   
-  // Odstranit legendu (ať už je v mapě, nebo v modalu) a flag na body
-  const legend = document.getElementById('db-isochrones-legend');
-  if (legend) { legend.remove(); }
+  // Odstranit inline legendu z attribution baru a flag na body
+  const attributionBar = document.querySelector('.db-attribution');
+  if (attributionBar) {
+    const isochronesInline = attributionBar.querySelector('.db-isochrones-inline');
+    if (isochronesInline) {
+      isochronesInline.remove();
+    }
+  }
   try { document.body.classList.remove('has-isochrones'); } catch(_) {}
   
   removeIsochronesAttribution();
@@ -387,19 +394,7 @@ function ensureAttributionBar() {
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'db-attribution-bar';
-    bar.style.position = 'absolute';
-    bar.style.left = '8px';
-    bar.style.bottom = '8px';
-    bar.style.zIndex = '1002';
-    bar.style.background = 'rgba(255,255,255,0.9)';
-    bar.style.backdropFilter = 'blur(6px)';
-    bar.style.border = '1px solid rgba(0,0,0,0.1)';
-    bar.style.borderRadius = '4px';
-    bar.style.padding = '4px 6px';
-    bar.style.fontSize = '11px';
-    bar.style.lineHeight = '1';
-    bar.style.color = '#333';
-    bar.style.pointerEvents = 'auto';
+    bar.className = 'db-attribution';
     mapContainer.appendChild(bar);
     try {
     } catch(_) {}
@@ -5074,10 +5069,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   function renderNearbyFromCache(containerEl, items) {
     if (!items || !items.length) {
       containerEl.innerHTML = `
-        <div style="color:#666;text-align:center;padding:30px 20px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
-          <div style="font-size:24px;margin-bottom:8px;">🔍</div>
-          <div style="font-weight:500;font-size:14px;">V okolí nic nenašli</div>
-          <div style="font-size:12px;color:#9ca3af;margin-top:4px;">Zkuste zvětšit radius nebo se podívat jinde</div>
+        <div class=\"db-muted-box\">\n\
+          <div class=\"db-loading-icon\">🔍</div>\n\
+          <div style=\"font-weight:600;font-size:14px;\">V okolí nic nenašli</div>\n\
+          <div class=\"db-muted-text\" style=\"font-size:12px;margin-top:4px;\">Zkuste zvětšit radius nebo se podívat jinde</div>\n\
         </div>`;
       return;
     }
@@ -5129,14 +5124,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       const squareColor = cachedFeature ? getCacheItemSquareColor(cachedFeature.properties) : '#049FE8';
 
       return `
-        <button type="button" class="db-nearby-item" data-id="${item.id}"
-          style="width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:4px 0;display:flex;gap:12px;align-items:center;cursor:pointer;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.1);"
-          onmouseover="this.style.backgroundColor='#f8fafc';this.style.borderColor='#049FE8';this.style.transform='translateY(-1px)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
-          onmouseout="this.style.backgroundColor='#fff';this.style.borderColor='#e5e7eb';this.style.transform='translateY(0)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)';">
-          <div style="font-size:20px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${squareColor};border-radius:4px;">${typeBadge}</div>
+        <button type="button" class="db-nearby-item" data-id="${item.id}">
+          <div class="db-nearby-item__icon" style="background:${squareColor};">${typeBadge}</div>
           <div style="flex:1 1 auto;min-width:0;">
-            <div style="font-weight:600;color:#111;font-size:14px;line-height:1.3;margin-bottom:2px;word-wrap:break-word;">${item.title || item.name || '(bez názvu)'}</div>
-            <div style="color:#10b981;font-weight:600;font-size:12px;">🚶 ${distKm} km • ${mins} min</div>
+            <div class="db-nearby-item__title">${item.title || item.name || '(bez názvu)'}</div>
+            <div class="db-nearby-item__meta">🚶 ${distKm} km • ${mins} min</div>
           </div>
         </button>`;
     }).join('');
@@ -5177,11 +5169,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       const { done, total } = options.progress;
       const percent = Math.round((done / total) * 100);
       progressHtml = `
-        <div style="background:#e0f2fe;border:1px solid #81d4fa;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#0277bd;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            <div style="width:16px;height:16px;border:2px solid #0277bd;border-top:2px solid transparent;border-radius:50%;animation:spin 1s linear infinite;"></div>
-            <span>Načítání... ${done}/${total} (${percent}%)</span>
-          </div>
+        <div class=\"db-muted-box\" style=\"background:#E0F7FF;border-color:#049FE8;\">\n\
+          <div style=\"display:flex;align-items:center;gap:8px;\">\n\
+            <div style=\"width:16px;height:16px;border:2px solid #049FE8;border-top:2px solid transparent;border-radius:50%;animation:spin 1s linear infinite;\"></div>\n\
+            <span class=\"db-muted-text\">Načítání... ${done}/${total} (${percent}%)</span>\n\
+          </div>\n\
         </div>`;
     }
 
@@ -5246,15 +5238,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
 
       return `
-        <button type="button" class="db-nearby-item" data-id="${item.id}"
-          style="width:100%;text-align:left;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin:4px 0;display:flex;gap:12px;align-items:center;cursor:pointer;transition:all 0.2s;box-shadow:0 1px 3px rgba(0,0,0,0.1);"
-          onmouseover="this.style.backgroundColor='#f8fafc';this.style.borderColor='#049FE8';this.style.transform='translateY(-1px)';this.style.boxShadow='0 2px 8px rgba(0,0,0,0.15)';"
-          onmouseout="this.style.backgroundColor='#fff';this.style.borderColor='#e5e7eb';this.style.transform='translateY(0)';this.style.boxShadow='0 1px 3px rgba(0,0,0,0.1)';">
-          <div style="font-size:20px;flex-shrink:0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;background:${getNearbyItemSquareColor(item)};border-radius:4px;">${typeBadge}</div>
-          <div style="flex:1 1 auto;min-width:0;">
-            <div style="font-weight:600;color:#111;font-size:14px;line-height:1.3;margin-bottom:2px;word-wrap:break-word;">${item.name || item.title || '(bez názvu)'}</div>
-            <div style="color:#10b981;font-weight:600;font-size:12px;">${walkText}</div>
-          </div>
+        <button type=\"button\" class=\"db-nearby-item\" data-id=\"${item.id}\">\n\
+          <div class=\"db-nearby-item__icon\" style=\"background:${getNearbyItemSquareColor(item)};\">${typeBadge}</div>\n\
+          <div style=\"flex:1 1 auto;min-width:0;\">\n\
+            <div class=\"db-nearby-item__title\">${item.name || item.title || '(bez názvu)'}</div>\n\
+            <div class=\"db-nearby-item__meta\">${walkText}</div>\n\
+          </div>\n\
         </button>`;
     }).join('');
 
@@ -6109,35 +6098,30 @@ document.addEventListener('DOMContentLoaded', async function() {
             availabilityText = info.count.toString();
           }
           
-          // Určit styly podle stavu
-          const containerStyle = isOutOfService 
-            ? 'display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #fee; border-radius: 6px; border: 1px solid #fcc; opacity: 0.7;'
-            : 'display: inline-flex; align-items: center; gap: 6px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;';
-          
-          const textStyle = isOutOfService 
-            ? 'font-weight: 600; color: #c33; font-size: 0.9em;'
-            : 'font-weight: 600; color: #333; font-size: 0.9em;';
+          // Brandové badge třídy místo inline stylů
+          const containerClass = isOutOfService ? 'db-conn-badge db-conn-badge--down' : 'db-conn-badge';
+          const countClass = isOutOfService ? 'db-conn-badge__count db-conn-badge__count--down' : 'db-conn-badge__count';
           
           if (iconUrl) {
             // Zobraz jako ikonu s číslem (ikona + počet horizontálně, výkon pod nimi)
-            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
-              <div style="display: flex; align-items: center; gap: 4px;">
-                <img src="${iconUrl}" style="width: 20px; height: 20px; object-fit: contain;" alt="${typeKey}">
-                <span style="${textStyle}">${availabilityText}</span>
+            return `<div class="${containerClass}">
+              <div class="db-conn-badge__row">
+                <img src="${iconUrl}" class="db-conn-badge__icon" alt="${typeKey}">
+                <span class="${countClass}">${availabilityText}</span>
               </div>
-              ${powerText ? `<span style="color: #666; font-size: 0.8em;">${powerText}</span>` : ''}
+              ${powerText ? `<span class="db-conn-badge__power">${powerText}</span>` : ''}
             </div>`;
           } else {
             // Fallback - pouze text
-            return `<div style="display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #f8f9fa; border-radius: 6px; border: 1px solid #e9ecef;">
-              <span style="${textStyle}">${typeKey.toUpperCase()}: ${availabilityText}</span>
-              ${powerText ? `<span style="color: #666; font-size: 0.8em;">${powerText}</span>` : ''}
+            return `<div class="${containerClass}">
+              <span class="${countClass}">${typeKey.toUpperCase()}: ${availabilityText}</span>
+              ${powerText ? `<span class="db-conn-badge__power">${powerText}</span>` : ''}
             </div>`;
           }
         }).join('');
         
         connectorsDetail = `
-          <div style="margin: 16px; display: flex; flex-wrap: wrap; gap: 4px;">
+          <div class="db-conn-badge-wrap">
             ${connectorItems}
           </div>
         `;
@@ -6257,9 +6241,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     if (p.poi_address || p.rv_address || p.address) {
       const address = p.poi_address || p.rv_address || p.address;
-      contactItems.push(`<div style="margin: 8px 0; display: flex; align-items: flex-start; gap: 8px;">
-        <span style="color: #049FE8; font-size: 1.2em; margin-top: 2px;">📍</span>
-        <span style="color: #666; line-height: 1.4;">${address}</span>
+  contactItems.push(`<div class="db-detail-row">
+        <span class="db-detail-pin">📍</span>
+        <span class="db-detail-text">${address}</span>
       </div>`);
     }
 
@@ -6303,8 +6287,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (hoursHtml) contactItems.push(hoursHtml);
     }
     if (contactItems.length > 0) {
-      contactSection = `
-          <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
+        contactSection = `
+          <div class="db-detail-box">
           ${contactItems.join('')}
           </div>
         `;
@@ -6316,11 +6300,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     let nearbyPOISection = '';
     if (lat && lng) {
       nearbyPOISection = `
-        <div style="margin: 16px; padding: 16px; background: #f8f9fa; border-radius: 12px;">
+        <div class="db-detail-box">
           <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">${p.post_type === 'charging_location' ? 'Blízká zajímavá místa' : 'Blízké nabíjecí stanice'}</div>
           
           <!-- Detail seznam -->
-          <div id="nearby-pois-list" style="min-height: 60px; display: block; color: #666;">
+          <div id="nearby-pois-list" class="db-nearby-list">
             <div style="text-align: center; padding: 20px;">
               <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
               <div style="font-weight: 500;">Načítání blízkých míst...</div>
@@ -8689,7 +8673,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       target.closest('.leaflet-marker-icon') ||
       target.closest('.marker-cluster') ||
       target.closest('.leaflet-control') ||
-      target.closest('#db-isochrones-legend') ||
+      target.closest('.db-isochrones-inline') ||
       target.closest('#db-isochrones-unlock')
     );
 

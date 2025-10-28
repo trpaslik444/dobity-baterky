@@ -264,10 +264,29 @@ html, body {
   pointer-events: auto;
 }
 
-.db-attribution { position:absolute; left:8px; bottom:8px; z-index:1002; background: rgba(254, 249, 223, 0.9); backdrop-filter: blur(6px); border: 1px solid #FCE67D; border-radius: 8px; padding: 6px 8px; font-size: 11px; line-height: 1; color: #049FE8; }
+.db-attribution { position:absolute; left:8px; right:8px; bottom:8px; z-index:1002; background: rgba(254, 249, 223, 0.9); backdrop-filter: blur(6px); border: 1px solid #FCE67D; border-radius: 8px; padding: 6px 8px; font-size: 11px; line-height: 1; color: #049FE8; display: flex; align-items: center; justify-content: space-between; }
 .db-attribution .db-license-trigger { font: inherit; color: #049FE8; background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; transition: color 0.2s ease; }
 .db-attribution .db-license-trigger:hover,
 .db-attribution .db-license-trigger:focus { color: #024b9b; outline: none; }
+.db-attribution .db-isochrones-inline { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.db-attribution .db-isochrones-inline .db-legend__title { color: #049FE8; font-weight: 600; margin-right: 4px; }
+.db-attribution .db-isochrones-inline .db-legend__item { display: flex; align-items: center; gap: 2px; margin-right: 6px; }
+.db-attribution .db-isochrones-inline .db-legend__dot { font-size: 8px; }
+.db-attribution .db-isochrones-inline .db-legend__dot--ok { color: #10b981; }
+.db-attribution .db-isochrones-inline .db-legend__dot--mid { color: #f59e0b; }
+.db-attribution .db-isochrones-inline .db-legend__dot--bad { color: #ef4444; }
+
+/* Responzivní úpravy pro attribution bar s isochrones */
+@media (max-width: 768px) {
+  .db-attribution { flex-direction: column; gap: 4px; padding: 8px; }
+  .db-attribution .db-isochrones-inline { justify-content: center; flex-wrap: wrap; gap: 6px; }
+  .db-attribution .db-isochrones-inline .db-legend__item { margin-right: 4px; }
+}
+
+@media (max-width: 480px) {
+  .db-attribution .db-isochrones-inline .db-legend__title { display: none; }
+  .db-attribution .db-isochrones-inline .db-legend__item span:last-child { font-size: 10px; }
+}
 
 #db-attribution-bar .db-license-trigger {
   font: inherit;
