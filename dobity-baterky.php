@@ -427,7 +427,8 @@ add_action('init', function() {
 
 // Načítání assetů s ochranou - spouští se až po init
 add_action('wp_enqueue_scripts', function() {
-    // ⛔️ Nepovolaným vůbec nenačítej JS/CSS mapy
+
+    // Enqueue map assets pouze pro uživatele s přístupem k mapě
     if ( ! function_exists('db_user_can_see_map') || ! db_user_can_see_map() ) {
         return;
     }
@@ -471,23 +472,14 @@ add_action('wp_enqueue_scripts', function() {
         'enabled' => false,
     );
     
-    // Vždy načíst favorites data - pokud je uživatel přihlášen
-    if ( class_exists( '\\DB\\Favorites_Manager' ) ) {
-        if ( is_user_logged_in() ) {
-            try {
-                $favorites_manager = Favorites_Manager::get_instance();
-                $favorites_payload = $favorites_manager->get_localized_payload( get_current_user_id() );
-            } catch ( \Throwable $e ) {
-                $favorites_payload = array( 'enabled' => false );
-            }
+    // Načíst favorites data pro přihlášené uživatele
+    if ( class_exists( '\\DB\\Favorites_Manager' ) && is_user_logged_in() ) {
+        try {
+            $favorites_manager = Favorites_Manager::get_instance();
+            $favorites_payload = $favorites_manager->get_localized_payload( get_current_user_id() );
+        } catch ( \Throwable $e ) {
+            $favorites_payload = array( 'enabled' => false );
         }
-    }
-    
-    // Debug - zobrazit payload v HTML komentáři
-    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-        echo '<!-- Favorites Payload Debug: ' . esc_html( json_encode( $favorites_payload ) ) . ' -->' . "\n";
-        echo '<!-- is_user_logged_in: ' . ( is_user_logged_in() ? 'YES' : 'NO' ) . ' -->' . "\n";
-        echo '<!-- class_exists: ' . ( class_exists( '\\DB\\Favorites_Manager' ) ? 'YES' : 'NO' ) . ' -->' . "\n";
     }
     
     wp_localize_script( 'db-map', 'dbMapData', array(
