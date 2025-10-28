@@ -7580,7 +7580,30 @@ document.addEventListener('DOMContentLoaded', async function() {
             const cached = searchCache.get(cacheKey);
             if (Date.now() - cached.timestamp < 300000) { // 5 minut cache
               lastResults = cached.results;
-              renderSearchResults(cached.results);
+              
+              // Render cached results
+              acWrap.innerHTML = '';
+              if (!cached.results.length) { acWrap.style.display = 'none'; return; }
+              
+              cached.results.slice(0, 6).forEach((r, i) => {
+                let d = document.createElement('div');
+                d.className = 'db-map-ac-item';
+                
+                // Přidat informace o vzdálenosti a zemi
+                const distance = r._distance ? ` (${Math.round(r._distance)} km)` : '';
+                const country = r._country ? ` - ${r._country}` : '';
+                d.innerHTML = `
+                  <div style="font-weight: 500;">${r.display_name.split(',')[0]}</div>
+                  <div style="font-size: 0.8em; color: #666;">${r.display_name.split(',').slice(1).join(',').trim()}${distance}${country}</div>
+                `;
+                d.onclick = () => {
+                  acWrap.style.display = 'none';
+                  searchInput.value = r.display_name;
+                  map.setView([r.lat, r.lon], 15);
+                };
+                acWrap.appendChild(d);
+              });
+              acWrap.style.display = 'block';
               return;
             }
           }
