@@ -4776,7 +4776,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     const props = feature.properties;
-    try { /* debug removed */ } catch(_) {}
     if (!props.poi_external_expires_at && props.poi_external_cached_until) {
       try {
         const providerKey = props.poi_external_provider || props.poi_primary_external_source || 'google_places';
