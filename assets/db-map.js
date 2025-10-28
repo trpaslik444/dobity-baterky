@@ -3308,7 +3308,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   const providerModal = document.createElement('div');
   providerModal.id = 'db-provider-modal';
   providerModal.className = 'db-provider-modal';
-  providerModal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:10004;align-items:center;justify-content:center;';
+  providerModal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:25000;align-items:center;justify-content:center;';
   providerModal.innerHTML = `
     <div class="db-provider-modal__content" style="background:#FEF9E8;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
       <div class="db-provider-modal__header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-shrink:0;">
