@@ -38,7 +38,7 @@ if ( ! defined( 'DB_PLUGIN_URL' ) ) {
     define( 'DB_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 }
 if ( ! defined( 'DB_PLUGIN_VERSION' ) ) {
-    define( 'DB_PLUGIN_VERSION', '2.0.1' );
+    define( 'DB_PLUGIN_VERSION', '2.0.4' );
 }
 
 // -----------------------------------------------------------------------------
@@ -315,6 +315,11 @@ if ( file_exists( __DIR__ . '/includes/REST_Map.php' ) ) {
     }
 }
 
+// Favorites Manager - načítá se před REST API
+if ( file_exists( __DIR__ . '/includes/Favorites_Manager.php' ) ) {
+    require_once __DIR__ . '/includes/Favorites_Manager.php';
+}
+
 // Favorites REST API
 if ( file_exists( __DIR__ . '/includes/REST_Favorites.php' ) ) {
     require_once __DIR__ . '/includes/REST_Favorites.php';
@@ -422,7 +427,8 @@ add_action('init', function() {
 
 // Načítání assetů s ochranou - spouští se až po init
 add_action('wp_enqueue_scripts', function() {
-    // ⛔️ Nepovolaným vůbec nenačítej JS/CSS mapy
+
+    // Enqueue map assets pouze pro uživatele s přístupem k mapě
     if ( ! function_exists('db_user_can_see_map') || ! db_user_can_see_map() ) {
         return;
     }
@@ -461,6 +467,21 @@ add_action('wp_enqueue_scripts', function() {
     wp_enqueue_script( 'db-ondemand', plugins_url( 'assets/ondemand-processor.js', DB_PLUGIN_FILE ), array('jquery'), DB_PLUGIN_VERSION, true );
     
     // Data pro JS
+    // Příprava favorites payload
+    $favorites_payload = array(
+        'enabled' => false,
+    );
+    
+    // Načíst favorites data pro přihlášené uživatele
+    if ( class_exists( '\\DB\\Favorites_Manager' ) && is_user_logged_in() ) {
+        try {
+            $favorites_manager = \DB\Favorites_Manager::get_instance();
+            $favorites_payload = $favorites_manager->get_localized_payload( get_current_user_id() );
+        } catch ( \Throwable $e ) {
+            $favorites_payload = array( 'enabled' => false );
+        }
+    }
+    
     wp_localize_script( 'db-map', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
         'restNonce' => wp_create_nonce( 'wp_rest' ),
@@ -491,6 +512,7 @@ add_action('wp_enqueue_scripts', function() {
         'accountUrl' => is_user_logged_in() ? admin_url('profile.php') : wp_login_url(),
         'logoutUrl' => is_user_logged_in() ? wp_logout_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ) : '',
         'loginUrl' => is_user_logged_in() ? '' : wp_login_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ),
+        'favorites' => $favorites_payload,
     ) );
     
     // On-Demand Processor data

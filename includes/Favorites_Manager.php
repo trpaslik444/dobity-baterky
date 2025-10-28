@@ -162,6 +162,56 @@ class Favorites_Manager {
         );
     }
 
+    /**
+     * Delete a custom folder and remove all assignments pointing to it.
+     */
+    public function delete_folder( int $user_id, string $folder_id ): array {
+        $state = $this->get_state( $user_id );
+        $folder_id = (string) $folder_id;
+
+        // Prevent deleting default folder
+        if ( $folder_id === self::DEFAULT_FOLDER_ID ) {
+            throw new \RuntimeException( __( 'Výchozí složku nelze smazat.', 'dobity-baterky' ) );
+        }
+
+        // Keep only folders that don't match folder_id
+        $new_folders = array();
+        $found = false;
+        foreach ( $state['folders'] as $folder ) {
+            if ( isset( $folder['id'] ) && (string) $folder['id'] === $folder_id ) {
+                // Allow delete only custom folders
+                $normalized = $this->normalize_folder( $folder );
+                if ( $normalized['type'] !== 'custom' ) {
+                    throw new \RuntimeException( __( 'Tuto složku nelze smazat.', 'dobity-baterky' ) );
+                }
+                $found = true;
+                continue;
+            }
+            $new_folders[] = $folder;
+        }
+
+        if ( ! $found ) {
+            throw new \RuntimeException( __( 'Složka nebyla nalezena.', 'dobity-baterky' ) );
+        }
+
+        // Remove assignments pointing to this folder
+        $new_assignments = array();
+        foreach ( $state['assignments'] as $post_id => $assigned_folder ) {
+            if ( (string) $assigned_folder !== $folder_id ) {
+                $new_assignments[ $post_id ] = $assigned_folder;
+            }
+        }
+
+        $state['folders'] = array_values( $new_folders );
+        $state['assignments'] = $new_assignments;
+        $this->save_state( $user_id, $state );
+
+        return array(
+            'folders'     => $this->format_folders_with_counts( $state ),
+            'assignments' => $state['assignments'],
+        );
+    }
+
     public function get_localized_payload( int $user_id ): array {
         $state   = $this->get_state( $user_id );
         $folders = $this->format_folders_with_counts( $state );

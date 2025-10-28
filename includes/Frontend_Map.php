@@ -72,7 +72,7 @@ class Frontend_Map {
 
         if ( is_user_logged_in() && class_exists( '\\DB\\Favorites_Manager' ) ) {
             try {
-                $favorites_manager = Favorites_Manager::get_instance();
+                $favorites_manager = \DB\Favorites_Manager::get_instance();
                 $favorites_payload = $favorites_manager->get_localized_payload( get_current_user_id() );
             } catch ( \Throwable $e ) {
                 $favorites_payload = array( 'enabled' => false );

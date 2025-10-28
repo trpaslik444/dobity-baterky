@@ -1,3 +1,32 @@
+.db-legend { background:#FEF9DF; padding:8px; border-radius:8px; box-shadow:0 2px 4px rgba(4,159,232,0.12); font-size:12px; border:1px solid #FCE67D; color:#049FE8; }
+.db-legend__title { color:#049FE8; }
+.db-legend__dot--ok { color:#10b981; }
+.db-legend__dot--mid { color:#f59e0b; }
+.db-legend__dot--bad { color:#ef4444; }
+#db-detail-modal .db-section-title { font-weight:700; color:#049FE8; margin-bottom:12px; font-size:1.1em; }
+#db-detail-modal .db-nearby-list { min-height:60px; display:block; color:#049FE8; }
+.db-nearby-item { width:100%; text-align:left; background:#FEF9DF; border:1px solid #FCE67D; border-radius:8px; padding:12px; margin:4px 0; display:flex; gap:12px; align-items:center; cursor:pointer; transition:all .2s; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+.db-nearby-item:hover { background:#E0F7FF; border-color:#049FE8; transform: translateY(-1px); box-shadow:0 2px 8px rgba(4,159,232,0.18); }
+.db-nearby-item__icon { font-size:20px; flex-shrink:0; width:32px; height:32px; display:flex; align-items:center; justify-content:center; background:#FCE67D; border-radius:4px; }
+.db-nearby-item__title { font-weight:600; color:#049FE8; font-size:14px; line-height:1.3; margin-bottom:2px; word-wrap:break-word; }
+.db-nearby-item__meta { color:#10b981; font-weight:600; font-size:12px; }
+
+/* Generic brand boxes/text inside detail modal */
+#db-detail-modal .db-muted-box { background:#FEF9DF; border:1px solid #FCE67D; border-radius:8px; padding:12px; color:#049FE8; text-align:center; }
+#db-detail-modal .db-muted-text { color:#6B7280; }
+#db-detail-modal .db-loading-icon { font-size:24px; margin-bottom:8px; }
+#db-detail-modal .db-detail-box { margin:16px; padding:16px; background:#FEF9DF; border:1px solid #FCE67D; border-radius:12px; }
+#db-detail-modal .db-detail-box .db-detail-row { margin: 8px 0; display:flex; align-items:flex-start; gap:8px; }
+#db-detail-modal .db-detail-pin { color:#049FE8; font-size:1.2em; margin-top:2px; }
+#db-detail-modal .db-detail-text { color:#049FE8; line-height:1.4; }
+#db-detail-modal .db-conn-badge-wrap { margin: 16px; display: flex; flex-wrap: wrap; gap: 4px; }
+#db-detail-modal .db-conn-badge { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; margin: 4px 8px 4px 0; padding: 8px 12px; background: #FEF9DF; border-radius: 6px; border: 1px solid #FCE67D; }
+#db-detail-modal .db-conn-badge__row { display: flex; align-items: center; gap: 4px; }
+#db-detail-modal .db-conn-badge__icon { width: 20px; height: 20px; object-fit: contain; display: block; }
+#db-detail-modal .db-conn-badge__count { font-weight: 600; color: #049FE8; font-size: 0.9em; }
+#db-detail-modal .db-conn-badge__power { color: #FF6A4B; font-size: 0.8em; }
+#db-detail-modal .db-conn-badge--down { background: #FFEBEB; border-color: #FFCACB; opacity: 0.9; }
+#db-detail-modal .db-conn-badge__count--down { color: #B91C1C; }
 .db-map-card { scroll-margin: 80px; }
 /* Import Google Fonts pro typografii z brandbooku */
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Patrick+Hand&display=swap');
@@ -228,19 +257,36 @@ html, body {
 
 /* Vlastní attribution bar, aby byl čitelný a konzistentní */
 #db-attribution-bar {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  z-index: 1002;
-  background: rgba(255,255,255,0.9);
-  backdrop-filter: blur(6px);
-  border: 1px solid rgba(0,0,0,0.1);
-  border-radius: 4px;
-  padding: 4px 6px;
-  font-size: 11px;
-  line-height: 1;
-  color: #333;
+  position: static;
+  left: auto;
+  bottom: auto;
+  z-index: auto;
   pointer-events: auto;
+}
+
+.db-attribution { position: static; z-index:auto; background: rgba(254, 249, 223, 0.9); backdrop-filter: blur(6px); border: 1px solid #FCE67D; border-radius: 8px; padding: 6px 8px; font-size: 11px; line-height: 1; color: #049FE8; display: inline-flex; align-items: center; }
+.db-attribution .db-license-trigger { font: inherit; color: #049FE8; background: none; border: none; padding: 0; cursor: pointer; text-decoration: underline; transition: color 0.2s ease; }
+.db-attribution .db-license-trigger:hover,
+.db-attribution .db-license-trigger:focus { color: #024b9b; outline: none; }
+
+/* Bottom bar wrapper keeping attribution and legend on one line */
+#db-bottom-bar { position: absolute; left:8px; right:8px; bottom:8px; z-index:1002; display:flex; align-items:center; justify-content:space-between; pointer-events:auto; }
+
+/* Separate, compact legend aligned to the right */
+#db-isochrones-legend { display:inline-flex; align-items:center; gap:8px; background: rgba(254, 249, 223, 0.9); border:1px solid #FCE67D; border-radius:8px; padding:6px 8px; font-size:11px; line-height:1; color:#049FE8; }
+#db-isochrones-legend .db-legend__title { color:#049FE8; font-weight:600; margin-right:4px; }
+#db-isochrones-legend .db-legend__item { display:flex; align-items:center; gap:3px; }
+#db-isochrones-legend .db-legend__dot { font-size:8px; }
+#db-isochrones-legend .db-legend__dot--ok { color:#10b981; }
+#db-isochrones-legend .db-legend__dot--mid { color:#f59e0b; }
+#db-isochrones-legend .db-legend__dot--bad { color:#ef4444; }
+
+/* Responsive adjustments */
+@media (max-width: 768px) { #db-bottom-bar { left:8px; right:8px; bottom:8px; } #db-isochrones-legend { flex-wrap:wrap; gap:6px; } }
+
+@media (max-width: 480px) {
+  .db-attribution .db-isochrones-inline .db-legend__title { display: none; }
+  .db-attribution .db-isochrones-inline .db-legend__item span:last-child { font-size: 10px; }
 }
 
 #db-attribution-bar .db-license-trigger {
@@ -296,12 +342,7 @@ body.db-license-modal-open {
   color: #1f2933;
 }
 
-#db-license-modal .db-license-modal__title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 1rem;
-  color: #049FE8;
-}
+#db-license-modal .db-license-modal__title { font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem; color: #049FE8; }
 
 #db-license-modal .db-license-modal__body {
   font-size: 0.95rem;
@@ -318,35 +359,13 @@ body.db-license-modal-open {
   gap: 0.5rem;
 }
 
-#db-license-modal .db-license-modal__body a {
-  color: #0366d6;
-  font-weight: 500;
-}
+#db-license-modal .db-license-modal__body a { color: #049FE8; font-weight: 600; text-decoration: underline; }
+#db-license-modal .db-license-modal__body a:hover { color: #024b9b; }
 
-#db-license-modal .db-license-modal__close {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  background: rgba(4, 159, 232, 0.9);
-  border: none;
-  color: #fff;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.4rem;
-  line-height: 1;
-  transition: background 0.2s ease;
-}
+#db-license-modal .db-license-modal__close { position: absolute; top: 1rem; right: 1rem; background: #FF8DAA; border: none; color: #049FE8; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.4rem; line-height: 1; box-shadow: 0 2px 8px rgba(255,141,170,.35); transition: filter 0.2s ease; }
 
 #db-license-modal .db-license-modal__close:hover,
-#db-license-modal .db-license-modal__close:focus {
-  background: #024b9b;
-  outline: none;
-}
+#db-license-modal .db-license-modal__close:focus { filter: brightness(0.95); outline: none; }
 
 /* Skrýt výchozí Leaflet attribution, aby se neduplikovalo */
 .leaflet-control-attribution {
@@ -578,12 +597,12 @@ body.db-license-modal-open {
 .db-map-topbar {
   display: flex;
   align-items: center;
-  background: #049FE8; /* Primární modrá */
-  color: #fff;
-  border-radius: 2em;
-  box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3);
-  padding: 0.5em 1.5em 0.5em 0.5em;
-  gap: 1em;
+  background: transparent; /* Bez backgroundu – samostatná tlačítka */
+  color: #049FE8;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 0.5em;
+  gap: 0.5em;
   position: absolute;
   top: calc(1em + env(safe-area-inset-top, 0px));
   right: 2em;
@@ -602,13 +621,13 @@ body.db-license-modal-open {
     top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px) + 8px) !important;
     left: 0 !important;
     right: 0 !important;
-    background: #049FE8 !important; /* Primární modrá z brandbooku */
-    color: #fff !important;
+    background: transparent !important; /* Bez backgroundu – samostatná tlačítka */
+    color: #049FE8 !important;
     border-radius: 0 !important;
-    box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3) !important;
+    box-shadow: none !important;
     padding: 0.75rem 1rem !important;
-    gap: 0 !important; /* Odstranění gap pro rovnoměrné rozmístění */
-    z-index: 9999 !important; /* Zvýšený z-index */
+    gap: 0.5rem !important;
+  z-index: 900; /* topbar mobile */
     /* PWA safe area pro notchy */
     padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
     padding-left: max(1rem, env(safe-area-inset-left)) !important;
@@ -633,7 +652,7 @@ body.db-license-modal-open {
     bottom: 0 !important;
     width: 100vw !important;
     height: 100vh !important;
-    z-index: 1 !important;
+  z-index: 1 !important;
     padding-top: 0 !important;
   }
   
@@ -647,18 +666,19 @@ body.db-license-modal-open {
     padding-top: 0 !important;
   }
   
-  /* Topbar tlačítka na mobilu - rovnoměrné rozmístění */
+  /* Topbar tlačítka na mobilu - zachovat brand růžovou a modrou ikonu */
   .db-map-topbar .db-map-topbar-btn {
-    background: transparent !important;
-    color: #fff !important;
-    box-shadow: none !important;
+    background: #FFACC4 !important;
+    color: #049FE8 !important;
+    box-shadow: 0 1px 4px rgba(255, 172, 196, 0.3) !important;
     margin: 0 !important;
-    width: 2.5rem !important;
-    height: 2.5rem !important;
-    flex: 1 !important; /* Rovnoměrné roztažení */
+    width: 40px !important;
+    height: 40px !important;
+    flex: 0 0 40px !important; /* pevný čtverec */
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    border-radius: 12px !important;
   }
   
   .db-map-topbar .db-map-topbar-btn:hover {
@@ -713,9 +733,9 @@ body.db-license-modal-open {
 }
 
 .db-map-topbar-btn {
-  width: 2.7em;
-  height: 2.7em;
-  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   background: #FFACC4; /* Světle růžová */
   border: none;
   box-shadow: 0 1px 4px rgba(255, 172, 196, 0.3);
@@ -730,7 +750,7 @@ body.db-license-modal-open {
 
 .db-map-topbar-btn:hover, .db-map-topbar-btn:focus {
   background: #FF8DAA; /* Tmavě růžová */
-  color: #fff;
+  color: #049FE8; /* Zachovat modrou ikonu */
   box-shadow: 0 2px 8px rgba(255, 141, 170, 0.4);
   transform: scale(1.05);
 }
@@ -827,7 +847,7 @@ body.db-license-modal-open {
   left: 0;
   right: 0;
   top: 100%;
-  z-index: 9999;
+  z-index: 900; /* topbar desktop */
   background: #fff;
   border-radius: 0 0 1em 1em;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -873,7 +893,7 @@ body.db-license-modal-open {
     border-radius: 0; 
     position: fixed; 
     inset: 0; 
-    z-index: 10000;
+  z-index: 800; /* locate control */
     transition: transform 0.3s ease;
   }
   .db-map-wrap { flex-direction: column; height: 100%; }
@@ -891,7 +911,7 @@ body.db-license-modal-open {
     margin: 0;
     padding-top: 0.5rem;
     box-shadow: none;
-    z-index: 10000;
+  z-index: 800;
   }
   .db-list-mode .db-map-topbar { display: none; }
   
@@ -926,7 +946,7 @@ body.db-license-modal-open {
     width: 100%;
     height: 100vh;
     background: #049FE8;
-    z-index: 10010;
+  z-index: 950; /* menu panel */
     transform: translateX(-100%);
     transition: transform 0.3s ease;
     display: flex;
@@ -942,7 +962,7 @@ body.db-license-modal-open {
     transform: translateX(0) !important;
     visibility: visible !important;
     pointer-events: auto !important;
-    z-index: 10010 !important;
+  z-index: 950 !important;
   }
   
   /* Force close when menu is not open */
@@ -1237,10 +1257,10 @@ body.db-modal-open { overflow: hidden !important; }
   left: 50%;
   transform: translateX(-50%);
   bottom: 6px; /* menší mezera od spodku */
-  background: #F5F1E8; /* Béžový background podle brandbooku */
+  background: #FEF9DF; /* Brand beige */
   border-radius: 16px; /* horní i spodní, protože není nalepený */
   box-shadow: 0 8px 32px rgba(0,0,0,0.15);
-  z-index: 10003; /* Nad licenčním barem */
+  z-index: 700; /* mobile sheet above map */
   width: calc(100% - 24px); /* Zmenšeno pro menší zakrytí */
   max-width: 380px;
   overflow: hidden;
@@ -1355,8 +1375,8 @@ body.has-attribution #db-mobile-sheet.open {
 #db-mobile-sheet .btn-icon { 
   width: 40px;
   height: 40px;
-  background: #FF8DAA; /* Růžové tlačítko podle brandbooku */
-  color: #049FE8; /* Modrý symbol */
+  background: #FFACC4; /* Brand pink */
+  color: #049FE8; /* Blue icon */
   border: none; 
   border-radius: 8px; 
   display: flex;
@@ -1364,19 +1384,20 @@ body.has-attribution #db-mobile-sheet.open {
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(255, 141, 170, 0.3);
+  box-shadow: 0 2px 8px rgba(255, 172, 196, 0.3);
   flex-shrink: 0;
 }
 
 #db-mobile-sheet .btn-icon svg {
   width: 20px;
   height: 20px;
+  color: #049FE8;
   stroke: currentColor;
 }
 
 #db-mobile-sheet .btn-icon:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 141, 170, 0.4);
+  box-shadow: 0 4px 12px rgba(255, 172, 196, 0.4);
 }
 
 #db-mobile-sheet .btn-icon:active {
@@ -1472,7 +1493,7 @@ body.has-attribution #db-mobile-sheet.open {
 }
 
 #db-mobile-sheet .nearby-item-time {
-  color: #FF8DAA;
+  color: #FF6A4B; /* Brand CTA orange */
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -1530,37 +1551,47 @@ body.has-attribution #db-mobile-sheet.open {
 }
 
 /* List režim – header s ovládáním */
-#db-list-header { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px)); z-index: 10002; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #049FE8; }
+#db-list-header { position: sticky; top: calc(env(safe-area-inset-top, 0px) + var(--wp-admin-bar-offset, 0px)); z-index: 910; display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: transparent; }
 #db-list-header .db-map-topbar-btn { margin-left: 0; }
-.db-map-topbar-btn.active { background: #FF8DAA; color: #fff; transform: scale(1.05); }
+.db-map-topbar-btn.active { background: #FFACC4; color: #049FE8; transform: scale(1.05); }
+
+/* Specifické aktivní stavy: Filtry a Oblíbené = brand žlutá s modrou ikonou */
+#db-filter-btn.active,
+#db-favorites-btn.active,
+.db-map-topbar-btn.favorites-active {
+  background: #FCE67D !important; /* Brand yellow */
+  color: #049FE8 !important;      /* Blue icon */
+  box-shadow: 0 2px 8px rgba(252, 230, 125, 0.4) !important;
+}
+/* Stejné aktivní žluté pro tlačítka v list headeru (nemají ID) */
+.db-map-topbar-btn[title="Filtry"].active,
+.db-map-topbar-btn[title="Oblíbené"].active {
+  background: #FCE67D !important;
+  color: #049FE8 !important;
+  box-shadow: 0 2px 8px rgba(252, 230, 125, 0.4) !important;
+}
 
 /* Detail modal (80% výšky od spodní hrany) */
-#db-detail-modal { 
-  position: fixed; 
-  inset: 0; 
-  background: rgba(0,0,0,.4); 
-  display: none; 
-  align-items: flex-end; 
-  justify-content: center; 
-  z-index: 10001; 
-  /* Overlay nesmí scrollovat, scroll patří jen kartě */
-  overflow: hidden;
-}
+#db-detail-modal { position: fixed; inset: 0; background: rgba(4,159,232,0.12); display: none; align-items: flex-end; justify-content: center; z-index: 1200; overflow: hidden; }
 #db-detail-modal.open { display: flex; }
 #db-detail-modal .modal-card { 
   width: 100%; 
   max-width: 720px; 
-  height: 80vh; /* 80% výšky obrazovky */
-  background: #F5F1E8; /* Béžový background podle brandbooku */
+  height: 80vh; 
+  background: #FEF9DF; 
+  border: 2px solid #FCE67D; 
   border-radius: 20px 20px 0 0; 
   overflow-y: auto; 
-  -webkit-overflow-scrolling: touch; /* plynulé scrollování na iOS */
-  overscroll-behavior: contain; /* nepropagovat scroll do pozadí */
-  touch-action: pan-y; /* umožnit vertikální gesto */
-  box-shadow: 0 -10px 30px rgba(0,0,0,.35);
-  padding-bottom: 0;
-  box-sizing: border-box;
-  pointer-events: auto; /* interakce zachytává karta, ne backdrop */
+  -webkit-overflow-scrolling: touch; 
+  overscroll-behavior: contain; 
+  touch-action: pan-y; 
+  box-shadow: 0 -10px 30px rgba(4,159,232,.18), 0 -6px 18px rgba(0,0,0,.2); 
+  padding-bottom: 0; 
+  box-sizing: border-box; 
+  pointer-events: auto; 
+  font-family: 'Montserrat', sans-serif; 
+  display: flex;
+  flex-direction: column;
 }
 
 /* Pokud je aktivní isochrones legenda, posuň modal kartu výše o její výšku */
@@ -1572,7 +1603,7 @@ body.has-isochrones #db-detail-modal .modal-card {
 body.has-attribution #db-detail-modal.open .modal-card { margin-bottom: 0 !important; }
 body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 
-/* Specificky posunout pouze modal detail z mapy (ne obecné „další informace“ UI) pokud se liší značkou) */
+/* Specificky posunout pouze modal detail z mapy (ne obecné „další informace" UI) pokud se liší značkou) */
 /* Pokud by mapa otvírala jinou kartu s odlišným ID/ třídou, přidejme zde specifický selektor. Zatím držíme obecně. */
 
 /* Fullscreen modal na mobilech */
@@ -1587,6 +1618,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 }
 #db-detail-modal .close-btn { position: sticky; top: 0; margin-left: auto; margin-right: 8px; margin-top: 8px; z-index: 2; width: 40px; height: 40px; border-radius: 20px; border: none; background: #FF8DAA; color: #049FE8; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(255,141,170,.4); }
 #db-detail-modal .hero { position: relative; height: 240px; background: #e5e7eb; overflow: hidden; border-radius: 18px 18px 0 0; }
+#db-detail-modal .hero { flex: 0 0 auto; }
 #db-detail-modal .hero .hero-img { width: 100%; height: 100%; object-fit: cover; display: block; }
 #db-detail-modal .hero-thumbs { display:flex; gap:6px; padding:6px 16px 0 16px; }
 #db-detail-modal .hero-thumb { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
@@ -1608,7 +1640,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   right: 0;
   width: 40px;
   height: 40px;
-  border-radius: 12px;
+  border-radius: 8px; /* čtvercový formát */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1695,7 +1727,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   justify-content: center;
 }
 
-/* Admin panel - zvýrazněný */
+/* Admin panel - zvýrazněný a na spodku */
 #db-detail-modal .db-admin-panel {
   background: #FF6A4B; /* Oranžový background pro admin panel */
   color: white;
@@ -1703,6 +1735,8 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   padding: 16px;
   border-radius: 12px;
   border-left: 4px solid #FF8DAA;
+  margin-top: auto; /* přesune na spodek díky flexboxu */
+  order: 9999; /* zobraz jako poslední prvek v modalu */
 }
 
 #db-detail-modal .db-admin-panel h3 {
@@ -1789,7 +1823,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
-  z-index: 10005;
+  z-index: 920; /* search overlay */
   display: none;
   align-items: flex-start;
   justify-content: center;
@@ -1937,6 +1971,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 #db-map-filter-panel {
   pointer-events: auto;
   touch-action: none;
+  z-index: 20000 !important; /* nad listview */
 }
 
 #db-map-filter-panel.open {
@@ -1946,7 +1981,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 #db-map-filter-panel .db-filter-modal__backdrop {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(4, 159, 232, 0.22);
 }
 
 #db-map-filter-panel .db-filter-modal__content {
@@ -1954,20 +1989,21 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   width: min(90vw, 480px);
   max-height: 90vh;
   background: rgba(254, 249, 223, 0.92);
+  border: 1px solid #FCE67D;
   border-radius: 18px;
-  padding: 2.5rem 2rem;
-  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.35);
-  color: #1f2933;
+  padding: 2rem 1.5rem;
+  box-shadow: 0 16px 60px rgba(4,159,232,0.18), 0 10px 30px rgba(0,0,0,0.2);
+  color: #049FE8;
   /* Zajistit scrollování */
   display: flex;
   flex-direction: column;
-  overflow: hidden; /* Zabraň overflow na content */
+  overflow: hidden; /* Zabránit overflow na content */
 }
 
 #db-map-filter-panel .db-filter-modal__title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 1.5rem;
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
   color: #049FE8;
   flex-shrink: 0; /* Zabránit zmenšení nadpisu */
 }
@@ -1985,9 +2021,9 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   position: absolute;
   top: 1rem;
   right: 1rem;
-  background: rgba(4, 159, 232, 0.9);
+  background: #FF8DAA;
   border: none;
-  color: #fff;
+  color: #049FE8;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -1997,12 +2033,13 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   justify-content: center;
   font-size: 1.4rem;
   line-height: 1;
-  transition: background 0.2s ease;
+  box-shadow: 0 2px 8px rgba(255,141,170,0.35);
+  transition: filter 0.2s ease;
 }
 
 #db-map-filter-panel .db-filter-modal__close:hover,
 #db-map-filter-panel .db-filter-modal__close:focus {
-  background: #024b9b;
+  filter: brightness(0.95);
   outline: none;
 }
 
@@ -2046,20 +2083,20 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 .db-filter-section__title {
   font-size: 0.95rem;
   font-weight: 600;
-  color: #444;
+  color: #049FE8;
   margin-bottom: 0.75rem;
 }
 
 /* Provider filter button */
 .db-filter-provider-btn {
-  background: #FEF9E8; /* Béžový background podle brandbooku */
-  border: 2px solid #e5e7eb;
+  background: #FEF9DF; /* Béžový background podle brandbooku */
+  border: 2px solid #FCE67D;
   border-radius: 8px;
   padding: 12px 16px;
   font-family: 'Montserrat', sans-serif;
   font-size: 0.9rem;
-  font-weight: 500;
-  color: #333;
+  font-weight: 600;
+  color: #049FE8;
   cursor: pointer;
   transition: all 0.2s ease;
   width: 100%;
@@ -2067,7 +2104,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 }
 
 .db-filter-provider-btn:hover {
-  background: #FEF9E8; /* Ponechat béžový při hover */
+  background: #E0F7FF; /* Ponechat béžový při hover */
   border-color: #049FE8;
   color: #049FE8;
 }
@@ -2220,7 +2257,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   justify-content: flex-end;
   margin-top: 1.5rem;
   padding-top: 1rem;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid #FCE67D;
 }
 
 .db-filter-btn {
@@ -2243,13 +2280,14 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 }
 
 .db-filter-btn--secondary {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #e5e7eb;
+  background: #FEF9DF;
+  color: #049FE8;
+  border: 1px solid #FCE67D;
 }
 
 .db-filter-btn--secondary:hover {
-  background: #e5e7eb;
+  background: #E0F7FF;
+  border-color: #049FE8;
 }
 
 /* Responsivní design */
@@ -2527,7 +2565,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   border-radius: 20px;
   font-size: 12px;
   font-weight: 600;
-  z-index: 10005;
+  z-index: 920;
 }
 
 /* PWA splash screen optimalizace */
@@ -2597,14 +2635,15 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 }
 
 #db-detail-modal .connectors-detail {
-  background: #f8f9fa;
+  background: #FEF9DF; /* brand beige */
+  border: 1px solid #FCE67D;
   border-radius: 12px;
   padding: 16px;
   margin: 16px;
 }
 
 #db-detail-modal .provider-detail {
-  background: #e8f4fd;
+  background: #E0F7FF; /* light brand blue */
   border-radius: 8px;
   padding: 12px;
   margin: 16px;
@@ -2612,7 +2651,8 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 }
 
 #db-detail-modal .additional-info {
-  background: #f8f9fa;
+  background: #FEF9DF;
+  border: 1px solid #FCE67D;
   border-radius: 12px;
   padding: 16px;
   margin: 16px;
@@ -2640,7 +2680,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
     right: 2em !important;
     left: auto !important;
     width: auto !important;
-    border-radius: 2em !important;
+    border-radius: 0 !important;
   }
   
   /* Mapa na desktopu */
@@ -2716,7 +2756,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   background: transparent; /* Průhledné pozadí */
   padding: 1rem;
   box-shadow: none; /* Bez stínu */
-  z-index: 10000; /* Vyšší než topbar (9999) */
+  z-index: 910; /* desktop topbar */
   display: block;
   border-radius: 0 0 16px 16px;
   /*animation: slideDown 0.3s ease;*/
@@ -2783,7 +2823,7 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   bottom: 30vh; /* cca 30 % od spodní hrany */
   left: 50%;
   transform: translateX(-50%);
-  z-index: 99999 !important; /* nejvyšší z-index - nad vším */
+  z-index: 1500 !important; /* load-more floating */
   background: rgba(255, 255, 255, 0.95);
   border-radius: 25px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
@@ -2907,7 +2947,7 @@ body.db-loading::before {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.12);
-  z-index: 100000;
+  z-index: 1400; /* page dim */
   pointer-events: none; /* Nezachytávat gesta, ať se dál ovládá mapa */
 }
 
@@ -2933,7 +2973,7 @@ body.db-loading::after {
   padding: 12px 16px;
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-  z-index: 100001;
+  z-index: 1450; /* page loading toast */
   font-family: 'Montserrat', sans-serif;
   pointer-events: none; /* Nezachytávat gesta */
 }
@@ -3155,37 +3195,28 @@ body.db-loading::after {
   line-height: 1;
 }
 
-.db-map-topbar-btn.favorites-active {
-  background: rgba(255, 191, 107, 0.25);
-  color: #B45309;
-}
+.db-map-topbar-btn.favorites-active { background: #FF8DAA; color: #FFFFFF; }
 
 .db-map-topbar-btn.favorites-active svg {
   color: inherit;
 }
 
-.db-favorites-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.35);
-  z-index: 1200;
-  display: none;
-}
+.db-favorites-overlay { position: fixed; inset: 0; background: rgba(4, 159, 232, 0.18); z-index: 15000; display: none; }
 
 .db-favorites-panel {
-  position: absolute;
+  position: fixed;
   top: 72px;
   right: 16px;
   width: min(340px, calc(100% - 32px));
   max-height: calc(100% - 96px);
-  background: #FFFFFF;
+  background: #FEF9DF; /* Brand beige */
   border-radius: 20px;
   box-shadow: 0 32px 80px rgba(15, 23, 42, 0.25);
   padding: 20px 20px 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  z-index: 1300;
+  z-index: 15010; /* favorites panel above overlay */
   overflow-y: auto;
 }
 
@@ -3206,15 +3237,11 @@ body.db-loading::after {
   gap: 12px;
 }
 
-.db-favorites-panel__title {
-  font-weight: 700;
-  font-size: 1.2rem;
-  color: #B45309;
-}
+.db-favorites-panel__title { font-weight: 700; font-size: 1.2rem; color: #049FE8; }
 
 .db-favorites-panel__subtitle {
   font-size: 0.85rem;
-  color: #6B7280;
+  color: #6B7280; /* neutral ok */
   margin-top: 4px;
 }
 
@@ -3247,13 +3274,7 @@ body.db-loading::after {
   gap: 10px;
 }
 
-.db-favorites-panel__section-title {
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #6B7280;
-}
+.db-favorites-panel__section-title { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #049FE8; }
 
 .db-favorites-panel__list {
   display: flex;
@@ -3261,33 +3282,11 @@ body.db-loading::after {
   gap: 8px;
 }
 
-.db-favorites-folder {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  border: 1px solid #FDE68A;
-  background: #FFFBEB;
-  border-radius: 14px;
-  padding: 10px 14px;
-  cursor: pointer;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
-  font-size: 0.95rem;
-}
+.db-favorites-folder { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; border:1px solid #FCE67D; background:#FEF9DF; border-radius:14px; padding:10px 14px; cursor:pointer; transition: box-shadow .2s ease, transform .2s ease; font-size:.95rem; }
 
-.db-favorites-folder:hover,
-.db-favorites-folder:focus {
-  box-shadow: 0 10px 24px rgba(251, 191, 36, 0.25);
-  transform: translateY(-1px);
-  outline: none;
-}
+.db-favorites-folder:hover, .db-favorites-folder:focus { box-shadow: 0 10px 24px rgba(4, 159, 232, 0.20); transform: translateY(-1px); outline:none; }
 
-.db-favorites-folder.active {
-  border-color: #F97316;
-  background: #FFF7ED;
-  box-shadow: 0 14px 32px rgba(249, 115, 22, 0.25);
-}
+.db-favorites-folder.active { border-color:#049FE8; background:#E0F7FF; box-shadow:0 14px 32px rgba(4,159,232,.25); }
 
 .db-favorites-folder__icon {
   font-size: 1.4rem;
@@ -3301,23 +3300,16 @@ body.db-loading::after {
   flex: 1;
 }
 
-.db-favorites-folder__name {
-  font-weight: 600;
-  color: #92400E;
-}
+.db-favorites-folder__name { font-weight: 600; color: #049FE8; }
 
-.db-favorites-folder__count {
-  font-size: 0.85rem;
-  color: #6B7280;
-}
+.db-favorites-folder__count { font-size: 0.85rem; color: #FF6A4B; }
 
-.db-favorites-empty-hint {
-  padding: 12px;
-  background: #FEF3C7;
-  border-radius: 12px;
-  color: #92400E;
-  font-size: 0.9rem;
-}
+/* Brand delete button inside favorites meta */
+.db-favorites-folder__delete { border:2px solid #FF8DAA; background:#FFACC4; color:#FF6A4B; border-radius:9999px; padding:6px 12px; font-weight:700; font-size:.8rem; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease; }
+
+.db-favorites-folder__delete:hover, .db-favorites-folder__delete:focus { background:#FF8DAA; border-color:#FF6A4B; color:#FFFFFF; box-shadow:0 6px 16px rgba(255,141,170,.35); transform: translateY(-1px); outline:none; }
+
+.db-favorites-empty-hint { padding: 12px; background: #FEF9DF; border-radius: 12px; color: #FF6A4B; font-size: 0.9rem; }
 
 .db-favorites-hidden {
   display: none !important;
@@ -3431,7 +3423,7 @@ body.db-loading::after {
   padding: 10px 18px;
   display: none;
   align-items: center;
-  z-index: 1100;
+  z-index: 930; /* favorites banner */
   pointer-events: none;
 }
 
@@ -3453,30 +3445,29 @@ body.db-loading::after {
 }
 
 .db-favorite-star-btn {
-  width: 36px;
-  height: 36px;
-  border-radius: 18px;
-  border: 1px solid #FCD34D;
-  background: #fff7ed;
-  color: #B45309;
+  width: auto;
+  height: auto;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #049FE8;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
 .db-favorite-star-btn:hover,
 .db-favorite-star-btn:focus {
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(249, 115, 22, 0.25);
   outline: none;
 }
 
 .db-favorite-star-btn.active {
-  background: #F97316;
-  border-color: #F97316;
-  color: #fff;
+  background: transparent;
+  color: #049FE8;
 }
 
 .db-favorite-chip {
@@ -3559,13 +3550,13 @@ body.db-loading::after {
   position: absolute;
   top: -8px;
   left: -8px;
-  background: #FFFFFF;
+  background: transparent;
   border-radius: 9999px;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.25);
+  box-shadow: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #B45309;
+  color: #049FE8;
   font-size: 0.85rem;
   pointer-events: none;
 }
@@ -3578,13 +3569,7 @@ body.db-loading::after {
   line-height: 1;
 }
 
-.db-favorites-assign-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  z-index: 1500;
-  display: none;
-}
+.db-favorites-assign-overlay { position: fixed; inset: 0; background: rgba(4, 159, 232, 0.22); z-index: 1300; display: none; }
 
 .db-favorites-assign {
   position: fixed;
@@ -3592,14 +3577,14 @@ body.db-loading::after {
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(420px, 92vw);
-  background: #FFFFFF;
+  background: #FEF9DF; /* Brand beige */
   border-radius: 20px;
   box-shadow: 0 40px 90px rgba(15, 23, 42, 0.3);
   padding: 20px;
   display: none;
   flex-direction: column;
   gap: 16px;
-  z-index: 1600;
+  z-index: 1310;
 }
 
 .db-favorites-assign__header {
@@ -3697,14 +3682,15 @@ body.db-loading::after {
 }
 
 .db-favorites-assign__remove {
-  background: #FEE2E2;
-  color: #B91C1C;
+  background: #FFACC4;
+  color: #FF6A4B;
+  border: 2px solid #FF8DAA;
 }
 
 .db-favorites-assign__action:hover,
 .db-favorites-assign__action:focus {
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(249, 115, 22, 0.25);
+  box-shadow: 0 8px 18px rgba(255, 106, 75, 0.25);
   outline: none;
 }
 
