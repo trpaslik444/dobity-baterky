@@ -162,41 +162,10 @@ function renderIsochrones(geojson, ranges, userSettings = null, options = {}) {
   // Přidat na mapu
   isochronesLayer.addTo(window.map);
   
-  // Přidat legendu inline do attribution baru
-  const attributionBar = document.querySelector('.db-attribution');
-  if (attributionBar && !attributionBar.querySelector('.db-isochrones-inline')) {
-    // Získat zobrazované časy z user_settings nebo použít defaultní
-    const displayTimes = userSettings?.display_times_min || [10, 20, 30];
-    
-    const isochronesInline = document.createElement('div');
-    isochronesInline.className = 'db-isochrones-inline';
-    isochronesInline.innerHTML = `
-      <span class="db-legend__title">Dochozí okruhy:</span>
-      <span class="db-legend__item">
-        <span class="db-legend__dot db-legend__dot--ok">●</span>
-        <span>~${displayTimes[0]} min</span>
-      </span>
-      <span class="db-legend__item">
-        <span class="db-legend__dot db-legend__dot--mid">●</span>
-        <span>~${displayTimes[1]} min</span>
-      </span>
-      <span class="db-legend__item">
-        <span class="db-legend__dot db-legend__dot--bad">●</span>
-        <span>~${displayTimes[2]} min</span>
-      </span>
-    `;
-    
-    // Přidat před licence tlačítko
-    const licenseTrigger = attributionBar.querySelector('.db-license-trigger');
-    if (licenseTrigger) {
-      attributionBar.insertBefore(isochronesInline, licenseTrigger);
-    } else {
-      attributionBar.appendChild(isochronesInline);
-    }
-    
-    // Označit body class, aby se modal karta posunula výše
-    try { document.body.classList.add('has-isochrones'); } catch(_) {}
-  }
+  // Přidat samostatnou legendu vedle attribution baru (v pravé části wrapperu)
+  const displayTimes = userSettings?.display_times_min || [10, 20, 30];
+  ensureIsochronesLegend(displayTimes);
+  try { document.body.classList.add('has-isochrones'); } catch(_) {}
   
   // Přidat atribuci
   addIsochronesAttribution();
@@ -1220,7 +1189,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     return favoritesPanel;
   }
-
   function renderFavoritesPanel() {
     if (!favoritesState.enabled) {
       return;
@@ -1867,7 +1835,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       document.body.style.overflow = 'hidden'; 
     } catch (_) {}
   }
-
   function closeFavoritesAssignModal() {
     if (favoritesAssignOverlay) favoritesAssignOverlay.style.display = 'none';
     if (favoritesAssignModal) favoritesAssignModal.style.display = 'none';
@@ -3750,7 +3717,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       fillAccessOptions(accessContainer, accessOptions);
     }
   }
-  
   function updatePowerRange(minPower, maxPower) {
     const pMinR = document.getElementById('db-power-min');
     const pMaxR = document.getElementById('db-power-max');
@@ -4329,7 +4295,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     return '📍';
   };
-    
     // Nový obsah s kompaktním designem
     const finalHTML = `
       <div class="sheet-header">
@@ -4976,7 +4941,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (diffHours < 6) return `před ${diffHours} hodinami`;
     return new Date(ts).toLocaleString('cs-CZ', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
   }
-
   // Určí, zda má smysl volat REST pro doplnění detailu (kvůli loaderu)
   function shouldFetchPOIDetails(props) {
     if (!props) return false;
@@ -5505,7 +5469,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     return await requestPromise;
   }
-
   /**
    * Načíst nearby places pro detail modal s optimalizovaným cache
    */
@@ -6884,13 +6847,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
   }
-
   // Načti GeoJSON body
   const restUrl = dbMapData?.restUrl || '/wp-json/db/v1/map';
   // Zkusit najít správnou cestu k ikonám
   // Základní cesta k ikonám – preferuj absolutní cestu ve WP
   let iconsBase = dbMapData?.iconsBase || '/wp-content/plugins/dobity-baterky/assets/icons/';
-  
   // Pokud je cesta relativní, použít WordPress plugin URL
   if (iconsBase.startsWith('assets/')) {
     // Zkusit najít WordPress plugin URL
@@ -8657,10 +8618,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       
     } catch(_) {}
   }, 1000); // Zvýšeno z 300ms na 1000ms pro lepší výkon
-
   map.on('moveend', onViewportChanged);
   map.on('zoomend', onViewportChanged);
-
   // Vyčistit isochrony při kliknutí mimo aktivní bod (pokud nejsou zamčené)
   map.on('click', function(e) {
     if (isochronesLocked) {
@@ -9853,7 +9812,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     return false;
   }
-
   function renderMobileAutocomplete(data, inputElement) {
     const internal = Array.isArray(data?.internal) ? data.internal : [];
     const external = Array.isArray(data?.external) ? data.external : [];
