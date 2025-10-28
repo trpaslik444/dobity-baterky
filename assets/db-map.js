@@ -6156,16 +6156,28 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (ratingValue) {
       const countText = ratingCount ? `<span style="font-size:12px;color:#684c0f;margin-left:8px;">(${ratingCount} hodnocení)</span>` : '';
       const rating = parseFloat(ratingValue);
-      const fullStars = Math.floor(rating);
-      const hasHalfStar = rating % 1 >= 0.5;
-      const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
-      const stars = '★'.repeat(fullStars) + (hasHalfStar ? '☆' : '') + '☆'.repeat(emptyStars);
+      
+      // Vytvořit HTML pro hvězdy s částečným vyplněním
+      let starsHtml = '';
+      for (let i = 1; i <= 5; i++) {
+        if (rating >= i) {
+          // Plná hvězda
+          starsHtml += '<span style="color: #856404;">★</span>';
+        } else if (rating > i - 1) {
+          // Částečně vyplněná hvězda
+          const fillPercentage = ((rating - (i - 1)) * 100).toFixed(0);
+          starsHtml += `<span style="position: relative; color: #e0e0e0;">★<span style="position: absolute; left: 0; top: 0; color: #856404; overflow: hidden; width: ${fillPercentage}%;">★</span></span>`;
+        } else {
+          // Prázdná hvězda
+          starsHtml += '<span style="color: #e0e0e0;">★</span>';
+        }
+      }
       
       ratingInfo = `
         <div style="margin: 16px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
           <div style="font-weight: 600; color: #856404;">Hodnocení</div>
           <div style="color: #856404; margin-top: 4px; display:flex;align-items:center;gap:6px;">
-            <span>${stars} ${rating.toFixed(1)}</span>
+            <span style="display: flex; align-items: center; gap: 2px;">${starsHtml} ${rating.toFixed(1)}</span>
             ${countText}
           </div>
         </div>
@@ -6404,6 +6416,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           ${favoriteButtonHtml || ''}
         </div>
         ${favoriteChipHtml || ''}
+        ${adminPanel}
         <div class="subtitle">${subtitle}</div>
         ${infoRows.join('')}
         ${photosSection}
