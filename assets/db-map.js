@@ -905,6 +905,91 @@ document.addEventListener('DOMContentLoaded', async function() {
     `;
   }
 
+  function updateMarkerIcon(postId) {
+    if (!postId) return;
+    
+    // Najít feature
+    const feature = features.find(f => f && f.properties && f.properties.id === postId);
+    if (!feature || !feature.properties) return;
+    
+    const p = feature.properties;
+    const isActive = activeFeatureId === postId;
+    
+    // Generovat nový HTML pro marker
+    const size = isActive ? 48 : 32;
+    const overlaySize = isActive ? 24 : 16;
+    const overlayPos = isActive ? 12 : 8;
+    const markerMode = p.post_type === 'charging_location' ? getChargerMode(p) : null;
+    
+    let fill = p.icon_color || '#049FE8';
+    let defs = '';
+    const pinPath = 'M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z';
+    
+    if (p.post_type === 'charging_location') {
+      const cf = getChargerFill(p, isActive);
+      fill = cf.fill;
+      defs = cf.defs;
+    }
+    
+    const baseColorForHighlight = (() => {
+      if (p.post_type === 'charging_location') {
+        if (markerMode === 'dc') return '#FFACC4';
+        if (markerMode === 'ac') return '#049FE8';
+        return null;
+      }
+      return p.icon_color || null;
+    })();
+    
+    let strokeColor = 'none';
+    let strokeWidth = 0;
+    if (isActive) {
+      strokeColor = '#FF6A4B';
+      strokeWidth = 1.75;
+    }
+    
+    const dbLogo = isRecommended(p) ? `<div style="position:absolute;right:-4px;bottom:-4px;width:${overlaySize}px;height:${overlaySize}px;">${getDbLogoHtml(overlaySize)}</div>` : '';
+    const markerClass = isActive ? 'db-marker db-marker-active' : 'db-marker';
+    const favoriteBadge = getFavoriteMarkerBadgeHtml(p, isActive);
+    
+    const html = `
+      <div class="${markerClass}" style="position:relative;width:${size}px;height:${size}px;display:inline-block">
+        <svg class="db-marker-pin" width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          ${defs}
+          <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+        <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
+          ${p.svg_content ? (p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content) : (p.icon_slug ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : (p.post_type === 'charging_location' ? '⚡' : ''))}
+        </div>
+        ${favoriteBadge}
+        ${dbLogo}
+      </div>`;
+    
+    // Najít marker v clusterech
+    const clusters = [clusterChargers, clusterRV, clusterPOI];
+    for (const cluster of clusters) {
+      if (!cluster) continue;
+      const layers = cluster.getLayers();
+      for (const marker of layers) {
+        if (marker._featureId === postId) {
+          // Aktualizovat ikonu markeru
+          const newIcon = L.divIcon({
+            className: markerClass,
+            iconSize: [size, size],
+            html: html
+          });
+          marker.setIcon(newIcon);
+          // Aktualizovat uložené ikony pro příště
+          marker._defaultIcon = L.divIcon({
+            className: 'db-marker',
+            iconSize: [32, 32],
+            html: html.replace('db-marker-active', 'db-marker').replace('48', '32').replace('24', '16').replace('12', '8')
+          });
+          return;
+        }
+      }
+    }
+  }
+
   function refreshFavoriteUi(postId, folder) {
     if (!postId) {
       return;
@@ -1223,6 +1308,149 @@ document.addEventListener('DOMContentLoaded', async function() {
       favoritesCreateForm.reset();
       favoritesCreateForm.classList.add('db-favorites-hidden');
       favoritesCreateButton.classList.remove('db-favorites-hidden');
+    }
+  }
+
+  function showFavoritesCreateFormInAssign() {
+    // Skrýt tlačítko Create a new folder
+    const createBtn = favoritesAssignModal.querySelector('.db-favorites-assign__create');
+    if (createBtn) createBtn.style.display = 'none';
+    
+    // Vytvořit formulář pro novou složku
+    const createForm = document.createElement('form');
+    createForm.className = 'db-favorites-assign__create-form';
+    createForm.innerHTML = `
+      <div class="db-favorites-assign__form-header">
+        <h3>Vytvořit novou složku</h3>
+        <button type="button" class="db-favorites-assign__cancel-create">&times;</button>
+      </div>
+      <div class="db-favorites-assign__form-body">
+        <input type="text" name="name" placeholder="Název složky" required class="db-favorites-assign__input">
+        <input type="text" name="icon" placeholder="Ikona (emoji)" class="db-favorites-assign__input">
+        <div class="db-favorites-assign__form-actions">
+          <button type="button" class="db-favorites-assign__cancel-btn">Zrušit</button>
+          <button type="submit" class="db-favorites-assign__save-btn">Vytvořit</button>
+        </div>
+      </div>
+    `;
+    
+    // Přidat formulář do assign modalu
+    favoritesAssignModal.appendChild(createForm);
+    
+    // Event handlery
+    const cancelBtn = createForm.querySelector('.db-favorites-assign__cancel-create');
+    const cancelBtn2 = createForm.querySelector('.db-favorites-assign__cancel-btn');
+    const saveBtn = createForm.querySelector('.db-favorites-assign__save-btn');
+    
+    const hideForm = () => {
+      createForm.remove();
+      if (createBtn) createBtn.style.display = 'inline-flex';
+    };
+    
+    if (cancelBtn) cancelBtn.addEventListener('click', hideForm);
+    if (cancelBtn2) cancelBtn2.addEventListener('click', hideForm);
+    
+    if (saveBtn) {
+      createForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const formData = new FormData(createForm);
+        const name = formData.get('name').trim();
+        const icon = formData.get('icon').trim() || '📁';
+        
+        if (name) {
+          try {
+            // Vytvořit složku
+            const newFolder = await createFavoritesFolder(name, icon);
+            
+            if (newFolder && favoritesAssignPostId != null) {
+              // Rovnou přiřadit místo do nové složky
+              await assignFavoriteToFolder(favoritesAssignPostId, newFolder.id);
+              
+              // Aktualizovat badge pouze u konkrétního pinu
+              patchFeatureFavoriteState(favoritesAssignPostId, newFolder);
+              updateMarkerIcon(favoritesAssignPostId);
+              refreshFavoriteUi(favoritesAssignPostId, newFolder);
+              
+              // Zobrazit notifikaci o úspěchu
+              showSuccessMessage(`Místo bylo přidáno do složky "${name}"`);
+              
+              // Zavřít modal
+              closeFavoritesAssignModal();
+            } else {
+              alert('Složka byla vytvořena, ale nepodařilo se přiřadit místo');
+            }
+          } catch (error) {
+            console.error('Chyba při vytváření složky:', error);
+            alert('Chyba při vytváření složky: ' + error.message);
+          }
+        }
+      });
+    }
+    
+    // Focus na input
+    const nameInput = createForm.querySelector('input[name="name"]');
+    if (nameInput) nameInput.focus();
+  }
+
+  function showSuccessMessage(message) {
+    // Vytvořit dočasnou notifikaci
+    const notification = document.createElement('div');
+    notification.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: #46b450;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 10000;
+      font-size: 14px;
+      font-weight: 500;
+      max-width: 300px;
+      animation: slideIn 0.3s ease-out;
+    `;
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    // Odstranit po 3 sekundách
+    setTimeout(() => {
+      notification.style.animation = 'slideOut 0.3s ease-in';
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 300);
+    }, 3000);
+  }
+
+  function refreshFavoritesAssignList() {
+    const modal = document.getElementById('db-favorites-assign-modal');
+    if (!modal) return;
+    
+    const list = modal.querySelector('.db-favorites-assign__list');
+    if (list) {
+      const folders = Array.from(favoritesState.folders.values());
+      list.innerHTML = folders.map(folder => `
+        <button type="button" class="db-favorites-assign__item${favoritesAssignProps && favoritesAssignProps.favorite_folder_id && String(favoritesAssignProps.favorite_folder_id) === String(folder.id) ? ' selected' : ''}" data-folder-id="${folder.id}">
+          <span class="db-favorites-assign__icon">${escapeHtml(folder.icon || '★')}</span>
+          <div class="db-favorites-assign__text">
+            <div class="db-favorites-assign__name">${escapeHtml(folder.name)}</div>
+            <div class="db-favorites-assign__count">${folder.count || 0} míst</div>
+          </div>
+        </button>
+      `).join('');
+      
+      // Přidat event handlery pro složky
+      list.querySelectorAll('.db-favorites-assign__item').forEach(item => {
+        item.addEventListener('click', () => {
+          const folderId = item.dataset.folderId;
+          if (favoritesAssignPostId != null) {
+            assignFavoriteToFolder(favoritesAssignPostId, folderId);
+            closeFavoritesAssignModal();
+          }
+        });
+      });
     }
   }
 
@@ -1613,6 +1841,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       favoritesState.fetchedOnce = true;
       updateFavoritesButtonState();
       renderFavoritesPanel();
+      
+      // Najít a vrátit nově vytvořenou složku
+      const newFolder = Array.from(favoritesState.folders.values())
+        .find(folder => folder.name === name && folder.type === 'custom');
+      return newFolder;
     } catch (err) {
       console.error('[DB Map] createFavoritesFolder failed', err);
       throw err;
@@ -1826,9 +2059,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const createBtn = favoritesAssignModal.querySelector('.db-favorites-assign__create');
       if (createBtn) {
         createBtn.addEventListener('click', () => {
-          closeFavoritesAssignModal();
-          handleFavoritesToggle();
-          showFavoritesCreateForm(true);
+          // Zobrazit formulář pro vytvoření nové složky přímo v assign modalu
+          showFavoritesCreateFormInAssign();
         });
       }
       const removeBtn = favoritesAssignModal.querySelector('.db-favorites-assign__remove');
