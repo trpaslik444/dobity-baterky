@@ -7598,8 +7598,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 `;
                 d.onclick = () => {
                   acWrap.style.display = 'none';
-                  searchInput.value = r.display_name;
-                  map.setView([r.lat, r.lon], 15);
+                  onSelect(r);
                 };
                 acWrap.appendChild(d);
               });
