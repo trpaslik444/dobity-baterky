@@ -257,10 +257,10 @@ html, body {
 
 /* Vlastní attribution bar, aby byl čitelný a konzistentní */
 #db-attribution-bar {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  z-index: 1002;
+  position: static;
+  left: auto;
+  bottom: auto;
+  z-index: auto;
   pointer-events: auto;
 }
 
