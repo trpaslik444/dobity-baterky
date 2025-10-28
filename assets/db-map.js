@@ -905,8 +905,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     `;
   }
 
-  }
-
   function refreshFavoriteUi(postId, folder) {
     if (!postId) {
       return;
