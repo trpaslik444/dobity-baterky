@@ -63,20 +63,6 @@ function initEventDelegation() {
         break;
     }
   });
-  
-  // Delegace pro favorites tlačítka
-  document.addEventListener('click', (e) => {
-    const target = e.target.closest('.db-favorite-star-btn');
-    if (!target) return;
-    
-    const postId = target.dataset.dbFavoritePostId;
-    const context = target.dataset.dbFavoriteContext;
-    
-    if (postId) {
-      const props = { id: postId };
-      openFavoritesAssignModal(postId, props);
-    }
-  });
 }
 
 // Globální proměnné pro isochrones
