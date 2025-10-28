@@ -1979,11 +1979,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       updateFavoritesButtonState();
       renderFavoritesPanel();
       patchFeatureFavoriteState(postId, folder);
+      updateMarkerIcon(postId);
+      refreshFavoriteUi(postId, folder);
       if (favoritesAssignProps && favoritesAssignProps.id === postId) {
         favoritesAssignProps.favorite_folder_id = folder.id;
         favoritesAssignProps.favorite_folder = folder;
       }
-      renderCards('', activeFeatureId, false);
       if (favoritesState.isActive && favoritesState.activeFolderId) {
         activateFavoritesFolder(favoritesState.activeFolderId);
       }
@@ -2017,7 +2018,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       updateFavoritesButtonState();
       renderFavoritesPanel();
       patchFeatureFavoriteState(postId, null);
-      renderCards('', activeFeatureId, false);
+      updateMarkerIcon(postId);
+      refreshFavoriteUi(postId, null);
       if (favoritesState.isActive && favoritesState.activeFolderId) {
         activateFavoritesFolder(favoritesState.activeFolderId);
       }
