@@ -4721,7 +4721,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           };
 
           return `
-            <div class="nearby-item" data-id="${item.id}" onclick='const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode="distance-active";renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}'>
+            <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode='distance-active';renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}">
               <div class="nearby-item-icon" style="background: ${getNearbySquareColor(item)};">
                 ${getItemIcon(item)}
               </div>
@@ -5456,7 +5456,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:#f8fafc;border-radius:4px;margin:2px 0;cursor:pointer;transition:all 0.2s;font-size:0.75em;"
               onmouseover="this.style.backgroundColor='#e2e8f0';"
               onmouseout="this.style.backgroundColor='#f8fafc';"
-              onclick='const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode="distance-active";renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}'>
+              onclick="const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode='distance-active';renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}">
               <div style="font-size:12px;flex-shrink:0;">${typeIcon}</div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.name || item.title || '(bez názvu)'}</div>
