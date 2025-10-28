@@ -2792,7 +2792,7 @@ body.db-loading::after {
   right: 16px;
   width: min(340px, calc(100% - 32px));
   max-height: calc(100% - 96px);
-  background: #FFFFFF;
+  background: #FEF9DF; /* Brand beige */
   border-radius: 20px;
   box-shadow: 0 32px 80px rgba(15, 23, 42, 0.25);
   padding: 20px 20px 24px;
@@ -2875,33 +2875,11 @@ body.db-loading::after {
   gap: 8px;
 }
 
-.db-favorites-folder {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  border: 1px solid #FDE68A;
-  background: #FFFBEB;
-  border-radius: 14px;
-  padding: 10px 14px;
-  cursor: pointer;
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
-  font-size: 0.95rem;
-}
+.db-favorites-folder { display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%; border:1px solid #FCE67D; background:#FEF9DF; border-radius:14px; padding:10px 14px; cursor:pointer; transition: box-shadow .2s ease, transform .2s ease; font-size:.95rem; }
 
-.db-favorites-folder:hover,
-.db-favorites-folder:focus {
-  box-shadow: 0 10px 24px rgba(251, 191, 36, 0.25);
-  transform: translateY(-1px);
-  outline: none;
-}
+.db-favorites-folder:hover, .db-favorites-folder:focus { box-shadow: 0 10px 24px rgba(4, 159, 232, 0.20); transform: translateY(-1px); outline:none; }
 
-.db-favorites-folder.active {
-  border-color: #F97316;
-  background: #FFF7ED;
-  box-shadow: 0 14px 32px rgba(249, 115, 22, 0.25);
-}
+.db-favorites-folder.active { border-color:#049FE8; background:#E0F7FF; box-shadow:0 14px 32px rgba(4,159,232,.25); }
 
 .db-favorites-folder__icon {
   font-size: 1.4rem;
@@ -2924,6 +2902,11 @@ body.db-loading::after {
   font-size: 0.85rem;
   color: #6B7280;
 }
+
+/* Brand delete button inside favorites meta */
+.db-favorites-folder__delete { border:2px solid #FF8DAA; background:#FFACC4; color:#FF6A4B; border-radius:9999px; padding:6px 12px; font-weight:700; font-size:.8rem; cursor:pointer; transition: transform .15s ease, box-shadow .15s ease, background .15s ease, border-color .15s ease; }
+
+.db-favorites-folder__delete:hover, .db-favorites-folder__delete:focus { background:#FF8DAA; border-color:#FF6A4B; color:#FFFFFF; box-shadow:0 6px 16px rgba(255,141,170,.35); transform: translateY(-1px); outline:none; }
 
 .db-favorites-empty-hint {
   padding: 12px;
@@ -3206,7 +3189,7 @@ body.db-loading::after {
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(420px, 92vw);
-  background: #FFFFFF;
+  background: #FEF9DF; /* Brand beige */
   border-radius: 20px;
   box-shadow: 0 40px 90px rgba(15, 23, 42, 0.3);
   padding: 20px;

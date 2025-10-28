@@ -1091,14 +1091,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     const count = folder.count || 0;
     const limit = folder.limit || 0;
     const badge = limit ? `${count} / ${limit}` : `${count}`;
+    const canDelete = folder.type === 'custom';
     return `
-      <button type="button" class="db-favorites-folder${active ? ' active' : ''}" data-folder-id="${folder.id}">
-        <span class="db-favorites-folder__icon">${icon}</span>
-        <span class="db-favorites-folder__meta">
-          <span class="db-favorites-folder__name">${name}</span>
-          <span class="db-favorites-folder__count">${badge}</span>
-        </span>
-      </button>
+      <div class="db-favorites-folder-row">
+        <button type="button" class="db-favorites-folder${active ? ' active' : ''}" data-folder-id="${folder.id}">
+          <span class="db-favorites-folder__icon">${icon}</span>
+          <span class="db-favorites-folder__meta">
+            <span class="db-favorites-folder__name">${name}</span>
+            <span class="db-favorites-folder__count">${badge}</span>
+            ${canDelete ? `<button type=\"button\" class=\"db-favorites-folder__delete\" title=\"Smazat složku\" aria-label=\"Smazat složku\" data-folder-id=\"${folder.id}\">Smazat</button>` : ''}
+          </span>
+        </button>
+      </div>
     `;
   }
 
@@ -1150,21 +1154,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           <div class="db-favorites-panel__list" data-favorites-list="custom"></div>
         </div>
         <div class="db-favorites-empty-hint db-favorites-hidden" data-favorites-empty>Žádné vlastní složky zatím nemáte.</div>
-        <button type="button" class="db-favorites-create-btn" id="db-favorites-create">Create a new folder</button>
-        <form class="db-favorites-create-form db-favorites-hidden" id="db-favorites-create-form">
-          <div class="db-favorites-field">
-            <label for="db-favorites-icon-input">Ikona</label>
-            <input id="db-favorites-icon-input" name="icon" maxlength="4" placeholder="⭐️" autocomplete="off" />
-          </div>
-          <div class="db-favorites-field">
-            <label for="db-favorites-name-input">Název složky</label>
-            <input id="db-favorites-name-input" name="name" maxlength="60" required autocomplete="off" placeholder="Moje trasa" />
-          </div>
-          <div class="db-favorites-create-actions">
-            <button type="submit" class="db-favorites-submit">Uložit</button>
-            <button type="button" class="db-favorites-cancel">Zrušit</button>
-          </div>
-        </form>
         <button type="button" class="db-favorites-exit db-favorites-hidden" id="db-favorites-exit">Zobrazit všechny body</button>
       `;
       favoritesPanel.addEventListener('click', (e) => e.stopPropagation());
@@ -1172,8 +1161,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       favoritesLists.default = favoritesPanel.querySelector('[data-favorites-list="default"]');
       favoritesLists.custom = favoritesPanel.querySelector('[data-favorites-list="custom"]');
-      favoritesCreateButton = favoritesPanel.querySelector('#db-favorites-create');
-      favoritesCreateForm = favoritesPanel.querySelector('#db-favorites-create-form');
+      favoritesCreateButton = null;
+      favoritesCreateForm = null;
       favoritesEmptyHint = favoritesPanel.querySelector('[data-favorites-empty]');
       favoritesExitButton = favoritesPanel.querySelector('#db-favorites-exit');
 
@@ -1181,41 +1170,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (closeBtn) {
         closeBtn.addEventListener('click', () => closeFavoritesPanel());
       }
-      if (favoritesCreateButton) {
-        favoritesCreateButton.addEventListener('click', () => showFavoritesCreateForm(true));
-      }
+      // create new folder UI removed
       if (favoritesExitButton) {
         favoritesExitButton.addEventListener('click', () => {
           deactivateFavoritesMode();
           closeFavoritesPanel();
         });
       }
-      if (favoritesCreateForm) {
-        favoritesCreateForm.addEventListener('submit', async (event) => {
-          event.preventDefault();
-          const formData = new FormData(favoritesCreateForm);
-          const icon = (formData.get('icon') || '').toString();
-          const name = (formData.get('name') || '').toString();
-          if (!name.trim()) {
-            alert('Zadejte prosím název složky.');
-            return;
-          }
-          try {
-            await createFavoritesFolder(name.trim(), icon.trim());
-            showFavoritesCreateForm(false);
-          } catch (err) {
-            console.error('[DB Map] create folder failed', err);
-            alert('Nepodařilo se vytvořit složku. Zkuste to prosím znovu.');
-          }
-        });
-        const cancelBtn = favoritesCreateForm.querySelector('.db-favorites-cancel');
-        if (cancelBtn) {
-          cancelBtn.addEventListener('click', (event) => {
-            event.preventDefault();
-            showFavoritesCreateForm(false);
-          });
-        }
-      }
+      // create new folder form removed
     }
     return favoritesPanel;
   }
@@ -1256,6 +1218,33 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!folderId) return;
         closeFavoritesPanel();
         activateFavoritesFolder(folderId);
+      });
+    });
+
+    // Smazání složky
+    panel.querySelectorAll('.db-favorites-folder__delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const folderId = btn.getAttribute('data-folder-id');
+        if (!folderId) return;
+        // Potvrzení mazání včetně názvu pro jistotu
+        const folder = getFavoriteFolder(folderId);
+        const folderName = folder && folder.name ? folder.name : 'tuto složku';
+        const ok = window.confirm(`Opravdu chcete smazat složku „${folderName}“? Tuto akci nelze vrátit.`);
+        if (!ok) return;
+        try {
+          await deleteFavoritesFolder(folderId);
+          // Po smazání přerenderuj panel a případně vypni favorites režim
+          if (favoritesState.activeFolderId === folderId) {
+            deactivateFavoritesMode();
+          }
+          await fetchFavoritesState(true);
+          renderFavoritesPanel();
+        } catch (err) {
+          console.error('[DB Map] delete folder failed', err);
+          alert('Nepodařilo se smazat složku.');
+        }
       });
     });
 
@@ -1521,6 +1510,58 @@ document.addEventListener('DOMContentLoaded', async function() {
       renderFavoritesPanel();
     } catch (err) {
       console.error('[DB Map] createFavoritesFolder failed', err);
+      throw err;
+    }
+  }
+
+  async function deleteFavoritesFolder(folderId) {
+    if (!favoritesState.enabled) {
+      return null;
+    }
+    await fetchFavoritesState(true);
+    const folder = getFavoriteFolder(folderId);
+    if (!folder || folder.type !== 'custom') {
+      throw new Error('Nelze smazat tuto složku');
+    }
+    try {
+      const res = await fetch(favoritesState.restUrl + '/folders/' + encodeURIComponent(folderId), {
+        method: 'DELETE',
+        credentials: 'same-origin',
+        headers: {
+          'X-WP-Nonce': dbMapData?.restNonce || '',
+        },
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (data && Array.isArray(data.folders)) {
+        favoritesState.folders.clear();
+        data.folders.forEach(f => {
+          if (!f || !f.id) return;
+          favoritesState.folders.set(String(f.id), {
+            id: String(f.id),
+            name: f.name || '',
+            icon: f.icon || '★',
+            limit: f.limit || 0,
+            type: f.type || 'custom',
+            count: f.count || 0,
+          });
+        });
+      }
+      if (data && data.assignments && typeof data.assignments === 'object') {
+        favoritesState.assignments.clear();
+        Object.entries(data.assignments).forEach(([id, fid]) => {
+          const num = parseInt(id, 10);
+          if (Number.isFinite(num) && fid) {
+            favoritesState.assignments.set(num, String(fid));
+          }
+        });
+      }
+      recomputeFavoriteCounts();
+      updateFavoritesButtonState();
+      return folderId;
+    } catch (err) {
       throw err;
     }
   }

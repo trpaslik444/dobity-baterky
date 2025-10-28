@@ -54,6 +54,12 @@ class REST_Favorites {
             ),
         ) );
 
+        register_rest_route( 'db/v1', '/favorites/folders/(?P<folder_id>[A-Za-z0-9_\-]+)', array(
+            'methods'             => 'DELETE',
+            'callback'            => array( $this, 'delete_folder' ),
+            'permission_callback' => array( $this, 'ensure_permission' ),
+        ) );
+
         register_rest_route( 'db/v1', '/favorites/assign', array(
             'methods'             => 'POST',
             'callback'            => array( $this, 'assign' ),
@@ -175,6 +181,29 @@ class REST_Favorites {
             return rest_ensure_response( array(
                 'success'     => true,
                 'counts'      => $result['counts'],
+                'assignments' => $result['assignments'],
+            ) );
+        } catch ( \Throwable $e ) {
+            return new WP_Error( 'favorite_error', $e->getMessage(), array( 'status' => 400 ) );
+        }
+    }
+
+    public function delete_folder( WP_REST_Request $request ) {
+        $user_id   = get_current_user_id();
+        if ( $user_id <= 0 ) {
+            return new WP_Error( 'forbidden', __( 'Musíte být přihlášeni.', 'dobity-baterky' ), array( 'status' => 401 ) );
+        }
+
+        $folder_id = (string) $request['folder_id'];
+        if ( $folder_id === '' ) {
+            return new WP_Error( 'invalid_params', __( 'Chybí identifikátor složky.', 'dobity-baterky' ), array( 'status' => 400 ) );
+        }
+
+        try {
+            $result = $this->manager->delete_folder( $user_id, $folder_id );
+            return rest_ensure_response( array(
+                'success'     => true,
+                'folders'     => $result['folders'],
                 'assignments' => $result['assignments'],
             ) );
         } catch ( \Throwable $e ) {
