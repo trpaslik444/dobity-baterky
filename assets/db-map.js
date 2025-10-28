@@ -915,22 +915,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     const p = feature.properties;
     const isActive = activeFeatureId === postId;
     
-    // Generovat nový HTML pro marker
-    const size = isActive ? 48 : 32;
-    const overlaySize = isActive ? 24 : 16;
-    const overlayPos = isActive ? 12 : 8;
+    // Použít existující logiku z renderCards
     const markerMode = p.post_type === 'charging_location' ? getChargerMode(p) : null;
-    
     let fill = p.icon_color || '#049FE8';
     let defs = '';
     const pinPath = 'M16 2C9.372 2 4 7.372 4 14c0 6.075 8.06 14.53 11.293 17.293a1 1 0 0 0 1.414 0C19.94 28.53 28 20.075 28 14c0-6.628-5.372-12-12-12z';
-    
+
     if (p.post_type === 'charging_location') {
       const cf = getChargerFill(p, isActive);
       fill = cf.fill;
       defs = cf.defs;
     }
-    
+
     const baseColorForHighlight = (() => {
       if (p.post_type === 'charging_location') {
         if (markerMode === 'dc') return '#FFACC4';
@@ -947,12 +943,22 @@ document.addEventListener('DOMContentLoaded', async function() {
       strokeWidth = 1.75;
     }
     
+    const size = isActive ? 48 : 32;
+    const overlaySize = isActive ? 24 : 16;
+    const overlayPos = isActive ? 12 : 8;
+    const styleParts = [
+      'position:relative',
+      `width:${size}px`,
+      `height:${size}px`,
+      'display:inline-block'
+    ];
+    const styleAttr = styleParts.join(';');
     const dbLogo = isRecommended(p) ? `<div style="position:absolute;right:-4px;bottom:-4px;width:${overlaySize}px;height:${overlaySize}px;">${getDbLogoHtml(overlaySize)}</div>` : '';
     const markerClass = isActive ? 'db-marker db-marker-active' : 'db-marker';
     const favoriteBadge = getFavoriteMarkerBadgeHtml(p, isActive);
     
     const html = `
-      <div class="${markerClass}" style="position:relative;width:${size}px;height:${size}px;display:inline-block">
+      <div class="${markerClass}" data-idx="0" style="${styleAttr}">
         <svg class="db-marker-pin" width="${size}" height="${size}" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
           ${defs}
           <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
@@ -983,6 +989,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             className: 'db-marker',
             iconSize: [32, 32],
             html: html.replace('db-marker-active', 'db-marker').replace('48', '32').replace('24', '16').replace('12', '8')
+          });
+          marker._activeIcon = L.divIcon({
+            className: 'db-marker db-marker-active',
+            iconSize: [48, 48],
+            html: html.replace('32', '48').replace('16', '24').replace('8', '12')
           });
           return;
         }
