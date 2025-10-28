@@ -25,7 +25,7 @@ class REST_Favorites {
     }
 
     private function __construct() {
-        $this->manager = Favorites_Manager::get_instance();
+        $this->manager = \DB\Favorites_Manager::get_instance();
     }
 
     public function register(): void {

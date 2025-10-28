@@ -284,7 +284,7 @@ class REST_Map {
         $current_user_id = get_current_user_id();
         if ($current_user_id > 0 && class_exists('\\DB\\Favorites_Manager')) {
             try {
-                $favorites_manager = Favorites_Manager::get_instance();
+                $favorites_manager = \DB\Favorites_Manager::get_instance();
                 $state = $favorites_manager->get_state($current_user_id);
                 $favorite_assignments = $state['assignments'] ?? [];
                 $folders = $favorites_manager->get_folders($current_user_id);
