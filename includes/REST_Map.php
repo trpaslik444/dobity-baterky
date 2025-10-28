@@ -89,6 +89,18 @@ class REST_Map {
             },
         ) );
 
+        // Providers endpoint
+        register_rest_route( 'db/v1', '/providers', array(
+            'methods'  => 'GET',
+            'callback' => array( $this, 'handle_providers' ),
+            'permission_callback' => function ( $request ) {
+                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                    return false;
+                }
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
+        ) );
+
         // Externí detaily POI (Google Places / Tripadvisor)
         register_rest_route( 'db/v1', '/poi-external/(?P<id>\d+)', array(
             'methods'  => 'GET',
@@ -209,10 +221,6 @@ class REST_Map {
     }
 
     public function handle_map( $request ) {
-        // Debug logging
-        error_log('DB Map REST: handle_map spuštěn');
-        // error_log('DB Map REST: Parametry - included: ' . $request->get_param('included') . ', center: ' . $request->get_param('center') . ', radius_km: ' . $request->get_param('radius_km'));
-        
         // --- vstupy
         $included  = $request->get_param('included');  // např. "charging_location,rv_spot,poi"
         $post_types = $request->get_param('post_types'); // alternativní parametr pro kompatibilitu
@@ -381,7 +389,6 @@ class REST_Map {
 
         // Pro režim "all" necháme $use_radius = false a pokračujeme
         if (!$use_radius) {
-            error_log('DB Map REST: Režim "all" - načítám všechna data bez radius filtru');
         }
 
         if ($use_radius) {
@@ -399,7 +406,6 @@ class REST_Map {
         $debug_stats = [ 'per_type' => [], 'totals' => [ 'found' => 0, 'bbox' => 0, 'kept' => 0 ] ];
 
         foreach ($types as $pt) {
-            error_log('DB Map REST: Zpracovávám post_type: ' . $pt);
             $keys = $this->get_latlng_keys_for_type($pt);
             // error_log('DB Map REST: Meta klíče pro ' . $pt . ': ' . print_r($keys, true));
 
@@ -474,7 +480,6 @@ class REST_Map {
                 if (is_string($loV)) { $loV = str_replace(',', '.', trim($loV)); }
 
                 if (!is_numeric($laV) || !is_numeric($loV)) { 
-                    error_log('DB Map REST: Post ' . $post->ID . ' - neplatné souřadnice, přeskočeno');
                     continue; 
                 }
                 $laF = (float)$laV; $loF = (float)$loV;
@@ -681,6 +686,7 @@ class REST_Map {
                     // Načtení konektorů z charger_type taxonomie (správná taxonomie pro ikony)
                     $charger_type_terms = wp_get_post_terms($post->ID, 'charger_type');
                     $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+                    $charger_powers = get_post_meta($post->ID, '_db_charger_power', true); // Načíst výkony z post meta
                     
                     if (!empty($charger_type_terms) && !is_wp_error($charger_type_terms)) {
                         $connectors = [];
@@ -698,6 +704,26 @@ class REST_Map {
                                 }
                             }
                             
+                            // Získat výkon z _db_charger_power (hledat podle term ID, ne názvu)
+                            $power = 0; // výchozí hodnota
+                            if (is_array($charger_powers)) {
+                                // Zkusit najít podle term ID
+                                if (isset($charger_powers[$charger_term->term_id])) {
+                                    $power = floatval($charger_powers[$charger_term->term_id]);
+                                }
+                                // Fallback: zkusit najít podle názvu
+                                elseif (isset($charger_powers[$charger_term->name])) {
+                                    $power = floatval($charger_powers[$charger_term->name]);
+                                }
+                            }
+                            // Fallback: zkusit získat z taxonomy term meta, pokud není v post meta
+                            if ($power == 0) {
+                                $term_power = get_term_meta($charger_term->term_id, 'power', true);
+                                if ($term_power && is_numeric($term_power)) {
+                                    $power = floatval($term_power);
+                                }
+                            }
+                            
                             // SVG ikony dočasně zakázány - čekáme na správné ikony
                             $svg_icon = null;
                             
@@ -707,7 +733,8 @@ class REST_Map {
                                 'icon' => get_term_meta($charger_term->term_id, 'charger_icon', true), // Správný meta klíč pro ikony
                                 'svg_icon' => $svg_icon, // Nový SVG systém
                                 'type' => get_term_meta($charger_term->term_id, 'charger_current_type', true), // Správný meta klíč pro typ proudu
-                                'power' => get_term_meta($charger_term->term_id, 'power', true),
+                                'power' => $power,
+                                'power_kw' => $power, // Přidat power_kw pro kompatibilitu s getStationMaxKw()
                                 'quantity' => $quantity, // Přidat počet
                                 // Přidání vlastností pro kompatibilitu s JavaScript kódem
                                 'connector_standard' => $charger_term->name,
@@ -728,6 +755,10 @@ class REST_Map {
                         $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
                         $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
                         
+                        // Debug: zkontrolovat, co se načetlo
+                        if ($post->ID == 4436) { // Lidl stanice z logů
+                        }
+                        
                         
                         if (!empty($meta_connectors)) {
                             if (is_array($meta_connectors)) {
@@ -738,6 +769,11 @@ class REST_Map {
                                     }
                                     if (isset($charger_powers[$connector['type']])) {
                                         $connector['power'] = $charger_powers[$connector['type']];
+                                        $connector['power_kw'] = $charger_powers[$connector['type']];
+                                        
+                                        // Debug: zkontrolovat, co se přidalo
+                                        if ($post->ID == 4436) {
+                                        }
                                     }
                                 }
                                 $properties['connectors'] = $meta_connectors;
@@ -754,6 +790,7 @@ class REST_Map {
                                         }
                                         if (isset($charger_powers[$connector['type']])) {
                                             $connector['power'] = $charger_powers[$connector['type']];
+                                            $connector['power_kw'] = $charger_powers[$connector['type']];
                                         }
                                     }
                                     $properties['connectors'] = $parsed;
@@ -853,7 +890,6 @@ class REST_Map {
             $debug_stats['totals']['bbox']  += (int)$bbox_count;
             $debug_stats['totals']['kept']  += (int)$haversine_count;
             
-            error_log('DB Map REST: ' . $pt . ' - bbox: ' . $bbox_count . ', haversine: ' . $haversine_count . ', přidáno: ' . count($features));
         }
 
         $total_before_limit = count($features);
@@ -888,9 +924,7 @@ class REST_Map {
             });
         }
 
-        error_log('DB Map REST: Finální výsledek - celkem features: ' . count($features));
         if (count($features) > 0) {
-            error_log('DB Map REST: První feature: ' . print_r($features[0], true));
         }
 
         // Přidání meta informací pro diagnostiku
@@ -2886,5 +2920,59 @@ class REST_Map {
         $ids[] = $make('poi',               'Test Market',    -0.003, -0.001);
 
         return rest_ensure_response(['ok'=>true,'created'=>$ids]);
+    }
+    
+    /**
+     * Providers endpoint - získá všechny provozovatele seřazené podle počtu nabíjecích bodů
+     */
+    public function handle_providers($request) {
+        global $wpdb;
+        
+        // Načíst všechny provider termy z taxonomie 'provider'
+        $terms = get_terms(array(
+            'taxonomy' => 'provider',
+            'hide_empty' => false,
+        ));
+        
+        if (is_wp_error($terms) || empty($terms)) {
+            return rest_ensure_response([
+                'providers' => []
+            ]);
+        }
+        
+        $providers_with_count = [];
+        
+        foreach ($terms as $term) {
+            // Počítat kolik charging_location má tento provider
+            $count = $wpdb->get_var($wpdb->prepare(
+                "SELECT COUNT(*) 
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                WHERE p.post_type = 'charging_location'
+                AND p.post_status = 'publish'
+                AND tr.term_taxonomy_id = %d",
+                $term->term_taxonomy_id
+            ));
+            
+            // Načíst friendly name a logo z term meta
+            $friendly_name = get_term_meta($term->term_id, 'provider_friendly_name', true);
+            $logo = get_term_meta($term->term_id, 'provider_logo', true);
+            
+            $providers_with_count[] = [
+                'name' => $term->name,
+                'nickname' => $friendly_name,
+                'icon' => $logo,
+                'count' => (int)$count
+            ];
+        }
+        
+        // Seřadit podle počtu bodů (nejvíc bodů na začátku)
+        usort($providers_with_count, function($a, $b) {
+            return $b['count'] - $a['count'];
+        });
+        
+        return rest_ensure_response([
+            'providers' => $providers_with_count
+        ]);
     }
 } 

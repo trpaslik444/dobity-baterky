@@ -834,8 +834,29 @@ class Nearby_Recompute_Job {
     
     /**
      * Zápis cache s error handlingem
+     * DŮLEŽITÉ: Zachová stará data, pokud jsou k dispozici a došlo k chybě
      */
     private function write_cache($origin_id, $meta_key, array $items, bool $partial, int $done, int $total, ?string $computed_at, ?string $error, ?int $retry_after_s = null) {
+        // Pokud máme chybu a prázdné items, zkontrolovat existující data
+        if ($error && empty($items)) {
+            $existing_cache = get_post_meta($origin_id, $meta_key, true);
+            if ($existing_cache) {
+                $existing_payload = is_string($existing_cache) ? json_decode($existing_cache, true) : $existing_cache;
+                // Zachovat stará data a jen přidat info o chybě
+                if ($existing_payload && !empty($existing_payload['items'])) {
+                    $payload = $existing_payload;
+                    $payload['error'] = $error;
+                    $payload['error_at'] = current_time('c');
+                    if ($retry_after_s) {
+                        $payload['retry_after_s'] = (int)$retry_after_s;
+                    }
+                    update_post_meta($origin_id, $meta_key, wp_json_encode($payload, JSON_UNESCAPED_UNICODE));
+                    return;
+                }
+            }
+        }
+        
+        // Normální zápis nových dat
         $payload = [
             'computed_at' => $computed_at,
             'items'       => array_values($items),
