@@ -1932,6 +1932,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       return f;
     });
+    // Aktualizovat také window.features pro konzistenci
+    window.features = features;
     favoritesState.activeFeatures = favoritesState.activeFeatures.map(f => {
       if (f && f.properties && f.properties.id === postId) {
         update(f);
