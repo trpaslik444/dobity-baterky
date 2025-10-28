@@ -45,13 +45,13 @@ function initEventDelegation() {
     switch (action) {
       case 'open-detail':
         if (featureId) {
-          const feature = features.find(f => f.properties.id == featureId);
+          const feature = window.features?.find(f => f.properties.id == featureId);
           if (feature) openDetailModal(feature);
         }
         break;
       case 'open-sheet':
         if (featureId) {
-          const feature = features.find(f => f.properties.id == featureId);
+          const feature = window.features?.find(f => f.properties.id == featureId);
           if (feature) openMobileSheet(feature);
         }
         break;
