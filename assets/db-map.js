@@ -356,21 +356,82 @@ function handleIsochronesLockButtonClick(featureId) {
 /**
  * Přidá ORS/OSM atribuci na mapu
  */
-function ensureAttributionBar() {
+function ensureBottomBar() {
   const mapContainer = document.getElementById('db-map');
   if (!mapContainer) return null;
+  let wrap = document.getElementById('db-bottom-bar');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'db-bottom-bar';
+    mapContainer.appendChild(wrap);
+  }
+  return wrap;
+}
+
+function ensureIsochronesLegend(displayTimes) {
+  const wrap = ensureBottomBar();
+  if (!wrap) return null;
+  let legend = document.getElementById('db-isochrones-legend');
+  if (!legend) {
+    legend = document.createElement('div');
+    legend.id = 'db-isochrones-legend';
+    wrap.appendChild(legend);
+  }
+  legend.innerHTML = `
+    <span class="db-legend__title">Dochozí okruhy:</span>
+    <span class="db-legend__item"><span class="db-legend__dot db-legend__dot--ok">●</span><span>~${displayTimes[0]} min</span></span>
+    <span class="db-legend__item"><span class="db-legend__dot db-legend__dot--mid">●</span><span>~${displayTimes[1]} min</span></span>
+    <span class="db-legend__item"><span class="db-legend__dot db-legend__dot--bad">●</span><span>~${displayTimes[2]} min</span></span>
+  `;
+  return legend;
+}
+
+function ensureAttributionBar() {
+  const wrap = ensureBottomBar();
+  if (!wrap) return null;
   let bar = document.getElementById('db-attribution-bar');
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'db-attribution-bar';
     bar.className = 'db-attribution';
-    mapContainer.appendChild(bar);
-    try {
-    } catch(_) {}
+    wrap.prepend(bar);
     try { document.body.classList.add('has-attribution'); } catch(_) {}
   }
   return bar;
 }
+
+function positionAttributionBar(bar) {
+  if (!bar) return;
+  const wrap = document.getElementById('db-bottom-bar');
+  if (!wrap) return;
+  const isMobile = window.innerWidth <= 900;
+  const mapEl = document.getElementById('db-map');
+  const modal = document.getElementById('db-detail-modal');
+  const mobileSheet = document.getElementById('db-mobile-sheet');
+  const modalOpen = !!(modal && modal.classList.contains('open'));
+  const sheetOpen = !!(mobileSheet && mobileSheet.classList.contains('open'));
+
+  if (isMobile) {
+    if (wrap.parentElement !== document.body) {
+      document.body.appendChild(wrap);
+    }
+    wrap.style.position = 'fixed';
+    wrap.style.left = '8px';
+    wrap.style.right = '8px';
+    wrap.style.bottom = '8px';
+    wrap.style.zIndex = '10002';
+  } else {
+    if (wrap.parentElement !== mapEl && mapEl) {
+      mapEl.appendChild(wrap);
+    }
+    wrap.style.position = 'absolute';
+    wrap.style.left = '8px';
+    wrap.style.right = '8px';
+    wrap.style.bottom = '8px';
+    wrap.style.zIndex = modalOpen ? '10005' : '1002';
+  }
+}
+
 function ensureLicenseModal() {
   let modal = document.getElementById('db-license-modal');
   if (!modal) {
@@ -453,47 +514,6 @@ function updateLicenseModalContent(entries) {
     <p>Mapa Dobijte baterky využívá tyto otevřené služby a zdroje. Děkujeme komunitám, které je vytvářejí a udržují.</p>
     <ul>${listItems}</ul>
   `;
-}
-
-function positionAttributionBar(bar) {
-  if (!bar) return;
-  const isMobile = window.innerWidth <= 900;
-  const mapEl = document.getElementById('db-map');
-  const modal = document.getElementById('db-detail-modal');
-  const mobileSheet = document.getElementById('db-mobile-sheet');
-  const modalOpen = !!(modal && modal.classList.contains('open'));
-  const sheetOpen = !!(mobileSheet && mobileSheet.classList.contains('open'));
-
-  if (isMobile) {
-    // Na mobilu vykreslit globálně nad mapou, aby nebyl omezen z-indexem mapy
-    if (bar.parentElement !== document.body) {
-      document.body.appendChild(bar);
-    }
-    bar.style.position = 'fixed';
-    bar.style.left = '8px';
-    // Rezerva nad spodními prvky
-    const baseBottom = 8;
-    bar.style.bottom = baseBottom + 'px'; // bar je vždy u spodku okna
-    // Umístění ve vrstvení: pod mobile-sheet (10003), ale nad mapou
-    bar.style.zIndex = '10002';
-  } else {
-    // Na desktopu stačí absolutně do mapy
-    if (bar.parentElement !== mapEl && mapEl) {
-      mapEl.appendChild(bar);
-    }
-    bar.style.position = 'absolute';
-    bar.style.left = '8px';
-    bar.style.bottom = '8px';
-    // Licenční lišta má být NAD detail modalem i na desktopu
-    // Detail modal má z-index ~10001 v CSS, proto nastavíme bar výše
-    bar.style.zIndex = modalOpen ? '10005' : '1002';
-  }
-
-  // Debug informace o stacking contextu
-  try {
-    const csBar = window.getComputedStyle(bar);
-    const csMap = mapEl ? window.getComputedStyle(mapEl) : null;
-  } catch(_) {}
 }
 
 function updateAttributionBar(options) {
