@@ -5415,7 +5415,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const tokenResponse = await fetch('/wp-json/db/v1/ondemand/token', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || ''
         },
         body: JSON.stringify({
           point_id: originId
@@ -5437,7 +5438,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || ''
         },
         body: JSON.stringify({
           point_id: originId,
