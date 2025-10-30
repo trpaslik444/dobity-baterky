@@ -27,7 +27,8 @@
     "map_failed": "Mapa se nepodařilo načíst",
     "try_refresh": "Zkuste obnovit stránku",
     "search_placeholder": "Objevujeme víc než jen cíl cesty...",
-    "db_map": "DB mapa"
+    "db_map": "DB mapa",
+    "load_nearby": "Načíst místa v okolí"
   },
   "filters": {
     "title": "Filtry",
@@ -49,7 +50,9 @@
     "website": "Web",
     "nearby_interesting": "Blízká zajímavá místa",
     "nearby_charging": "Blízké nabíjecí stanice",
-    "services": "Služby"
+    "services": "Služby",
+    "rating": "Hodnocení",
+    "reviews": "hodnocení"
   },
   "menu": {
     "close_menu": "Zavřít menu",
@@ -60,7 +63,9 @@
   "navigation": {
     "google_maps": "Google Maps",
     "apple_maps": "Apple Maps",
-    "mapy_cz": "Mapy.cz"
+    "mapy_cz": "Mapy.cz",
+    "title": "Navigace",
+    "apps": "aplikace"
   },
   "feedback": {
     "button": "feedback",

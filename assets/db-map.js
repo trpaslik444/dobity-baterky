@@ -6497,7 +6497,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const ratingValue = p.post_type === 'poi' ? (p.poi_rating || p.rating) : p.rating;
     const ratingCount = p.post_type === 'poi' ? (p.poi_user_rating_count || '') : (p.user_rating_count || '');
     if (ratingValue) {
-      const countText = ratingCount ? `<span style="font-size:12px;color:#684c0f;margin-left:8px;">(${ratingCount} hodnocení)</span>` : '';
+      const countText = ratingCount ? `<span style="font-size:12px;color:#684c0f;margin-left:8px;">(${ratingCount} ${t('cards.reviews', 'reviews')})</span>` : '';
       const rating = parseFloat(ratingValue);
       
       // Vytvořit HTML pro hvězdy s částečným vyplněním
@@ -6518,7 +6518,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       ratingInfo = `
         <div style="margin: 16px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-          <div style="font-weight: 600; color: #856404;">Hodnocení</div>
+          <div style="font-weight: 600; color: #856404;">${t('cards.rating', 'Rating')}</div>
           <div style="color: #856404; margin-top: 4px; display:flex;align-items:center;gap:6px;">
             <span style="display: flex; align-items: center; gap: 2px;">${starsHtml} ${rating.toFixed(1)}</span>
             ${countText}
@@ -6765,7 +6765,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         ${photosSection}
         ${nearbyPOISection}
         <div class="actions">
-          <button class="btn-outline" type="button" data-db-action="open-navigation-detail" style="margin-bottom: 8px;">Navigace (3 aplikace)</button>
+          <button class="btn-outline" type="button" data-db-action="open-navigation-detail" style="margin-bottom: 8px;">${t('navigation.title', 'Navigation')} (3 ${t('navigation.apps', 'apps')})</button>
         </div>
         <div class="desc">${p.description || `<span style="color:#aaa;">(${t('cards.no_description')})</span>`}</div>
       </div>`;
@@ -8871,7 +8871,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         <div class="db-manual-load-btn">
           <button id="db-load-new-area-btn" onclick="window.smartLoadingManager.loadNewAreaData()">
             <span class="icon">📍</span>
-            <span class="text">Načíst místa v okolí</span>
+            <span class="text">${t('map.load_nearby', 'Load places nearby')}</span>
           </button>
         </div>
       `;
