@@ -5082,7 +5082,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     const payload = await response.json();
-    try { console.log('[DB Map][CHG enrich] payload received', { id: props.id, googleId: payload?.google_place_id, hasMeta: !!payload?.metadata, enrichment: payload?.google_nearby_enrichment }); } catch(_) {}
+    try {
+      console.log('[DB Map][CHG enrich] payload received', { id: props.id, googleId: payload?.google_place_id, hasMeta: !!payload?.metadata, enrichment: payload?.google_nearby_enrichment });
+      if (payload && payload.google_nearby_enrichment) {
+        const enr = payload.google_nearby_enrichment;
+        console.log('[DB Map][CHG enrich] enrichment detail', {
+          ran: !!enr.ran,
+          queued: !!enr.queued,
+          reason: enr.reason || null,
+          places: typeof enr.places !== 'undefined' ? enr.places : null,
+          created: enr.created,
+          updated: enr.updated,
+          linked: enr.linked
+        });
+      }
+    } catch(_) {}
     const enriched = { ...feature, properties: { ...props } };
     const enrichedProps = enriched.properties;
     const metadata = payload?.metadata || {};
