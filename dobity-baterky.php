@@ -184,6 +184,12 @@ require_once DB_PLUGIN_DIR . 'includes/Jobs/Optimized_Worker_Manager.php';
 require_once DB_PLUGIN_DIR . 'includes/REST_On_Demand.php';
 require_once DB_PLUGIN_DIR . 'includes/REST_Isochrones.php';
 
+add_action('init', static function () {
+    if (class_exists('DB\\Google_Nearby_Importer')) {
+        \DB\Google_Nearby_Importer::register_async_hooks();
+    }
+});
+
 // Hooky aktivace a deaktivace s bezpečnostním wrapperem
 function db_safe_activate() {
     try {

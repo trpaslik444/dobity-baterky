@@ -19,13 +19,17 @@ class Google_Nearby_Importer
     private const OPTION_FILTERS = 'db_google_nearby_filters';
     private const CACHE_TTL_DAYS = 30;
     private const DEFAULT_MAX_RESULTS = 12;
-    private const DEFAULT_RADIUS_METERS = 1500;
+    private const DEFAULT_RADIUS_METERS = 2000;
     private const DEFAULT_COOLDOWN_HOURS = 24;
     private const CHARGING_META_LAST_RUN = '_charging_google_nearby_last_sync';
     private const CHARGING_META_LOCK = '_charging_google_nearby_lock';
     private const POI_META_LINKED_CHARGING = '_poi_related_charging';
     private const CHARGING_META_LINKED_POI = '_charging_related_poi';
     private const FALLBACK_ICON_SLUG = 'db-fallback-pin.svg';
+    private const ASYNC_ACTION_HOOK = 'db_google_nearby_import';
+    private const ASYNC_ACTION_GROUP = 'db-google-nearby';
+
+    private static $asyncHooksRegistered = false;
 
     private const FALLBACK_ICON_CONTENT = <<<SVG
 <?xml version="1.0" ?>
@@ -34,67 +38,87 @@ class Google_Nearby_Importer
     </style></defs><path d="M386.326,838.641c0-7.762-20.367,5.33-26.3,5.33V811.993c8.7,0.3,25.359,3,26.3,10.659,1.188,9.623,23.674,5.331,23.674,5.331S386.326,848.264,386.326,838.641Z" data-name="flag" id="flag-2" transform="translate(-350 -810)"/><path d="M353,810a3,3,0,0,1,3,3v54a3,3,0,0,1-6,0V813A3,3,0,0,1,353,810Z" data-name="flag copy" id="flag_copy" transform="translate(-350 -810)"/></svg>
 SVG;
 
+    public static function register_async_hooks(): void
+    {
+        if (self::$asyncHooksRegistered) {
+            return;
+        }
+
+        add_action(self::ASYNC_ACTION_HOOK, [self::class, 'handle_async_import'], 10, 1);
+        self::$asyncHooksRegistered = true;
+    }
+
+    public static function handle_async_import($chargingId): void
+    {
+        $chargingId = (int) $chargingId;
+        if ($chargingId <= 0) {
+            return;
+        }
+
+        $importer = new self();
+        $importer->run_import_now($chargingId, $importer->get_config());
+    }
+
     /**
      * Trigger enrichment for a charging location when the detail is requested.
      */
     public function maybe_import_for_charging(int $chargingId): array
     {
-        $result = [
-            'ran'      => false,
-            'reason'   => null,
-            'created'  => 0,
-            'updated'  => 0,
-            'linked'   => 0,
-            'skipped'  => 0,
-            'places'   => 0,
-        ];
-
-        $post = get_post($chargingId);
-        if (!$post || $post->post_type !== 'charging_location') {
-            $result['reason'] = 'invalid_post';
-            return $result;
-        }
-
-        $lat = (float) get_post_meta($chargingId, '_db_lat', true);
-        $lng = (float) get_post_meta($chargingId, '_db_lng', true);
-        if (!$lat || !$lng) {
-            $result['reason'] = 'missing_coordinates';
-            return $result;
-        }
-
-        $apiKey = (string) get_option('db_google_api_key');
-        if ($apiKey === '') {
-            $result['reason'] = 'missing_api_key';
-            return $result;
-        }
-
         $config = $this->get_config();
+        $precheck = $this->precheck($chargingId, $config);
+        $result = $precheck['result'];
 
-        $lastRun = (int) get_post_meta($chargingId, self::CHARGING_META_LAST_RUN, true);
-        $cooldownSeconds = max(1, (int) $config['cooldown_hours']) * HOUR_IN_SECONDS;
-        if ($lastRun && ($lastRun + $cooldownSeconds) > time()) {
-            $result['reason'] = 'cooldown_active';
+        if (!$precheck['ok']) {
             return $result;
         }
 
-        $lock = get_transient(self::CHARGING_META_LOCK . '_' . $chargingId);
-        if ($lock) {
+        $mode = isset($config['import_mode']) ? $config['import_mode'] : 'sync';
+        if ($mode === 'async') {
+            $queue = $this->queue_async_import($chargingId);
+            if ($queue['queued']) {
+                $result['queued'] = true;
+                $result['reason'] = $queue['reason'] ?? 'queued';
+            } else {
+                $result['reason'] = $queue['reason'] ?? 'queue_failed';
+            }
+            return $result;
+        }
+
+        return $this->run_import_now($chargingId, $config, $precheck);
+    }
+
+    private function run_import_now(int $chargingId, array $config, ?array $precheck = null): array
+    {
+        $precheck = $precheck ?? $this->precheck($chargingId, $config);
+        $result = $precheck['result'];
+
+        if (!$precheck['ok']) {
+            return $result;
+        }
+
+        $lat = $precheck['lat'];
+        $lng = $precheck['lng'];
+        $apiKey = $precheck['apiKey'];
+
+        $lockKey = self::CHARGING_META_LOCK . '_' . $chargingId;
+        if (get_transient($lockKey)) {
             $result['reason'] = 'in_progress';
             return $result;
         }
-        set_transient(self::CHARGING_META_LOCK . '_' . $chargingId, 1, MINUTE_IN_SECONDS * 5);
+
+        set_transient($lockKey, 1, MINUTE_IN_SECONDS * 5);
 
         $quota = new POI_Quota_Manager();
         if (!$quota->can_use_google()) {
             $result['reason'] = 'quota_exhausted';
-            delete_transient(self::CHARGING_META_LOCK . '_' . $chargingId);
+            delete_transient($lockKey);
             return $result;
         }
 
         $response = $this->call_search_nearby($apiKey, $lat, $lng, $config);
         if (is_wp_error($response)) {
             $result['reason'] = $response->get_error_code();
-            delete_transient(self::CHARGING_META_LOCK . '_' . $chargingId);
+            delete_transient($lockKey);
             return $result;
         }
 
@@ -105,7 +129,7 @@ SVG;
         if (empty($places)) {
             $result['reason'] = 'empty';
             update_post_meta($chargingId, self::CHARGING_META_LAST_RUN, time());
-            delete_transient(self::CHARGING_META_LOCK . '_' . $chargingId);
+            delete_transient($lockKey);
             $quota->record_google(1);
             return $result;
         }
@@ -140,7 +164,7 @@ SVG;
         }
 
         update_post_meta($chargingId, self::CHARGING_META_LAST_RUN, time());
-        delete_transient(self::CHARGING_META_LOCK . '_' . $chargingId);
+        delete_transient($lockKey);
         $quota->record_google(1);
 
         if ($result['created'] > 0 || $result['updated'] > 0 || $result['linked'] > 0) {
@@ -150,10 +174,150 @@ SVG;
         return $result;
     }
 
+    private function queue_async_import(int $chargingId): array
+    {
+        $quota = new POI_Quota_Manager();
+        if (!$quota->can_use_google()) {
+            return [
+                'queued' => false,
+                'reason' => 'quota_exhausted',
+            ];
+        }
+
+        $args = ['charging_id' => (int) $chargingId];
+
+        if (function_exists('as_next_scheduled_action')) {
+            $next = as_next_scheduled_action(self::ASYNC_ACTION_HOOK, $args, self::ASYNC_ACTION_GROUP);
+            if ($next !== false) {
+                return [
+                    'queued' => true,
+                    'reason' => 'already_queued',
+                ];
+            }
+        }
+
+        if (function_exists('as_schedule_single_action')) {
+            as_schedule_single_action(time() + 5, self::ASYNC_ACTION_HOOK, $args, self::ASYNC_ACTION_GROUP);
+            return [
+                'queued' => true,
+                'reason' => 'queued',
+            ];
+        }
+
+        if (function_exists('as_enqueue_async_action')) {
+            as_enqueue_async_action(self::ASYNC_ACTION_HOOK, $args, self::ASYNC_ACTION_GROUP);
+            return [
+                'queued' => true,
+                'reason' => 'queued',
+            ];
+        }
+
+        if (wp_next_scheduled(self::ASYNC_ACTION_HOOK, [$chargingId])) {
+            return [
+                'queued' => true,
+                'reason' => 'already_queued',
+            ];
+        }
+
+        $scheduled = wp_schedule_single_event(time() + 5, self::ASYNC_ACTION_HOOK, [$chargingId]);
+        if ($scheduled) {
+            return [
+                'queued' => true,
+                'reason' => 'queued',
+            ];
+        }
+
+        return [
+            'queued' => false,
+            'reason' => 'queue_failed',
+        ];
+    }
+
+    private function precheck(int $chargingId, array $config): array
+    {
+        $result = $this->create_result();
+
+        $post = get_post($chargingId);
+        if (!$post || $post->post_type !== 'charging_location') {
+            $result['reason'] = 'invalid_post';
+            return [
+                'ok' => false,
+                'result' => $result,
+            ];
+        }
+
+        $lat = (float) get_post_meta($chargingId, '_db_lat', true);
+        $lng = (float) get_post_meta($chargingId, '_db_lng', true);
+        if (!$lat || !$lng) {
+            $result['reason'] = 'missing_coordinates';
+            return [
+                'ok' => false,
+                'result' => $result,
+            ];
+        }
+
+        $apiKey = (string) get_option('db_google_api_key');
+        if ($apiKey === '') {
+            $result['reason'] = 'missing_api_key';
+            return [
+                'ok' => false,
+                'result' => $result,
+            ];
+        }
+
+        $lastRun = (int) get_post_meta($chargingId, self::CHARGING_META_LAST_RUN, true);
+        $cooldownSeconds = max(1, (int) ($config['cooldown_hours'] ?? self::DEFAULT_COOLDOWN_HOURS)) * HOUR_IN_SECONDS;
+        if ($lastRun && ($lastRun + $cooldownSeconds) > time()) {
+            $result['reason'] = 'cooldown_active';
+            return [
+                'ok' => false,
+                'result' => $result,
+            ];
+        }
+
+        $lockKey = self::CHARGING_META_LOCK . '_' . $chargingId;
+        if (get_transient($lockKey)) {
+            $result['reason'] = 'in_progress';
+            return [
+                'ok' => false,
+                'result' => $result,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'result' => $result,
+            'lat' => $lat,
+            'lng' => $lng,
+            'apiKey' => $apiKey,
+        ];
+    }
+
+    private function create_result(): array
+    {
+        return [
+            'ran'      => false,
+            'queued'   => false,
+            'reason'   => null,
+            'created'  => 0,
+            'updated'  => 0,
+            'linked'   => 0,
+            'skipped'  => 0,
+            'places'   => 0,
+        ];
+    }
+
     private function call_search_nearby(string $apiKey, float $lat, float $lng, array $config)
     {
+        $includedTypes = array_values(array_filter(array_map('strval', (array) ($config['included_types'] ?? [])), static function ($type) {
+            return $type !== '';
+        }));
+        if (empty($includedTypes)) {
+            $includedTypes = ['establishment'];
+        }
+
         $body = [
-            'includedTypes' => array_values($config['included_types']),
+            'includedTypes' => $includedTypes,
             'maxResultCount' => (int) ($config['max_results'] ?? self::DEFAULT_MAX_RESULTS),
             'languageCode' => get_locale() ?: 'cs',
             'rankPreference' => 'RELEVANCE',
@@ -647,6 +811,7 @@ SVG;
             'max_results' => self::DEFAULT_MAX_RESULTS,
             'radius_m' => self::DEFAULT_RADIUS_METERS,
             'cooldown_hours' => self::DEFAULT_COOLDOWN_HOURS,
+            'import_mode' => 'sync',
         ];
 
         $option = get_option(self::OPTION_FILTERS, []);
@@ -668,6 +833,9 @@ SVG;
             'max_results' => isset($option['max_results']) ? max(1, min(20, (int) $option['max_results'])) : $defaults['max_results'],
             'radius_m' => isset($option['radius_m']) ? max(100, min(10000, (int) $option['radius_m'])) : $defaults['radius_m'],
             'cooldown_hours' => isset($option['cooldown_hours']) ? max(1, min(168, (int) $option['cooldown_hours'])) : $defaults['cooldown_hours'],
+            'import_mode' => isset($option['import_mode']) && in_array($option['import_mode'], ['sync', 'async'], true)
+                ? $option['import_mode']
+                : $defaults['import_mode'],
         ];
     }
 }

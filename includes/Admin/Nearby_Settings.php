@@ -87,11 +87,14 @@ class Nearby_Settings {
         $max_results = isset($input['max_results']) ? intval($input['max_results']) : 12;
         $sanitized['max_results'] = max(1, min(20, $max_results));
 
-        $radius_m = isset($input['radius_m']) ? intval($input['radius_m']) : 1500;
+        $radius_m = isset($input['radius_m']) ? intval($input['radius_m']) : 2000;
         $sanitized['radius_m'] = max(100, min(10000, $radius_m));
 
         $cooldown = isset($input['cooldown_hours']) ? intval($input['cooldown_hours']) : 24;
         $sanitized['cooldown_hours'] = max(1, min(168, $cooldown));
+
+        $mode = isset($input['import_mode']) ? strtolower((string) $input['import_mode']) : 'sync';
+        $sanitized['import_mode'] = in_array($mode, ['sync', 'async'], true) ? $mode : 'sync';
 
         return $sanitized;
     }
@@ -115,8 +118,9 @@ class Nearby_Settings {
             'min_rating' => 3.5,
             'included_types' => array('cafe','restaurant','bar','bakery','supermarket','tourist_attraction'),
             'max_results' => 12,
-            'radius_m' => 1500,
+            'radius_m' => 2000,
             'cooldown_hours' => 24,
+            'import_mode' => 'sync',
         ));
         if (!is_array($google_config)) {
             $google_config = array();
@@ -256,8 +260,18 @@ class Nearby_Settings {
                     <tr>
                         <th scope="row">Vyhledávací radius (metry)</th>
                         <td>
-                            <input type="number" name="db_google_nearby_filters[radius_m]" value="<?php echo esc_attr(isset($google_config['radius_m']) ? $google_config['radius_m'] : 1500); ?>" min="100" max="10000" step="50" />
-                            <p class="description">Okruh pro Places Nearby Search. Vhodné hodnoty jsou 500–2000 metrů.</p>
+                            <input type="number" name="db_google_nearby_filters[radius_m]" value="<?php echo esc_attr(isset($google_config['radius_m']) ? $google_config['radius_m'] : 2000); ?>" min="100" max="10000" step="50" />
+                            <p class="description">Okruh pro Places Nearby Search. Výchozí hodnota je 2000 metrů, pro turistické atrakce lze ručně zvýšit.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Režim importu</th>
+                        <td>
+                            <select name="db_google_nearby_filters[import_mode]">
+                                <option value="sync" <?php selected(isset($google_config['import_mode']) ? $google_config['import_mode'] : 'sync', 'sync'); ?>>Synchronní (okamžitý import při načtení detailu)</option>
+                                <option value="async" <?php selected(isset($google_config['import_mode']) ? $google_config['import_mode'] : 'sync', 'async'); ?>>Asynchronní (naplánovat import na pozadí)</option>
+                            </select>
+                            <p class="description">Asynchronní režim nezablokuje načítání detailu – nové piny se objeví po dokončení úlohy na pozadí, detaily lze doplnit dodatečně.</p>
                         </td>
                     </tr>
                     <tr>
