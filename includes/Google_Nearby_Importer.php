@@ -332,25 +332,44 @@ SVG;
             ],
         ];
 
-        $args = [
-            'headers' => [
-                'X-Goog-Api-Key' => $apiKey,
-                'X-Goog-FieldMask' => 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryType,places.types,places.rating,places.userRatingCount,places.priceLevel,places.regularOpeningHours,places.shortFormattedAddress,places.iconMaskBaseUri,places.iconBackgroundColor,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.editorialSummary',
-                'Content-Type' => 'application/json; charset=utf-8',
-            ],
-            'body' => wp_json_encode($body),
-            'timeout' => 12,
-        ];
+        // Primární (širší) FieldMask – může selhat 400 INVALID_ARGUMENT u některých účtů/konfigurací
+        $fieldMaskFull = 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryType,places.types,places.rating,places.userRatingCount,places.priceLevel,places.regularOpeningHours,places.shortFormattedAddress,places.iconMaskBaseUri,places.iconBackgroundColor,places.nationalPhoneNumber,places.internationalPhoneNumber,places.websiteUri,places.editorialSummary';
+        // Konzervativní FieldMask – pouze bezpečná pole podporovaná v Nearby Search
+        $fieldMaskSafe = 'places.id,places.displayName,places.location,places.formattedAddress,places.primaryType,places.types,places.rating,places.userRatingCount,places.priceLevel,places.shortFormattedAddress,places.iconMaskBaseUri,places.iconBackgroundColor';
 
-        $res = wp_remote_post('https://places.googleapis.com/v1/places:searchNearby', $args);
+        $make_request = function(string $mask) use ($apiKey, $body) {
+            return wp_remote_post('https://places.googleapis.com/v1/places:searchNearby', [
+                'headers' => [
+                    'X-Goog-Api-Key' => $apiKey,
+                    'X-Goog-FieldMask' => $mask,
+                    'Content-Type' => 'application/json; charset=utf-8',
+                ],
+                'body' => wp_json_encode($body),
+                'timeout' => 12,
+            ]);
+        };
+
+        $res = $make_request($fieldMaskFull);
         if (is_wp_error($res)) {
             return $res;
         }
-
         $code = (int) wp_remote_retrieve_response_code($res);
+        if ($code === 400) {
+            // Zalogovat tělo odpovědi kvůli diagnostice a zkusit znovu s bezpečnou maskou
+            $raw = wp_remote_retrieve_body($res);
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('[Google Nearby Importer] 400 on searchNearby with full FieldMask. Body: ' . substr((string)$raw, 0, 500));
+            }
+            $res = $make_request($fieldMaskSafe);
+            $code = (int) wp_remote_retrieve_response_code($res);
+        }
+
         if ($code < 200 || $code >= 300) {
             $err = new WP_Error('http_' . $code, 'HTTP ' . $code);
-            $err->add_data(['body' => wp_remote_retrieve_body($res)]);
+            $err->add_data([
+                'body' => wp_remote_retrieve_body($res),
+                'fieldMaskUsed' => ($code === 400 ? 'safe' : 'full'),
+            ]);
             return $err;
         }
 
