@@ -140,6 +140,13 @@ class CPT_Display_Block {
      * Renderuje charging_location
      */
     private function render_charging_location( $post, $attributes ) {
+        // Načíst překlady
+        $translations = array();
+        if ( class_exists( '\\DB\\Translation_Manager' ) ) {
+            $translation_manager = \DB\Translation_Manager::get_instance();
+            $translations = $translation_manager->get_frontend_translations();
+        }
+        
         $lat = get_post_meta( $post->ID, '_db_lat', true );
         $lng = get_post_meta( $post->ID, '_db_lng', true );
         $address = get_post_meta( $post->ID, '_db_address', true );
@@ -270,7 +277,7 @@ class CPT_Display_Block {
                 <div class="db-section">
                     <h2 class="db-section-title">
                         <span class="db-icon db-icon-description"></span>
-                        Popis
+                        <?php echo esc_html( isset( $translations['translations']['common']['description'] ) ? $translations['translations']['common']['description'] : 'Popis' ); ?>
                     </h2>
                     <div class="db-content">
                         <?php echo wp_kses_post( $post->post_content ); ?>
@@ -283,13 +290,13 @@ class CPT_Display_Block {
                 <div class="db-section">
                     <h2 class="db-section-title">
                         <span class="db-icon db-icon-map"></span>
-                        Mapa
+                        <?php echo esc_html( isset( $translations['translations']['common']['map'] ) ? $translations['translations']['common']['map'] : 'Mapa' ); ?>
                     </h2>
                     <div class="db-map-container" 
                          data-lat="<?php echo esc_attr( $lat ); ?>" 
                          data-lng="<?php echo esc_attr( $lng ); ?>" 
                          data-title="<?php echo esc_attr( $post->post_title ); ?>">
-                        <div class="db-map-loading">Načítání mapy...</div>
+                        <div class="db-map-loading"><?php echo esc_html( isset( $translations['translations']['map']['map_loading'] ) ? $translations['translations']['map']['map_loading'] : 'Načítání mapy...' ); ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -298,11 +305,10 @@ class CPT_Display_Block {
             <div class="db-section">
                 <h2 class="db-section-title">
                     <span class="db-icon db-icon-license"></span>
-                    Licence
+                    <?php echo esc_html( isset( $translations['translations']['common']['license'] ) ? $translations['translations']['common']['license'] : 'Licence' ); ?>
                 </h2>
                 <p class="db-license">
-                    Data jsou poskytována v rámci projektu Dobitý Baterky. 
-                    Pro komerční použití kontaktujte autora.
+                    <?php echo esc_html( isset( $translations['translations']['templates']['license_text'] ) ? $translations['translations']['templates']['license_text'] : 'Data jsou poskytována v rámci projektu Dobitý Baterky. Pro komerční použití kontaktujte autora.' ); ?>
                 </p>
             </div>
         </div>
@@ -314,6 +320,13 @@ class CPT_Display_Block {
      * Renderuje rv_spot
      */
     private function render_rv_spot( $post, $attributes ) {
+        // Načíst překlady
+        $translations = array();
+        if ( class_exists( '\\DB\\Translation_Manager' ) ) {
+            $translation_manager = \DB\Translation_Manager::get_instance();
+            $translations = $translation_manager->get_frontend_translations();
+        }
+        
         $lat = get_post_meta( $post->ID, '_rv_lat', true );
         $lng = get_post_meta( $post->ID, '_rv_lng', true );
         $address = get_post_meta( $post->ID, '_rv_address', true );
@@ -442,7 +455,7 @@ class CPT_Display_Block {
                 <div class="db-section">
                     <h2 class="db-section-title">
                         <span class="db-icon db-icon-description"></span>
-                        Popis
+                        <?php echo esc_html( isset( $translations['translations']['common']['description'] ) ? $translations['translations']['common']['description'] : 'Popis' ); ?>
                     </h2>
                     <div class="db-content">
                         <?php echo wp_kses_post( $post->post_content ); ?>
@@ -455,13 +468,13 @@ class CPT_Display_Block {
                 <div class="db-section">
                     <h2 class="db-section-title">
                         <span class="db-icon db-icon-map"></span>
-                        Mapa
+                        <?php echo esc_html( isset( $translations['translations']['common']['map'] ) ? $translations['translations']['common']['map'] : 'Mapa' ); ?>
                     </h2>
                     <div class="db-map-container" 
                          data-lat="<?php echo esc_attr( $lat ); ?>" 
                          data-lng="<?php echo esc_attr( $lng ); ?>" 
                          data-title="<?php echo esc_attr( $post->post_title ); ?>">
-                        <div class="db-map-loading">Načítání mapy...</div>
+                        <div class="db-map-loading"><?php echo esc_html( isset( $translations['translations']['map']['map_loading'] ) ? $translations['translations']['map']['map_loading'] : 'Načítání mapy...' ); ?></div>
                     </div>
                 </div>
             <?php endif; ?>
@@ -474,6 +487,12 @@ class CPT_Display_Block {
      * Renderuje poi
      */
     private function render_poi( $post, $attributes ) {
+        // Načíst překlady
+        $translations = array();
+        if ( class_exists( '\\DB\\Translation_Manager' ) ) {
+            $translation_manager = \DB\Translation_Manager::get_instance();
+            $translations = $translation_manager->get_frontend_translations();
+        }
         $lat = get_post_meta( $post->ID, '_poi_lat', true );
         $lng = get_post_meta( $post->ID, '_poi_lng', true );
         $address = get_post_meta( $post->ID, '_poi_address', true );
@@ -632,7 +651,7 @@ class CPT_Display_Block {
                 <div class="db-section">
                     <h2 class="db-section-title">
                         <span class="db-icon db-icon-description"></span>
-                        Popis
+                        <?php echo esc_html( isset( $translations['translations']['common']['description'] ) ? $translations['translations']['common']['description'] : 'Popis' ); ?>
                     </h2>
                     <div class="db-content">
                         <?php echo wp_kses_post( $post->post_content ); ?>
@@ -645,13 +664,13 @@ class CPT_Display_Block {
                 <div class="db-section">
                     <h2 class="db-section-title">
                         <span class="db-icon db-icon-map"></span>
-                        Mapa
+                        <?php echo esc_html( isset( $translations['translations']['common']['map'] ) ? $translations['translations']['common']['map'] : 'Mapa' ); ?>
                     </h2>
                     <div class="db-map-container" 
                          data-lat="<?php echo esc_attr( $lat ); ?>" 
                          data-lng="<?php echo esc_attr( $lng ); ?>" 
                          data-title="<?php echo esc_attr( $post->post_title ); ?>">
-                        <div class="db-map-loading">Načítání mapy...</div>
+                        <div class="db-map-loading"><?php echo esc_html( isset( $translations['translations']['map']['map_loading'] ) ? $translations['translations']['map']['map_loading'] : 'Načítání mapy...' ); ?></div>
                     </div>
                 </div>
             <?php endif; ?>

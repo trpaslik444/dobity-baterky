@@ -1,0 +1,112 @@
+{
+  "common": {
+    "close": "Zavřít",
+    "loading": "Načítání...",
+    "open": "Otevřeno",
+    "closed": "Zavřeno",
+    "description": "Popis",
+    "map": "Mapa",
+    "license": "Licence",
+    "navigate": "Navigovat",
+    "more_info": "Více informací",
+    "user": "Uživatel",
+    "not_logged_in": "Nepřihlášený uživatel",
+    "login": "Přihlásit se",
+    "logout": "Odhlásit",
+    "my_account": "Můj účet",
+    "favorites": "Oblíbené"
+  },
+  "map": {
+    "menu": "Menu",
+    "search": "Vyhledávání",
+    "list": "Seznam",
+    "filters": "Filtry",
+    "my_location": "Moje poloha",
+    "location_unavailable": "Poloha není dostupná",
+    "map_loading": "Načítání mapy...",
+    "map_failed": "Mapa se nepodařilo načíst",
+    "try_refresh": "Zkuste obnovit stránku",
+    "search_placeholder": "Objevujeme víc než jen cíl cesty...",
+    "db_map": "DB mapa"
+  },
+  "filters": {
+    "title": "Filtry",
+    "reset": "Resetovat filtry",
+    "power": "Výkon (kW)",
+    "connector_type": "Typ konektoru",
+    "provider": "Provozovatel",
+    "select_provider": "Vybrat provozovatele...",
+    "amenity_nearby": "Amenity v okolí",
+    "access": "Přístup",
+    "free": "Zdarma",
+    "db_recommended": "Jen DB doporučuje"
+  },
+  "cards": {
+    "no_description": "Popis zatím není k dispozici",
+    "opening_hours": "Otevírací doba",
+    "price": "Cena",
+    "phone": "Telefon",
+    "website": "Web",
+    "nearby_interesting": "Blízká zajímavá místa",
+    "nearby_charging": "Blízké nabíjecí stanice",
+    "services": "Služby"
+  },
+  "menu": {
+    "close_menu": "Zavřít menu",
+    "map_settings": "Nastavení mapy",
+    "auto_load": "Automatické načítání dat",
+    "auto_load_help": "Pokud je vypnuto, data se načítají pouze po kliknutí na tlačítko"
+  },
+  "navigation": {
+    "google_maps": "Google Maps",
+    "apple_maps": "Apple Maps",
+    "mapy_cz": "Mapy.cz"
+  },
+  "feedback": {
+    "button": "feedback",
+    "title": "Zpětná vazba",
+    "report_feedback": "Nahlásit zpětnou vazbu",
+    "type": "Typ",
+    "severity": "Závažnost",
+    "component": "Komponenta (auto)",
+    "component_description": "Co je špatně / co navrhujete zlepšit",
+    "cancel": "Zavřít",
+    "send": "Odeslat",
+    "types": {
+      "bug": "Bug",
+      "suggestion": "Návrh",
+      "content": "Obsah"
+    },
+    "priorities": {
+      "low": "Nízká",
+      "medium": "Střední",
+      "high": "Vysoká"
+    }
+  },
+  "legends": {
+    "isochrones": "Dochozí okruhy"
+  },
+  "login": {
+    "login_required": "Pro zobrazení mapy se prosím",
+    "login_link": "přihlas",
+    "access_denied": "Tento obsah je dostupný jen pro oprávněné uživatele."
+  },
+  "templates": {
+    "license_text": "Data jsou poskytována v rámci projektu Dobitý Baterky. Pro komerční použití kontaktujte autora."
+  },
+  "favorites": {
+    "title": "Oblíbené",
+    "subtitle": "Organizujte si oblíbená místa",
+    "default_folders": "Výchozí složky",
+    "user_folders": "Uživatelské složky",
+    "my_favorites": "Moje oblíbené",
+    "loading": "Načítám…",
+    "empty_hint": "Žádné vlastní složky zatím nemáte.",
+    "show_all": "Zobrazit všechny body",
+    "delete_folder": "Smazat složku",
+    "delete": "Smazat",
+    "remove_from_favorites": "Odebrat z oblíbených",
+    "create_folder": "Vytvořit novou složku"
+  }
+}
+

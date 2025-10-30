@@ -482,6 +482,13 @@ add_action('wp_enqueue_scripts', function() {
         }
     }
     
+    // Načíst překlady
+    $translations = array();
+    if ( class_exists( '\\DB\\Translation_Manager' ) ) {
+        $translation_manager = \DB\Translation_Manager::get_instance();
+        $translations = $translation_manager->get_frontend_translations();
+    }
+    
     wp_localize_script( 'db-map', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
         'restNonce' => wp_create_nonce( 'wp_rest' ),
@@ -512,6 +519,7 @@ add_action('wp_enqueue_scripts', function() {
         'logoutUrl' => is_user_logged_in() ? wp_logout_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ) : '',
         'loginUrl' => is_user_logged_in() ? '' : wp_login_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ),
         'favorites' => $favorites_payload,
+        'translations' => $translations,
     ) );
     
     // On-Demand Processor data
