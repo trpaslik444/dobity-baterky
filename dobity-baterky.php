@@ -482,12 +482,18 @@ add_action('wp_enqueue_scripts', function() {
         }
     }
     
+    // Načíst překlady
+    $translations = array();
+    if ( class_exists( '\\DB\\Translation_Manager' ) ) {
+        $translation_manager = \DB\Translation_Manager::get_instance();
+        $translations = $translation_manager->get_frontend_translations();
+    }
+    
     wp_localize_script( 'db-map', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
         'restNonce' => wp_create_nonce( 'wp_rest' ),
         'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
         'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
-        'dbLogoUrl' => plugins_url( 'assets/DB_bez(2160px).svg', DB_PLUGIN_FILE ),
         'isMapPage' => function_exists('db_is_map_app_page') ? db_is_map_app_page() : false,
         'pwaEnabled' => class_exists('PWAforWP') ? true : false,
         'isAdmin' => current_user_can('administrator') || current_user_can('editor'),
@@ -513,6 +519,7 @@ add_action('wp_enqueue_scripts', function() {
         'logoutUrl' => is_user_logged_in() ? wp_logout_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ) : '',
         'loginUrl' => is_user_logged_in() ? '' : wp_login_url( home_url( add_query_arg( array(), $_SERVER['REQUEST_URI'] ) ) ),
         'favorites' => $favorites_payload,
+        'translations' => $translations,
     ) );
     
     // On-Demand Processor data

@@ -89,40 +89,6 @@
   font-weight: 600;
 }
 
-.db-loading-indicator {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 999; /* Nižší než modal filtrů (10000) */
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 8px;
-  padding: 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  border: 1px solid #049FE8;
-  backdrop-filter: blur(10px);
-  display: none;
-  align-items: center;
-  gap: 10px;
-  animation: fadeIn 0.3s ease-out;
-}
-
-.db-loading-spinner {
-  width: 20px;
-  height: 20px;
-  border: 2px solid #f3f3f3;
-  border-top: 2px solid #049FE8;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-.db-loading-indicator span {
-  font-family: 'Montserrat', sans-serif;
-  font-weight: 500;
-  color: #333;
-  font-size: 13px;
-}
-
 /* Auto-load toggle button - přesunuto do menu */
 .db-auto-load-toggle {
   background: rgba(255, 255, 255, 0.95);
@@ -2962,7 +2928,7 @@ body.db-loading::before {
 }
 
 body.db-loading::after {
-  content: 'Načítám body v okolí…';
+  /* Text se načítá dynamicky z překladů v JavaScriptu */
   position: fixed;
   top: 50%; left: 50%;
   transform: translate(-50%,-50%);
