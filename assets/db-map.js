@@ -335,7 +335,6 @@ function hideIsochronesUnlockButton() {
     isochronesUnlockButton.style.display = 'none';
   }
 }
-
 function updateIsochronesLockButtons(featureId = null) {
   const selectorBase = '[data-db-action="lock-isochrones"]';
   const selector = featureId === null ? selectorBase : `${selectorBase}[data-feature-id="${featureId}"]`;
@@ -643,7 +642,6 @@ try {
     positionAttributionBar(bar);
   });
 } catch(_) {}
-
 // Sledovat změny tříd pro modal/sheet a logovat změny pozic
 try {
   const observer = new MutationObserver(() => {
@@ -991,7 +989,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     return total;
   }
-
   async function fetchFavoritesState(force = false) {
     if (!favoritesState.enabled) {
       return favoritesState;
@@ -1225,7 +1222,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       favoritesCreateButton.classList.remove('db-favorites-hidden');
     }
   }
-
   function showFavoritesCreateFormInAssign() {
     // Skrýt tlačítko Create a new folder
     const createBtn = favoritesAssignModal.querySelector('.db-favorites-assign__create');
@@ -1339,7 +1335,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }, 300);
     }, 3000);
   }
-
   function refreshFavoritesAssignList() {
     const modal = document.getElementById('db-favorites-assign-modal');
     if (!modal) return;
@@ -1677,7 +1672,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       document.body.classList.remove('db-loading');
     }
   }
-
   function deactivateFavoritesMode() {
     if (!favoritesState.isActive) {
       return;
@@ -1858,7 +1852,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     refreshFavoriteUi(postId, folder);
   }
-
   async function assignFavoriteToFolder(postId, folderId, options = {}) {
     if (!favoritesState.enabled) {
       return null;
@@ -1997,7 +1990,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     return favoritesAssignModal;
   }
-
   async function openFavoritesAssignModal(postId, props) {
     await fetchFavoritesState();
     
@@ -2328,7 +2320,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const x = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLng/2)**2;
     return 2 * R * Math.asin(Math.sqrt(x));
   }
-  
   // Utilita pro výpis okolí středu mapy
   function logAroundCenter(centerLatLng) {
     const center = { lat: centerLatLng.lat, lng: centerLatLng.lng };
@@ -2427,7 +2418,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
   }
-  
   async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
     if (favoritesState.isActive) {
       return;
@@ -2658,7 +2648,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Dynamicky upravit šířku podle dostupného prostoru
     addressInput.style.width = `min(100%, ${Math.max(280, availableWidth)}px)`;
   }
-  
   // Spustit responzivní úpravu při načtení a změně velikosti
   adjustInputResponsiveness();
   window.addEventListener('resize', adjustInputResponsiveness);
@@ -3008,7 +2997,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     return;
   }
   // Spacer pro WP menu - odstraněn, používá se původní CSS
-  
   // Pak vytvořím topbar
   const topbar = document.createElement('div');
   topbar.className = 'db-map-topbar';
@@ -3067,7 +3055,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   mapDiv.style.zIndex = '1';
   mapDiv.appendChild(topbar);
   updateFavoritesButtonState();
-
   // Centralizovaný handler topbar tlačítek - díky delegaci zůstává funkční i po výměně obsahu
   topbar.addEventListener('click', (event) => {
     const button = event.target.closest('.db-map-topbar-btn');
@@ -3635,7 +3622,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         arr.forEach(c => allConnectors.push(c));
       }
     });
-    
     Array.from(values).sort((a,b)=>String(a).localeCompare(String(b))).forEach(v => {
       if (!v) return;
       
@@ -3707,7 +3693,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       container.appendChild(checkboxDiv);
     });
   }
-  
   function fillAccessOptions(container, options) {
     if (!container) return;
     container.innerHTML = '';
@@ -4183,7 +4168,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (listHeaderFilterBtn) listHeaderFilterBtn.classList.toggle('active', isActive);
     } catch(_) {}
   }
-  
   function attachFilterHandlers() {
     const pMinR = document.getElementById('db-power-min');
     const pMaxR = document.getElementById('db-power-max');
@@ -4324,7 +4308,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (providerBtn) {
         providerBtn.textContent = 'Vybrat provozovatele...';
       }
-      
       // Aktualizovat viditelnost reset tlačítka
       updateResetButtonVisibility();
       
@@ -4666,7 +4649,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (lat !== null && lng !== null) {
       map.setView([lat, lng], map.getZoom(), { animate: true, duration: 0.5 });
     }
-    
     // Pokud je to charging_location, načíst rozšířená data asynchronně
     if (p.post_type === 'charging_location') {
       const needsChargingEnrich = shouldFetchChargingDetails(p);
@@ -4765,7 +4747,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       rootMargin: '50px' // Načíst 50px před tím, než se objeví
     });
   }
-  
   async function loadNearbyForMobileSheet(containerEl, centerId, lat, lng) {
     if (!containerEl || !centerId) return;
     
@@ -4938,7 +4919,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         const missingWebsite = !props.poi_website;
         const missingPhotos = !(Array.isArray(props.poi_photos) && props.poi_photos.length > 0);
         const shouldSkip = expires && Date.now() < (expires - 5000) && !(missingHours || missingWebsite || missingPhotos);
-        try { /* debug removed */ } catch(_) {}
+        try {
+          console.log('[DB Map][POI enrich] cache check', {
+            id: props.id,
+            expiresAt: props.poi_external_expires_at,
+            missingHours,
+            missingWebsite,
+            missingPhotos,
+            shouldSkip
+          });
+        } catch(_) {}
         if (shouldSkip) {
           return feature;
         }
@@ -4946,7 +4936,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       const restBase = (dbMapData?.poiExternalUrl || '/wp-json/db/v1/poi-external').replace(/\/$/, '');
       const nonce = dbMapData?.restNonce || '';
-      try { /* debug removed */ } catch(_) {}
+      try { console.log('[DB Map][POI enrich] fetching external', { url: `${restBase}/${props.id}` }); } catch(_) {}
       const response = await fetch(`${restBase}/${props.id}`, {
         headers: {
           'X-WP-Nonce': nonce,
@@ -4955,12 +4945,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
 
       if (!response.ok) {
-        try { /* warn removed */ } catch(_) {}
+        try { console.warn('[DB Map][POI enrich] response not ok', { status: response.status, statusText: response.statusText }); } catch(_) {}
         return feature;
       }
 
       const payload = await response.json();
-      try { /* debug removed */ } catch(_) {}
+      try { console.log('[DB Map][POI enrich] payload received', { id: props.id, hasData: !!payload?.data, provider: payload?.provider, expiresAt: payload?.expiresAt }); } catch(_) {}
       // Obsluha stavů bez dat
       if (!payload || !payload.data) {
         if (payload && payload.status === 'review_required') {
@@ -4992,9 +4982,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           oh = { weekdayDescriptions: oh.weekday_text };
         }
         enrichedProps.poi_opening_hours = typeof oh === 'string' ? oh : JSON.stringify(oh);
-        try { /* debug removed */ } catch(_) {}
+        try { console.log('[DB Map][POI enrich] openingHours set', { id: props.id }); } catch(_) {}
       } else {
-        try { /* debug removed */ } catch(_) {}
+        try { console.log('[DB Map][POI enrich] no openingHours', { id: props.id }); } catch(_) {}
       }
       // Základní služby/nabídka
       if (typeof data.dineIn !== 'undefined') enrichedProps.poi_dine_in = !!data.dineIn;
@@ -5050,7 +5040,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         enrichedProps.poi_external_expires_at = payload.expiresAt;
       }
 
-      try { /* debug removed */ } catch(_) {}
+      try { console.log('[DB Map][POI enrich] done', { id: props.id, image: !!enrichedProps.image, photos: (enrichedProps.poi_photos||[]).length, provider: enrichedProps.poi_external_provider }); } catch(_) {}
       return enriched;
     } catch (error) {
       try { console.error('[DB Map][POI enrich] chyba', error); } catch(_) {}
@@ -5064,7 +5054,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     const props = feature.properties;
-    try { /* debug removed */ } catch (_) {}
+    try { console.log('[DB Map][CHG enrich] start', { id: props.id }); } catch (_) {}
 
     const hasFreshLive = props.charging_live_expires_at && Date.parse(props.charging_live_expires_at) > Date.now();
     const hasMeta = !!(props.charging_google_details || props.charging_ocm_details);
@@ -5072,12 +5062,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Volat REST endpoint pokud nemáme fresh live data, metadata, nebo db_connectors
     if (hasFreshLive && hasMeta && hasDbConnectors) {
+      try { console.log('[DB Map][CHG enrich] skip (hasFreshLive && hasMeta && hasDbConnectors)', { id: props.id }); } catch(_) {}
       return feature;
     }
 
     const restBase = (dbMapData?.chargingExternalUrl || '/wp-json/db/v1/charging-external').replace(/\/$/, '');
     const nonce = dbMapData?.restNonce || '';
-    try { /* debug removed */ } catch (_) {}
+    try { console.log('[DB Map][CHG enrich] fetching external', { url: `${restBase}/${props.id}` }); } catch (_) {}
     const response = await fetch(`${restBase}/${props.id}`, {
       headers: {
         'X-WP-Nonce': nonce,
@@ -5086,11 +5077,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
 
     if (!response.ok) {
-      try { /* warn removed */ } catch (_) {}
+      try { console.warn('[DB Map][CHG enrich] response not ok', { status: response.status, statusText: response.statusText }); } catch (_) {}
       return feature;
     }
 
     const payload = await response.json();
+    try { console.log('[DB Map][CHG enrich] payload received', { id: props.id, googleId: payload?.google_place_id, hasMeta: !!payload?.metadata, enrichment: payload?.google_nearby_enrichment }); } catch(_) {}
     const enriched = { ...feature, properties: { ...props } };
     const enrichedProps = enriched.properties;
     const metadata = payload?.metadata || {};
@@ -5101,28 +5093,31 @@ document.addEventListener('DOMContentLoaded', async function() {
         const first = metadata.google.photos[0];
         if (first.url) {
           enrichedProps.image = first.url;
+          try { console.log('[DB Map][CHG enrich] image from google.url'); } catch(_) {}
         } else if (first.photo_reference === 'streetview' && first.street_view_url) {
           // Street View obrázek
           enrichedProps.image = first.street_view_url;
+          try { console.log('[DB Map][CHG enrich] image from streetview'); } catch(_) {}
         } else if (first.photo_reference && first.photo_reference !== 'streetview' && dbMapData?.googleApiKey) {
           // Nové Google Places API v1 foto
           if (first.photo_reference.startsWith('places/')) {
             // Nové API v1 formát
             enrichedProps.image = `https://places.googleapis.com/v1/${first.photo_reference}/media?maxWidthPx=1200&key=${dbMapData.googleApiKey}`;
+            try { console.log('[DB Map][CHG enrich] image from places v1', { ref: first.photo_reference }); } catch(_) {}
           } else if (first.photo_reference !== 'streetview') {
             // Staré API formát (fallback)
             enrichedProps.image = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=1200&photo_reference=${first.photo_reference}&key=${dbMapData.googleApiKey}`;
+            try { console.log('[DB Map][CHG enrich] image from places legacy', { ref: first.photo_reference }); } catch(_) {}
           }
         }
       }
       // Přidat fallback metadata (Street View pro nabíječky ve frontě)
       if (payload.data?.fallback_metadata && payload.data.fallback_metadata.photos) {
         enrichedProps.poi_photos = payload.data.fallback_metadata.photos;
-        if (!enrichedProps.image && payload.data.fallback_metadata.photos[0]) {
-          const firstPhoto = payload.data.fallback_metadata.photos[0];
-          if (firstPhoto.street_view_url) {
-            enrichedProps.image = firstPhoto.street_view_url;
-          }
+        const firstPhoto = payload.data.fallback_metadata.photos[0];
+        if (firstPhoto && firstPhoto.street_view_url) {
+          enrichedProps.image = firstPhoto.street_view_url;
+          try { console.log('[DB Map][CHG enrich] image from fallback streetview'); } catch(_) {}
         }
       }
       
@@ -5216,7 +5211,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     enrichedProps.charging_external_expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    try { /* debug removed */ } catch (_) {}
+    try { console.log('[DB Map][CHG enrich] done', { id: props.id, hasImage: !!enrichedProps.image, hasGoogle: !!enrichedProps.charging_google_details, hasOCM: !!enrichedProps.charging_ocm_details }); } catch(_) {}
     return enriched;
   }
 
@@ -5950,7 +5945,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         clearIsochrones();
         updateIsochronesLockButtons(p.id);
       }
-      
       // Zobrazit nearby data nebo pokračovat v načítání
       if (requestId !== currentIsochronesRequestId) return;
       if (Array.isArray(data.items) && data.items.length > 0) {
@@ -6285,7 +6279,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const img = heroImageUrl 
       ? `<img class="hero-img" src="${heroImageUrl}" alt="" style="width:100%;height:100%;object-fit:cover;display:block;">`
       : '';
-
     // Připrav seznam max 3 fotek (pro jednoduchý carousel)
     const photoUrls = [];
     if (Array.isArray(p.poi_photos)) {
@@ -7708,7 +7701,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const x = lng, y = lat;
     return `https://mapy.cz/zakladni?source=coor&id=${x},${y}&x=${x}&y=${y}&z=16`;
   }
-
   // --- AUTOCOMPLETE ADRESY (NOMINATIM) ---
   function createAddressAutocomplete(input, onSelect) {
     if (!input || !input.parentNode) {
@@ -7942,7 +7934,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       closeOnClick: false
     });
   }
-
   // --- SORTBY: pokud uživatel změní sortby, zruš searchSortLocked a smaž pin ---
   const sortbySelect = document.querySelector('#db-map-list-sort');
   // activeIdxGlobal už inicializován na začátku
@@ -8240,9 +8231,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
       }
     });
-    
-
-    
     // Vytvoříme nové markery pouze pro ty, které neexistují
     filtered.forEach((f, i) => {
       const {geometry, properties: p} = f;
@@ -8254,7 +8242,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (currentMarkerIds.has(p.id)) {
         return; // Marker už existuje, přeskočit
       }
-      
       const [lng, lat] = geometry.coordinates;
       
       function getMarkerHtml(active) {
@@ -9270,7 +9257,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Spustit po vytvoření topbaru - odstraněno
 
   // CSS už má správná pravidla pro pozici topbaru
-
   // Vytvoření vyhledávacího pole pod topbarem - pouze pro mobilní verzi
   function createMobileSearchField() {
     // Kontrola, zda jsme v mobilní verzi
@@ -9427,7 +9413,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Globální cache pro lokalitu prohlížeče (načte se jednou při startu)
   let browserLocaleCache = null;
-
   // Funkce pro získání lokality prohlížeče (s globálním cache)
   async function getBrowserLocale() {
     // Pokud už máme cache, použij ho
@@ -9929,7 +9914,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     });
   }
-
   async function handleDesktopInternalSelection(result) {
     try {
       const lat = Number.parseFloat(result?.lat);
@@ -10060,7 +10044,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       mobileSearchController = null;
     }
   }
-
   async function getInternalSearchResults(query, signal) {
     const normalized = (query || '').trim().toLowerCase();
     if (internalSearchCache.has(normalized)) {
@@ -10272,7 +10255,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         </div>
       `;
     }).join('');
-
     const sections = [];
     if (internal.length > 0) {
       sections.push(`
@@ -10586,7 +10568,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }, 5000);
   }
-  
   // Spustit při změně velikosti okna - pouze pokud je mobilní
   let resizeTimeout;
   window.addEventListener('resize', () => {
