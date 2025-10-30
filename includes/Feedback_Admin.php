@@ -557,10 +557,14 @@ document.addEventListener("click", function(e) {
 			wp_send_json_error( array( 'message' => 'Invalid ID' ) );
 		}
 		check_admin_referer( 'db_feedback_update_' . $id );
-		$status = sanitize_text_field( $_POST['status'] ?? '' );
-		$severity = sanitize_text_field( $_POST['severity'] ?? '' );
-		$admin_note = sanitize_text_field( $_POST['admin_note'] ?? '' );
-		update_option( 'db_feedback_note_' . $id, $admin_note, false );
+		$status = isset( $_POST['status'] ) ? sanitize_text_field( wp_unslash( $_POST['status'] ) ) : '';
+		$severity = isset( $_POST['severity'] ) ? sanitize_text_field( wp_unslash( $_POST['severity'] ) ) : '';
+		// Poznámku ukládej pouze tehdy, pokud skutečně přišla v payloadu,
+		// aby se nepřepisovala prázdným řetězcem při změně statusu/severity
+		if ( array_key_exists( 'admin_note', $_POST ) ) {
+			$admin_note = sanitize_text_field( wp_unslash( $_POST['admin_note'] ) );
+			update_option( 'db_feedback_note_' . $id, $admin_note, false );
+		}
 		global $wpdb;
 		$table = $wpdb->prefix . 'db_feedback';
 		$data = array();
