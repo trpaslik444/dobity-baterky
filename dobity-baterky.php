@@ -487,7 +487,6 @@ add_action('wp_enqueue_scripts', function() {
         'restNonce' => wp_create_nonce( 'wp_rest' ),
         'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
         'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
-        'dbLogoUrl' => plugins_url( 'assets/DB_bez(2160px).svg', DB_PLUGIN_FILE ),
         'isMapPage' => function_exists('db_is_map_app_page') ? db_is_map_app_page() : false,
         'pwaEnabled' => class_exists('PWAforWP') ? true : false,
         'isAdmin' => current_user_can('administrator') || current_user_can('editor'),
