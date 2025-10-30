@@ -705,10 +705,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   // Přidat CSS pro loading spinner
   const style = document.createElement('style');
+  const loadingText = translations?.map?.loading_bodies || 'Načítám body v okolí…';
   style.textContent = `
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    body.db-loading::after {
+      content: '${loadingText}';
     }
   `;
   document.head.appendChild(style);
@@ -8850,7 +8854,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   class SmartLoadingManager {
     constructor() {
       this.manualLoadButton = null;
-      this.loadingIndicator = null;
       this.autoLoadEnabled = true;
       this.outsideLoadedArea = false;
       this.lastCheckTime = 0;
@@ -8859,7 +8862,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     init() {
       this.createManualLoadButton();
-      this.createLoadingIndicator();
       this.loadUserPreferences();
     }
     
@@ -8883,23 +8885,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       this.hideManualLoadButton();
-    }
-    
-    createLoadingIndicator() {
-      this.loadingIndicator = document.createElement('div');
-      this.loadingIndicator.id = 'db-loading-indicator';
-      this.loadingIndicator.className = 'db-loading-indicator';
-      this.loadingIndicator.innerHTML = `
-        <div class="db-loading-spinner"></div>
-        <span>Načítám nová místa...</span>
-      `;
-      
-      const mapContainer = document.querySelector('.leaflet-container');
-      if (mapContainer) {
-        mapContainer.appendChild(this.loadingIndicator);
-      }
-      
-      this.hideLoadingIndicator();
     }
     
     loadUserPreferences() {
@@ -8936,22 +8921,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
     
-    showLoadingIndicator() {
-      if (this.loadingIndicator) {
-        this.loadingIndicator.style.display = 'flex';
-      }
-    }
-    
-    hideLoadingIndicator() {
-      if (this.loadingIndicator) {
-        this.loadingIndicator.style.display = 'none';
-      }
-    }
-    
     async loadNewAreaData() {
       if (!map) return;
       
-      this.showLoadingIndicator();
+      // Použít globální body.db-loading
+      document.body.classList.add('db-loading');
       this.hideManualLoadButton();
       
       try {
@@ -8964,7 +8938,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.error('[DB Map] Error loading new area:', error);
         this.showManualLoadButton(); // Zobrazit tlačítko znovu při chybě
       } finally {
-        this.hideLoadingIndicator();
+        document.body.classList.remove('db-loading');
       }
     }
     
@@ -10914,10 +10888,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   };
   
   window.testLoadingIndicator = function() {
-    if (window.smartLoadingManager) {
-      window.smartLoadingManager.showLoadingIndicator();
-      setTimeout(() => window.smartLoadingManager.hideLoadingIndicator(), 3000);
-    }
+    // Použít globální body.db-loading
+    document.body.classList.add('db-loading');
+    setTimeout(() => document.body.classList.remove('db-loading'), 3000);
   };
   
   // Pravidelné čištění starého cache

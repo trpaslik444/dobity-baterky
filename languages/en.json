@@ -28,7 +28,8 @@
     "try_refresh": "Try refreshing the page",
     "search_placeholder": "Discover more than just your destination...",
     "db_map": "DB map",
-    "load_nearby": "Load places nearby"
+    "load_nearby": "Load places nearby",
+    "loading_bodies": "Loading places nearby…"
   },
   "filters": {
     "title": "Filters",

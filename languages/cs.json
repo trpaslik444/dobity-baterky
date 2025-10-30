@@ -28,7 +28,8 @@
     "try_refresh": "Zkuste obnovit stránku",
     "search_placeholder": "Objevujeme víc než jen cíl cesty...",
     "db_map": "DB mapa",
-    "load_nearby": "Načíst místa v okolí"
+    "load_nearby": "Načíst místa v okolí",
+    "loading_bodies": "Načítám body v okolí…"
   },
   "filters": {
     "title": "Filtry",
