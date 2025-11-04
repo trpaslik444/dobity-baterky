@@ -312,8 +312,17 @@ SVG;
         $includedTypes = array_values(array_filter(array_map('strval', (array) ($config['included_types'] ?? [])), static function ($type) {
             return $type !== '';
         }));
+        // Whitelist základních v1 typů (konzervativní průnik běžně používaných)
+        $allowedTypes = [
+            'cafe','restaurant','bar','bakery','supermarket','shopping_mall','store',
+            'tourist_attraction','museum','art_gallery','movie_theater','park','playground',
+            'gym','spa','hair_care','beauty_salon','lodging','hotel','night_club','bowling_alley',
+            'aquarium','zoo','library','tourist_information_center','viewpoint'
+        ];
+        $includedTypes = array_values(array_intersect(array_map('strtolower', $includedTypes), $allowedTypes));
         if (empty($includedTypes)) {
-            $includedTypes = ['establishment'];
+            // Minimální sada, která by měla být vždy validní
+            $includedTypes = ['cafe','restaurant','tourist_attraction','lodging'];
         }
 
         $body = [
@@ -360,8 +369,24 @@ SVG;
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 error_log('[Google Nearby Importer] 400 on searchNearby with full FieldMask. Body: ' . substr((string)$raw, 0, 500));
             }
+            // 1) zkus bezpečnou masku se stejnými typy
             $res = $make_request($fieldMaskSafe);
             $code = (int) wp_remote_retrieve_response_code($res);
+            if ($code === 400) {
+                // 2) zkus minimální sadu typů (kdyby v configu byl nepodporovaný typ)
+                $fallbackBody = $body;
+                $fallbackBody['includedTypes'] = ['cafe','restaurant','tourist_attraction','lodging'];
+                $res = wp_remote_post('https://places.googleapis.com/v1/places:searchNearby', [
+                    'headers' => [
+                        'X-Goog-Api-Key' => $apiKey,
+                        'X-Goog-FieldMask' => $fieldMaskSafe,
+                        'Content-Type' => 'application/json; charset=utf-8',
+                    ],
+                    'body' => wp_json_encode($fallbackBody),
+                    'timeout' => 12,
+                ]);
+                $code = (int) wp_remote_retrieve_response_code($res);
+            }
         }
 
         if ($code < 200 || $code >= 300) {
