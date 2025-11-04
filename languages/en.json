@@ -1,0 +1,118 @@
+{
+  "common": {
+    "close": "Close",
+    "loading": "Loading...",
+    "open": "Open",
+    "closed": "Closed",
+    "description": "Description",
+    "map": "Map",
+    "license": "License",
+    "navigate": "Navigate",
+    "more_info": "More info",
+    "user": "User",
+    "not_logged_in": "Not logged in",
+    "login": "Log in",
+    "logout": "Log out",
+    "my_account": "My Account",
+    "favorites": "Favorites"
+  },
+  "map": {
+    "menu": "Menu",
+    "search": "Search",
+    "list": "List",
+    "filters": "Filters",
+    "my_location": "My location",
+    "location_unavailable": "Location unavailable",
+    "map_loading": "Loading map...",
+    "map_failed": "Map failed to load",
+    "try_refresh": "Try refreshing the page",
+    "search_placeholder": "Discover more than just your destination...",
+    "db_map": "DB map",
+    "load_nearby": "Load places nearby",
+    "loading_bodies": "Loading places nearby…"
+  },
+  "filters": {
+    "title": "Filters",
+    "reset": "Reset filters",
+    "power": "Power (kW)",
+    "connector_type": "Connector type",
+    "provider": "Operator",
+    "select_provider": "Select operator...",
+    "amenity_nearby": "Amenity nearby",
+    "access": "Access",
+    "free": "Free",
+    "db_recommended": "DB recommends only"
+  },
+  "cards": {
+    "no_description": "Description not available yet",
+    "opening_hours": "Opening hours",
+    "price": "Price",
+    "phone": "Phone",
+    "website": "Website",
+    "nearby_interesting": "Nearby interesting places",
+    "nearby_charging": "Nearby charging stations",
+    "services": "Services",
+    "rating": "Rating",
+    "reviews": "reviews"
+  },
+  "menu": {
+    "close_menu": "Close menu",
+    "map_settings": "Map settings",
+    "auto_load": "Auto-load data",
+    "auto_load_help": "If disabled, data loads only after clicking the button"
+  },
+  "navigation": {
+    "google_maps": "Google Maps",
+    "apple_maps": "Apple Maps",
+    "mapy_cz": "Mapy.cz",
+    "title": "Navigation",
+    "apps": "apps"
+  },
+  "feedback": {
+    "button": "feedback",
+    "title": "Feedback",
+    "report_feedback": "Report feedback",
+    "type": "Type",
+    "severity": "Severity",
+    "component": "Component (auto)",
+    "component_description": "What's wrong / what would you like to improve",
+    "cancel": "Close",
+    "send": "Send",
+    "types": {
+      "bug": "Bug",
+      "suggestion": "Suggestion",
+      "content": "Content"
+    },
+    "priorities": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    }
+  },
+  "legends": {
+    "isochrones": "Walkable areas"
+  },
+  "login": {
+    "login_required": "Please",
+    "login_link": "log in",
+    "access_denied": "This content is only available to authorized users."
+  },
+  "templates": {
+    "license_text": "Data is provided within the Dobitý Baterky project. For commercial use, please contact the author."
+  },
+  "favorites": {
+    "title": "Favorites",
+    "subtitle": "Organize your favorite places",
+    "default_folders": "Default folders",
+    "user_folders": "User folders",
+    "my_favorites": "My favorites",
+    "loading": "Loading…",
+    "empty_hint": "You don't have any custom folders yet.",
+    "show_all": "Show all points",
+    "delete_folder": "Delete folder",
+    "delete": "Delete",
+    "remove_from_favorites": "Remove from favorites",
+    "create_folder": "Create a new folder"
+  }
+}
+

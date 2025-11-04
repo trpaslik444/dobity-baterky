@@ -79,6 +79,13 @@ class Frontend_Map {
             }
         }
 
+        // Načíst překlady
+        $translations = array();
+        if ( class_exists( '\\DB\\Translation_Manager' ) ) {
+            $translation_manager = \DB\Translation_Manager::get_instance();
+            $translations = $translation_manager->get_frontend_translations();
+        }
+        
         wp_localize_script( 'db-map', 'dbMapData', array(
             'restUrl'   => rest_url( 'db/v1/map' ),
             'searchUrl' => rest_url( 'db/v1/map-search' ),
@@ -87,25 +94,41 @@ class Frontend_Map {
             'restNonce' => wp_create_nonce( 'wp_rest' ),
             'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
             'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
-            'dbLogoUrl' => plugins_url( 'assets/DB_bez(2160px).svg', DB_PLUGIN_FILE ),
             'isMapPage' => function_exists('db_is_map_app_page') ? db_is_map_app_page() : false,
             'pwaEnabled' => class_exists('PWAforWP') ? true : false,
             'ajaxUrl'   => admin_url('admin-ajax.php'),
             'googleApiKey' => get_option('db_google_api_key'),
             'chargerIconColor' => get_option('db_charger_icon_color', '#049FE8'),
             'favorites' => $favorites_payload,
+            'translations' => $translations,
         ) );
         
     }
 
     public function render_shortcode( $atts ) {
+        // Načíst překlady
+        $translations = array();
+        if ( class_exists( '\\DB\\Translation_Manager' ) ) {
+            $translation_manager = \DB\Translation_Manager::get_instance();
+            $translations = $translation_manager->get_frontend_translations();
+        }
+        
         // Guard: nepovolaným nevyrenderovat HTML vůbec
         if ( ! function_exists('db_user_can_see_map') || ! db_user_can_see_map() ) {
             if ( ! is_user_logged_in() ) {
                 $login_url = wp_login_url( get_permalink() );
-                return '<p>Pro zobrazení mapy se prosím <a href="'. esc_url($login_url) .'">přihlas</a>.</p>';
+                $login_text = isset( $translations['translations']['login']['login_required'] ) 
+                    ? $translations['translations']['login']['login_required'] 
+                    : 'Pro zobrazení mapy se prosím';
+                $login_link = isset( $translations['translations']['login']['login_link'] ) 
+                    ? $translations['translations']['login']['login_link'] 
+                    : 'přihlas';
+                return '<p>' . esc_html( $login_text ) . ' <a href="'. esc_url($login_url) .'">' . esc_html( $login_link ) . '</a>.</p>';
             }
-            return '<p>Tento obsah je dostupný jen pro oprávněné uživatele.</p>';
+            $access_denied = isset( $translations['translations']['login']['access_denied'] ) 
+                ? $translations['translations']['login']['access_denied'] 
+                : 'Tento obsah je dostupný jen pro oprávněné uživatele.';
+            return '<p>' . esc_html( $access_denied ) . '</p>';
         }
 
         // Výchozí filtry (v base64 pro JS)

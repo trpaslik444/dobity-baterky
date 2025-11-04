@@ -1,6 +1,45 @@
 // db-map.js – moderní frontend pro Dobitý Baterky
 //
 
+// ===== PŘEKLADY =====
+// Globální objekt pro překlady
+let translations = {
+  common: {},
+  map: {},
+  filters: {},
+  cards: {},
+  menu: {},
+  navigation: {},
+  feedback: {},
+  legends: {},
+  login: {},
+  templates: {},
+  favorites: {}
+};
+
+// Inicializace překladů z dbMapData - načte se při DOMContentLoaded
+
+/**
+ * Funkce pro získání překladu
+ * @param {string} key - Klíč ve formátu "category.key" nebo "category.nested.key"
+ * @param {string} defaultVal - Výchozí hodnota, pokud překlad neexistuje
+ * @returns {string} Přeložený text
+ */
+function t(key, defaultVal = '') {
+  const keys = key.split('.');
+  let value = translations;
+  
+  for (const k of keys) {
+    if (value && typeof value === 'object' && value[k] !== undefined) {
+      value = value[k];
+    } else {
+      return defaultVal || key;
+    }
+  }
+  
+  return value;
+}
+
 // Performance monitoring
 const performanceMonitor = {
   startTime: performance.now(),
@@ -442,7 +481,7 @@ function ensureIsochronesLegend(displayTimes) {
     wrap.appendChild(legend);
   }
   legend.innerHTML = `
-    <span class="db-legend__title">Dochozí okruhy:</span>
+    <span class="db-legend__title">${t('legends.isochrones')}:</span>
     <span class="db-legend__item"><span class="db-legend__dot db-legend__dot--ok">●</span><span>~${displayTimes[0]} min</span></span>
     <span class="db-legend__item"><span class="db-legend__dot db-legend__dot--mid">●</span><span>~${displayTimes[1]} min</span></span>
     <span class="db-legend__item"><span class="db-legend__dot db-legend__dot--bad">●</span><span>~${displayTimes[2]} min</span></span>
@@ -507,8 +546,8 @@ function ensureLicenseModal() {
     modal.innerHTML = `
       <div class="db-license-modal__backdrop" data-close="true"></div>
       <div class="db-license-modal__content" role="document">
-        <button type="button" class="db-license-modal__close" aria-label="Zavřít">&times;</button>
-        <h2 class="db-license-modal__title">Licence</h2>
+        <button type="button" class="db-license-modal__close" aria-label="${t('common.close')}">&times;</button>
+        <h2 class="db-license-modal__title">${t('common.license')}</h2>
         <div class="db-license-modal__body"></div>
       </div>
     `;
@@ -605,7 +644,7 @@ function updateAttributionBar(options) {
     });
   }
 
-  bar.innerHTML = '<button type="button" class="db-license-trigger">Licence</button>';
+  bar.innerHTML = `<button type="button" class="db-license-trigger">${t('common.license')}</button>`;
   const trigger = bar.querySelector('.db-license-trigger');
   if (trigger) {
     trigger.addEventListener('click', (event) => {
@@ -653,16 +692,25 @@ try {
 
 document.addEventListener('DOMContentLoaded', async function() {
   // Init
+  // Inicializovat překlady
+  if (typeof dbMapData !== 'undefined' && dbMapData.translations && dbMapData.translations.translations) {
+    translations = dbMapData.translations.translations;
+  }
+  
   // Inicializovat globální proměnné pro isochrones
   if (!isochronesCache) {
     isochronesCache = new Map();
   }
   // Přidat CSS pro loading spinner
   const style = document.createElement('style');
+  const loadingText = translations?.map?.loading_bodies || 'Načítám body v okolí…';
   style.textContent = `
     @keyframes spin {
       0% { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+    body.db-loading::after {
+      content: '${loadingText}';
     }
   `;
   document.head.appendChild(style);
@@ -1202,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           <span class="db-favorites-folder__meta">
             <span class="db-favorites-folder__name">${name}</span>
             <span class="db-favorites-folder__count">${badge}</span>
-            ${canDelete ? `<button type=\"button\" class=\"db-favorites-folder__delete\" title=\"Smazat složku\" aria-label=\"Smazat složku\" data-folder-id=\"${folder.id}\">Smazat</button>` : ''}
+            ${canDelete ? `<button type=\"button\" class=\"db-favorites-folder__delete\" title=\"${t('favorites.delete_folder')}\" aria-label=\"${t('favorites.delete_folder')}\" data-folder-id=\"${folder.id}\">${t('favorites.delete')}</button>` : ''}
           </span>
         </button>
       </div>
@@ -1383,23 +1431,23 @@ document.addEventListener('DOMContentLoaded', async function() {
       favoritesPanel.innerHTML = `
         <div class="db-favorites-panel__header">
           <div>
-            <div class="db-favorites-panel__title">Favorites</div>
-            <div class="db-favorites-panel__subtitle">Organizujte si oblíbená místa</div>
+            <div class="db-favorites-panel__title">${t('favorites.title')}</div>
+            <div class="db-favorites-panel__subtitle">${t('favorites.subtitle')}</div>
           </div>
-          <button type="button" class="db-favorites-panel__close" id="db-favorites-close" aria-label="Zavřít">
+          <button type="button" class="db-favorites-panel__close" id="db-favorites-close" aria-label="${t('common.close')}">
             <span aria-hidden="true">&times;</span>
           </button>
         </div>
         <div class="db-favorites-panel__section" data-section="default">
-          <div class="db-favorites-panel__section-title">Default folders</div>
+          <div class="db-favorites-panel__section-title">${t('favorites.default_folders')}</div>
           <div class="db-favorites-panel__list" data-favorites-list="default"></div>
         </div>
         <div class="db-favorites-panel__section" data-section="custom">
-          <div class="db-favorites-panel__section-title">User folders</div>
+          <div class="db-favorites-panel__section-title">${t('favorites.user_folders')}</div>
           <div class="db-favorites-panel__list" data-favorites-list="custom"></div>
         </div>
-        <div class="db-favorites-empty-hint db-favorites-hidden" data-favorites-empty>Žádné vlastní složky zatím nemáte.</div>
-        <button type="button" class="db-favorites-exit db-favorites-hidden" id="db-favorites-exit">Zobrazit všechny body</button>
+        <div class="db-favorites-empty-hint db-favorites-hidden" data-favorites-empty>${t('favorites.empty_hint')}</div>
+        <button type="button" class="db-favorites-exit db-favorites-hidden" id="db-favorites-exit">${t('favorites.show_all')}</button>
       `;
       favoritesPanel.addEventListener('click', (e) => e.stopPropagation());
       document.body.appendChild(favoritesPanel);
@@ -1437,7 +1485,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (!defaultList || !customList) return;
 
     if (!favoritesState.fetchedOnce && favoritesState.isLoading) {
-      defaultList.innerHTML = '<div class="db-favorites-loading">Načítám…</div>';
+      defaultList.innerHTML = `<div class="db-favorites-loading">${t('favorites.loading')}</div>`;
       customList.innerHTML = '';
       return;
     }
@@ -1958,12 +2006,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       favoritesAssignModal.style.display = 'none';
       favoritesAssignModal.innerHTML = `
         <div class="db-favorites-assign__header">
-          <div class="db-favorites-assign__title">Favorites</div>
-          <button type="button" class="db-favorites-assign__close" aria-label="Zavřít">&times;</button>
+          <div class="db-favorites-assign__title">${t('common.favorites', 'Favorites')}</div>
+          <button type="button" class="db-favorites-assign__close" aria-label="${t('common.close')}">&times;</button>
         </div>
         <div class="db-favorites-assign__list"></div>
-        <button type="button" class="db-favorites-assign__create db-favorites-assign__action">Create a new folder</button>
-        <button type="button" class="db-favorites-assign__remove db-favorites-assign__action">Odebrat z oblíbených</button>
+        <button type="button" class="db-favorites-assign__create db-favorites-assign__action">${t('favorites.create_folder')}</button>
+        <button type="button" class="db-favorites-assign__remove db-favorites-assign__action">${t('favorites.remove_from_favorites')}</button>
       `;
       favoritesAssignModal.addEventListener('click', (event) => event.stopPropagation());
       document.body.appendChild(favoritesAssignModal);
@@ -1997,7 +2045,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (favoritesState.folders.size === 0) {
       const defaultFolder = {
         id: 'default',
-        name: 'Moje oblíbené',
+        name: t('favorites.my_favorites'),
         icon: '⭐️',
         limit: 200,
         type: 'default',
@@ -2696,7 +2744,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Kontrola, zda je Leaflet načten
   if (typeof L === 'undefined') {
-    mapDiv.innerHTML = '<div style="padding:2rem;text-align:center;color:#666;">Chyba: Mapa se nemohla načíst. Zkuste obnovit stránku.</div>';
+    mapDiv.innerHTML = `<div style="padding:2rem;text-align:center;color:#666;">Chyba: ${t('map.map_failed')}. ${t('map.try_refresh')}</div>`;
     return;
   }
      try {
@@ -2903,10 +2951,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Přidání LocateControl přesunuto níže po definici isMobile
   function makeClusterGroup(style) {
     const cluster = L.markerClusterGroup({
-      spiderfyOnMaxZoom: false,
+      spiderfyOnMaxZoom: true,
+      spiderfyDistanceMultiplier: 1.2,
       showCoverageOnHover: false,
       zoomToBoundsOnClick: false,
-      disableClusteringAtZoom: 13,
+      disableClusteringAtZoom: map && typeof map.getMaxZoom === 'function'
+        ? map.getMaxZoom() + 1
+        : 20,
       maxClusterRadius: 60, // Optimalizace: menší radius = méně markerů v clusteru
       chunkedLoading: true,
       chunkInterval: 100, // Optimalizace: rychlejší načítání
@@ -2963,8 +3014,35 @@ document.addEventListener('DOMContentLoaded', async function() {
         const bounds = childMarkers.length > 0
           ? L.latLngBounds(childMarkers.map(m => m.getLatLng()))
           : cluster.getBounds();
+
+        const currentZoom = map.getZoom ? map.getZoom() : 0;
+        const maxZoom = map.getMaxZoom ? map.getMaxZoom() : 19;
+        const disableAt = clusterGroup && clusterGroup.options && typeof clusterGroup.options.disableClusteringAtZoom === 'number'
+          ? clusterGroup.options.disableClusteringAtZoom
+          : null;
+
+        const shouldSpiderfy = () => {
+          if (!cluster.spiderfy) return false;
+          if (currentZoom >= maxZoom) return true;
+          if (disableAt && currentZoom >= disableAt - 1) return true;
+          if (!map.latLngToContainerPoint) return false;
+          if (childMarkers.length <= 1) return false;
+
+          const referencePoint = map.latLngToContainerPoint(childMarkers[0].getLatLng());
+          return childMarkers.slice(1).every(marker => {
+            const point = map.latLngToContainerPoint(marker.getLatLng());
+            return point.distanceTo(referencePoint) < 18;
+          });
+        };
+
+        if (shouldSpiderfy()) {
+          cluster.spiderfy();
+          return;
+        }
+
         // Jednorázové přiblížení bez rekurze; max na hranici rozpadnutí clusterů
-        map.fitBounds(bounds.pad(0.1), { padding: [40, 40], maxZoom: 13, animate: true });
+        const targetMaxZoom = disableAt && disableAt < maxZoom ? disableAt - 1 : maxZoom;
+        map.fitBounds(bounds.pad(0.1), { padding: [40, 40], maxZoom: targetMaxZoom, animate: true });
       } catch(_) {}
     });
   }
@@ -3013,19 +3091,19 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (isMobile) {
     // Mobilní verze - s tlačítkem "Moje poloha" a lupou
     topbar.innerHTML = `
-      <button class="db-map-topbar-btn" title="Menu" type="button" id="db-menu-toggle">
+      <button class="db-map-topbar-btn" title="${t('map.menu')}" type="button" id="db-menu-toggle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Vyhledávání" type="button" id="db-search-toggle">
+      <button class="db-map-topbar-btn" title="${t('map.search')}" type="button" id="db-search-toggle">
         <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m22.241 24-7.414-7.414c-1.559 1.169-3.523 1.875-5.652 1.885h-.002c-.032 0-.07.001-.108.001-5.006 0-9.065-4.058-9.065-9.065 0-.038 0-.076.001-.114v.006c0-5.135 4.163-9.298 9.298-9.298s9.298 4.163 9.298 9.298c-.031 2.129-.733 4.088-1.904 5.682l.019-.027 7.414 7.414zm-12.942-21.487c-3.72.016-6.73 3.035-6.73 6.758 0 3.732 3.025 6.758 6.758 6.758s6.758-3.025 6.758-6.758c0-1.866-.756-3.555-1.979-4.778-1.227-1.223-2.92-1.979-4.79-1.979-.006 0-.012 0-.017 0h.001z"/></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Seznam" type="button" id="db-list-toggle">
+      <button class="db-map-topbar-btn" title="${t('map.list')}" type="button" id="db-list-toggle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Moje poloha" type="button" id="db-locate-btn">
+      <button class="db-map-topbar-btn" title="${t('map.my_location')}" type="button" id="db-locate-btn">
         <svg width="20px" height="20px" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M249.6 417.088l319.744 43.072 39.168 310.272L845.12 178.88 249.6 417.088zm-129.024 47.168a32 32 0 01-7.68-61.44l777.792-311.04a32 32 0 0141.6 41.6l-310.336 775.68a32 32 0 01-61.44-7.808L512 516.992l-391.424-52.736z"/></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-filter-btn">
+      <button class="db-map-topbar-btn" title="${t('map.filters')}" type="button" id="db-filter-btn">
         <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
       </button>
       ${getFavoritesButtonHtml()}
@@ -3033,19 +3111,19 @@ document.addEventListener('DOMContentLoaded', async function() {
   } else {
     // Desktop verze - bez tlačítka "Moje poloha" (je v Leaflet controls)
     topbar.innerHTML = `
-      <button class="db-map-topbar-btn" title="Menu" type="button" id="db-menu-toggle">
+      <button class="db-map-topbar-btn" title="${t('map.menu')}" type="button" id="db-menu-toggle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
       </button>
       <form class="db-map-searchbox" style="margin:0;flex:1;min-width:0;">
-        <input type="text" id="db-map-search-input" placeholder="Objevujeme víc než jen cíl cesty..." autocomplete="off" style="width:100%;min-width:320px;font-size:clamp(0.8rem, 2.5vw, 1rem);padding:0.6em 0.8em;border:none;border-radius:8px;box-sizing:border-box;background:transparent;outline:none;" />
+        <input type="text" id="db-map-search-input" placeholder="${t('map.search_placeholder')}" autocomplete="off" style="width:100%;min-width:320px;font-size:clamp(0.8rem, 2.5vw, 1rem);padding:0.6em 0.8em;border:none;border-radius:8px;box-sizing:border-box;background:transparent;outline:none;" />
         <button type="submit" id="db-map-search-btn" tabindex="0" style="background:none;border:none;padding:0;cursor:pointer;outline:none;display:flex;align-items:center;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
       </form>
-      <button class="db-map-topbar-btn" title="Seznam" type="button" id="db-list-toggle">
+      <button class="db-map-topbar-btn" title="${t('map.list')}" type="button" id="db-list-toggle">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
       </button>
-      <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-filter-btn">
+      <button class="db-map-topbar-btn" title="${t('map.filters')}" type="button" id="db-filter-btn">
         <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
       </button>
       ${getFavoritesButtonHtml()}
@@ -3160,8 +3238,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       menuPanel.className = 'db-menu-panel';
       menuPanel.innerHTML = `
           <div class="db-menu-header">
-            <div class="db-menu-title">DB mapa</div>
-            <button class="db-menu-close" type="button" title="Zavřít menu">
+            <div class="db-menu-title">${t('map.db_map')}</div>
+            <button class="db-menu-close" type="button" title="${t('menu.close_menu')}">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="18" y1="6" x2="6" y2="18"></line>
                 <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -3172,31 +3250,31 @@ document.addEventListener('DOMContentLoaded', async function() {
             <div class="db-menu-toggle-section db-account-section">
               ${ (typeof dbMapData !== 'undefined' && dbMapData.isLoggedIn) ? `
                 <div class="db-account-item">
-                  <div class="db-account-user">${dbMapData.currentUser ? String(dbMapData.currentUser) : 'Uživatel'}</div>
+                  <div class="db-account-user">${dbMapData.currentUser ? String(dbMapData.currentUser) : t('common.user')}</div>
                   <div class="db-account-actions">
-                    <a class="db-account-link" href="${dbMapData.accountUrl}" target="_self" rel="nofollow">Můj účet</a>
-                    ${ dbMapData.logoutUrl ? ('<a class="db-account-link" href="' + dbMapData.logoutUrl + '" target="_self" rel="nofollow">Odhlásit</a>') : '' }
+                    <a class="db-account-link" href="${dbMapData.accountUrl}" target="_self" rel="nofollow">${t('common.my_account')}</a>
+                    ${ dbMapData.logoutUrl ? ('<a class="db-account-link" href="' + dbMapData.logoutUrl + '" target="_self" rel="nofollow">' + t('common.logout') + '</a>') : '' }
                   </div>
                 </div>
               ` : `
                 <div class="db-account-item">
-                  <div class="db-account-user">Nepřihlášený uživatel</div>
+                  <div class="db-account-user">${t('common.not_logged_in')}</div>
                   <div class="db-account-actions">
-                    <a class="db-account-link" href="${(typeof dbMapData !== 'undefined' && dbMapData.loginUrl) ? dbMapData.loginUrl : '/wp-login.php'}" target="_self" rel="nofollow">Přihlásit se</a>
+                    <a class="db-account-link" href="${(typeof dbMapData !== 'undefined' && dbMapData.loginUrl) ? dbMapData.loginUrl : '/wp-login.php'}" target="_self" rel="nofollow">${t('common.login')}</a>
                   </div>
                 </div>
               ` }
             </div>
             
             <div class="db-menu-toggle-section">
-              <div class="db-menu-section-title">Nastavení mapy</div>
+              <div class="db-menu-section-title">${t('menu.map_settings')}</div>
               <div class="db-menu-toggle-item">
                 <label class="db-menu-toggle-label" for="db-auto-load-toggle-menu">
                   <input type="checkbox" class="db-menu-toggle-checkbox" id="db-auto-load-toggle-menu" />
-                  <span class="db-menu-toggle-text">Automatické načítání dat</span>
+                  <span class="db-menu-toggle-text">${t('menu.auto_load')}</span>
                 </label>
               </div>
-              <div class="db-menu-help-text">Pokud je vypnuto, data se načítají pouze po kliknutí na tlačítko</div>
+              <div class="db-menu-help-text">${t('menu.auto_load_help')}</div>
             </div>
           </div>
         `;
@@ -3357,7 +3435,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const notification = L.control({position: 'topright'});
         notification.onAdd = function() {
           const div = L.DomUtil.create('div', 'db-geolocation-notification');
-          div.innerHTML = '<div style="background: #ff9800; color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📍 Poloha není dostupná</div>';
+          div.innerHTML = `<div style="background: #ff9800; color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">📍 ${t('map.location_unavailable')}</div>`;
           return div;
         };
         notification.addTo(map);
@@ -3386,13 +3464,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   filterPanel.innerHTML = `
     <div class="db-filter-modal__backdrop" data-close="true"></div>
     <div class="db-filter-modal__content" role="document">
-      <button type="button" class="db-filter-modal__close" aria-label="Zavřít">&times;</button>
-      <h2 class="db-filter-modal__title">Filtry</h2>
+      <button type="button" class="db-filter-modal__close" aria-label="${t('common.close')}">&times;</button>
+      <h2 class="db-filter-modal__title">${t('filters.title')}</h2>
       <div class="db-filter-modal__body">
-        <button type="button" id="db-filter-reset" class="db-filter-modal__reset" disabled>Resetovat filtry (0)</button>
+        <button type="button" id="db-filter-reset" class="db-filter-modal__reset" disabled>${t('filters.reset')} (0)</button>
         
         <div class="db-filter-section">
-          <div class="db-filter-section__title">Výkon (kW)</div>
+          <div class="db-filter-section__title">${t('filters.power')}</div>
           <div class="db-filter-power-range">
             <div class="db-filter-power-track">
               <div class="db-filter-power-fill" id="db-power-range-fill"></div>
@@ -3407,13 +3485,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         </div>
 
         <div class="db-filter-section">
-          <div class="db-filter-section__title">Typ konektoru</div>
+          <div class="db-filter-section__title">${t('filters.connector_type')}</div>
           <div id="db-filter-connector" class="db-filter-connector-list"></div>
         </div>
 
         <div class="db-filter-section">
-          <div class="db-filter-section__title">Provozovatel</div>
-          <button type="button" id="db-open-provider-modal" class="db-filter-provider-btn">Vybrat provozovatele...</button>
+          <div class="db-filter-section__title">${t('filters.provider')}</div>
+          <button type="button" id="db-open-provider-modal" class="db-filter-provider-btn">${t('filters.select_provider')}</button>
         </div>
 
         <!-- Ostatní filtry dočasně zakomentovány
@@ -3431,14 +3509,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         <div class="db-filter-section">
           <label class="db-filter-checkbox">
             <input type="checkbox" id="db-filter-free" />
-            <span>Zdarma</span>
+            <span>${t('filters.free')}</span>
           </label>
         </div>
 
         <div class="db-filter-section">
           <label class="db-filter-checkbox">
             <input type="checkbox" id="db-map-toggle-recommended" />
-            <span>Jen DB doporučuje</span>
+            <span>${t('filters.db_recommended')}</span>
           </label>
         </div>
       </div>
@@ -6450,7 +6528,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const infoItems = [];
       
       if (p.opening_hours) {
-        infoItems.push(`<div style="margin: 4px 0;"><strong>Otevírací doba:</strong> ${p.opening_hours}</div>`);
+        infoItems.push(`<div style="margin: 4px 0;"><strong>${t('cards.opening_hours')}:</strong> ${p.opening_hours}</div>`);
       }
       
       if (p.station_max_power_kw) {
@@ -6476,7 +6554,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const ratingValue = p.post_type === 'poi' ? (p.poi_rating || p.rating) : p.rating;
     const ratingCount = p.post_type === 'poi' ? (p.poi_user_rating_count || '') : (p.user_rating_count || '');
     if (ratingValue) {
-      const countText = ratingCount ? `<span style="font-size:12px;color:#684c0f;margin-left:8px;">(${ratingCount} hodnocení)</span>` : '';
+      const countText = ratingCount ? `<span style="font-size:12px;color:#684c0f;margin-left:8px;">(${ratingCount} ${t('cards.reviews', 'reviews')})</span>` : '';
       const rating = parseFloat(ratingValue);
       
       // Vytvořit HTML pro hvězdy s částečným vyplněním
@@ -6497,7 +6575,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       ratingInfo = `
         <div style="margin: 16px; padding: 12px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-          <div style="font-weight: 600; color: #856404;">Hodnocení</div>
+          <div style="font-weight: 600; color: #856404;">${t('cards.rating', 'Rating')}</div>
           <div style="color: #856404; margin-top: 4px; display:flex;align-items:center;gap:6px;">
             <span style="display: flex; align-items: center; gap: 2px;">${starsHtml} ${rating.toFixed(1)}</span>
             ${countText}
@@ -6618,13 +6696,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (lat && lng) {
       nearbyPOISection = `
         <div class="db-detail-box">
-          <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">${p.post_type === 'charging_location' ? 'Blízká zajímavá místa' : 'Blízké nabíjecí stanice'}</div>
+          <div style="font-weight: 700; color: #049FE8; margin-bottom: 12px; font-size: 1.1em;">${p.post_type === 'charging_location' ? t('cards.nearby_interesting') : t('cards.nearby_charging')}</div>
           
           <!-- Detail seznam -->
           <div id="nearby-pois-list" class="db-nearby-list">
             <div style="text-align: center; padding: 20px;">
               <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
-              <div style="font-weight: 500;">Načítání blízkých míst...</div>
+              <div style="font-weight: 500;">${t('common.loading')}...</div>
             </div>
           </div>
         </div>
@@ -6723,7 +6801,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     detailModal.innerHTML = `
       <div class="modal-card">
-        <button class="close-btn" aria-label="Zavřít" type="button">✕</button>
+        <button class="close-btn" aria-label="${t('common.close')}" type="button">✕</button>
         <div class="hero">
           ${img}
         </div>
@@ -6744,9 +6822,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         ${photosSection}
         ${nearbyPOISection}
         <div class="actions">
-          <button class="btn-outline" type="button" data-db-action="open-navigation-detail" style="margin-bottom: 8px;">Navigace (3 aplikace)</button>
+          <button class="btn-outline" type="button" data-db-action="open-navigation-detail" style="margin-bottom: 8px;">${t('navigation.title', 'Navigation')} (3 ${t('navigation.apps', 'apps')})</button>
         </div>
-        <div class="desc">${p.description || '<span style="color:#aaa;">(Popis zatím není k dispozici)</span>'}</div>
+        <div class="desc">${p.description || `<span style="color:#aaa;">(${t('cards.no_description')})</span>`}</div>
       </div>`;
 
     if (favoritesState.enabled) {
@@ -7564,11 +7642,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   function getDbLogoHtml(size) {
-    const url = (dbMapData && dbMapData.dbLogoUrl) ? dbMapData.dbLogoUrl : null;
     // Bílý podklad pro čitelnost, oranžový obrys dle brandbooku - čtvercový
-    if (!url) return '<div style="width:'+size+'px;height:'+size+'px;border-radius:4px;background:#ffffff;border:2px solid #FF6A4B;color:#FF6A4B;display:flex;align-items:center;justify-content:center;font-weight:700;pointer-events:none;">DB</div>';
+    const logoSvg = '<svg id="Vrstva_1" data-name="Vrstva 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2160 2160"><rect fill="#fef9df" x="2.59" y="-4.68" width="2166.26" height="2168.05"/><g><g><path fill="#049FE8" d="M673.43,1162.81l487.73-536.65c-6.54-79.14-28.79-148.76-66.82-208.79-45.94-72.5-109.75-128.72-191.41-168.69-81.68-39.95-176.33-59.95-283.98-59.95H158.18v975.91h460.78c18.55,0,36.7-.64,54.48-1.82ZM433.8,944.35V409h174.01c55.68,0,104.17,10.46,145.47,31.37,41.29,20.91,73.54,51.37,96.75,91.32,23.19,39.97,34.8,88.31,34.8,144.99s-11.62,103.86-34.8,144.3c-23.21,40.43-55.46,71.1-96.75,92.01-41.31,20.91-89.79,31.37-145.47,31.37h-174.01Z"/><g id="ZgxFBL"><polygon fill="#FCE67D" points="1437.12 353.63 707.35 1158.94 1021.77 1154.04 687.52 1792.66 1465 983.72 1113.45 983.72 1437.12 353.63"/></g></g><path fill="#FFACC4" d="M1959.36,1554.4c-28.32-39.49-67.99-69.71-119.02-90.62-5.8-2.38-11.76-4.58-17.79-6.69,38.68-20.7,69.46-47.29,92.27-79.75,26.45-37.64,39.68-81.56,39.68-131.75,0-76.2-31.57-137.78-94.66-184.73-63.12-46.92-158.69-70.41-286.77-70.41h-87.61l-410.75,434.4v541.5h526.2c130.86,0,230.39-23.46,298.6-70.41,68.21-46.92,102.32-112.69,102.32-197.27,0-56.68-14.16-104.78-42.46-144.3ZM1536.87,1189.83c46.39,0,81.19,7.67,104.41,23,23.18,15.34,34.8,38.82,34.8,70.41s-11.62,55.31-34.8,71.1c-23.21,15.81-58.01,23.7-104.41,23.7h-189.32v-188.21h189.32ZM1686.52,1742.62c-24.61,16.27-60.56,24.4-107.89,24.4h-231.09v-197.97h231.09c47.33,0,83.28,8.15,107.89,24.4,24.58,16.27,36.89,41.13,36.89,74.59s-12.31,58.34-36.89,74.59Z"/></g></svg>';
+    const logoSize = Math.max(10, Math.round(size*0.78));
     return '<div style="width:'+size+'px;height:'+size+'px;border-radius:4px;background:#ffffff;border:2px solid #FF6A4B;display:flex;align-items:center;justify-content:center;pointer-events:none;">'
-         +   '<img src="'+encodeURI(url)+'" style="width:'+(Math.max(10, Math.round(size*0.78)))+'px;height:'+(Math.max(10, Math.round(size*0.78)))+'px;object-fit:contain;display:block;" alt="DB" />'
+         +   '<div style="width:'+logoSize+'px;height:'+logoSize+'px;display:flex;align-items:center;justify-content:center;">'
+         +     logoSvg
+         +   '</div>'
          + '</div>';
   }
   function getFavoriteBadgeHtml(size) {
@@ -8461,10 +8541,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         distHtml = `<div class="db-map-card-distance"><span style="font-weight:700;font-size:1.3em;">${distKm}</span> <span style="font-weight:400;font-size:1em;">km</span></div>`;
       }
       // Akce: navigace a info SVG ikony pod sebe
-      const navIcon = `<button class="db-map-card-action-btn" title="Navigovat">`
+      const navIcon = `<button class="db-map-card-action-btn" title="${t('common.navigate')}">`
         + `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 19 21 12 17 5 21 12 2"/><line x1="12" y1="17" x2="12" y2="22"/></svg>`
         + `</button>`;
-      const infoIcon = `<button class="db-map-card-action-btn" title="Více informací">`
+      const infoIcon = `<button class="db-map-card-action-btn" title="${t('common.more_info')}">`
         + `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="8"/></svg>`
         + `</button>`;
       // Po vykreslení karty zavoláme loader až po vložení HTML níže
@@ -8534,32 +8614,32 @@ document.addEventListener('DOMContentLoaded', async function() {
                       <div class="db-map-card-content">
               ${titleHtml}
               ${typeHtml}
-              <div class="db-map-card-desc">${p.description || '<span style="color:#aaa;">(Popis zatím není k&nbsp;dispozici)</span>'}</div>
+              <div class="db-map-card-desc">${p.description || `<span style="color:#aaa;">(${t('cards.no_description')})</span>`}</div>
               ${p.post_type === 'poi' ? (() => {
                 let additionalInfo = '';
                 
                 // Otevírací doba (aktuální stav)
                 if (p.poi_opening_hours) {
                   const isOpen = checkIfOpen(p.poi_opening_hours);
-                  const statusText = isOpen ? 'Otevřeno' : 'Zavřeno';
+                  const statusText = isOpen ? t('common.open') : t('common.closed');
                   const statusColor = isOpen ? '#10b981' : '#ef4444';
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em;"><strong>Otevírací doba:</strong> <span style="color: ${statusColor}; font-weight: 600;">${statusText}</span></div>`;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em;"><strong>${t('cards.opening_hours')}:</strong> <span style="color: ${statusColor}; font-weight: 600;">${statusText}</span></div>`;
                 }
                 
                 // Cena (price level)
                 if (p.poi_price_level) {
                   const priceLevel = '€'.repeat(parseInt(p.poi_price_level) || 1);
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Cena:</strong> ${priceLevel}</div>`;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>${t('cards.price')}:</strong> ${priceLevel}</div>`;
                 }
                 
                 // Telefon
                 if (p.poi_phone) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Telefon:</strong> <a href="tel:${p.poi_phone}" style="color: #049FE8; text-decoration: none;">${p.poi_phone}</a></div>`;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>${t('cards.phone')}:</strong> <a href="tel:${p.poi_phone}" style="color: #049FE8; text-decoration: none;">${p.poi_phone}</a></div>`;
                 }
                 
                 // Web
                 if (p.poi_website) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Web:</strong> <a href="${p.poi_website}" target="_blank" rel="noopener" style="color: #049FE8; text-decoration: none;">${p.poi_website.replace(/^https?:\/\//, '')}</a></div>`;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>${t('cards.website')}:</strong> <a href="${p.poi_website}" target="_blank" rel="noopener" style="color: #049FE8; text-decoration: none;">${p.poi_website.replace(/^https?:\/\//, '')}</a></div>`;
                 }
                 
                 return additionalInfo ? `<div class="db-map-card-amenities" style="margin-top:0.5em;padding-top:0.5em;border-top:1px solid #f0f0f0;">${additionalInfo}</div>` : '';
@@ -8569,7 +8649,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 <div class="sheet-nearby-list" data-feature-id="${p.id}">
                   <div style="text-align: center; padding: 8px; color: #049FE8; font-size: 0.8em;">
                     <div style="font-size: 16px; margin-bottom: 4px;">⏳</div>
-                    <div>Načítání...</div>
+                    <div>${t('common.loading')}</div>
                   </div>
                 </div>
               </div>
@@ -8579,22 +8659,22 @@ document.addEventListener('DOMContentLoaded', async function() {
                 // Služby
                 if (p.amenities && Array.isArray(p.amenities)) {
                   const serviceNames = p.amenities.map(a => a.name || a).join(', ');
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Služby:</strong> ${serviceNames}</div>`;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>${t('cards.services')}:</strong> ${serviceNames}</div>`;
                 }
                 
                 // Cena
                 if (p.rv_price) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Cena:</strong> ${p.rv_price}</div>`;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>${t('cards.price')}:</strong> ${p.rv_price}</div>`;
                 }
                 
                 // Telefon
                 if (p.rv_phone) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Telefon:</strong> <a href="tel:${p.rv_phone}" style="color: #049FE8; text-decoration: none;">${p.rv_phone}</a></div>`;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>${t('cards.phone')}:</strong> <a href="tel:${p.rv_phone}" style="color: #049FE8; text-decoration: none;">${p.rv_phone}</a></div>`;
                 }
                 
                 // Web
                 if (p.rv_website) {
-                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>Web:</strong> <a href="${p.rv_website}" target="_blank" rel="noopener" style="color: #049FE8; text-decoration: none;">${p.rv_website.replace(/^https?:\/\//, '')}</a></div>`;
+                  additionalInfo += `<div style="margin: 4px 0; font-size: 0.85em; color: #666;"><strong>${t('cards.website')}:</strong> <a href="${p.rv_website}" target="_blank" rel="noopener" style="color: #049FE8; text-decoration: none;">${p.rv_website.replace(/^https?:\/\//, '')}</a></div>`;
                 }
                 
                 return additionalInfo ? `<div class="db-map-card-amenities" style="margin-top:0.5em;padding-top:0.5em;border-top:1px solid #f0f0f0;">${additionalInfo}</div>` : '';
@@ -8603,12 +8683,12 @@ document.addEventListener('DOMContentLoaded', async function() {
               <!-- Blízké body - zobrazit pouze pokud jsou data k dispozici -->
               <div class="db-map-card-nearby" style="margin-top:0.5em;padding-top:0.5em;border-top:1px solid #f0f0f0;display:none;">
                 <div style="font-size:0.85em;color:#666;margin-bottom:0.5em;font-weight:600;">
-                  ${p.post_type === 'charging_location' ? 'Blízká zajímavá místa' : 'Blízké nabíjecí stanice'}
+                  ${p.post_type === 'charging_location' ? t('cards.nearby_interesting') : t('cards.nearby_charging')}
                 </div>
                 <div class="db-map-card-nearby-list" data-feature-id="${p.id}" style="min-height:20px;color:#999;font-size:0.8em;">
                   <div style="text-align:center;padding:10px;">
                     <div style="font-size:16px;margin-bottom:4px;">⏳</div>
-                    <div>Načítání...</div>
+                    <div>${t('common.loading')}</div>
                   </div>
                 </div>
               </div>
@@ -8658,14 +8738,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       card.querySelectorAll('.db-map-card-action-btn').forEach(btn => {
         btn.addEventListener('click', (ev) => {
           const title = btn.getAttribute('title');
-          if ((title === 'Více informací' || title === 'Detail')) {
+          if ((title === t('common.more_info') || title === 'Detail')) {
             ev.stopPropagation();
             if (window.innerWidth > 900 && p.permalink) {
               window.open(p.permalink, '_blank');
             } else {
               openDetailModal(f);
             }
-          } else if (title === 'Navigovat') {
+          } else if (title === t('common.navigate')) {
             // Otevřít nabídku možností navigace
             ev.stopPropagation();
             const lat = f.geometry.coordinates[1];
@@ -8680,9 +8760,9 @@ document.addEventListener('DOMContentLoaded', async function() {
               menu.style.cssText = 'position:absolute;top:100%;left:0;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.12);padding:6px;display:none;min-width:170px;z-index:10000;';
               const linkStyle = 'display:block;padding:8px 10px;color:#111;text-decoration:none;border-radius:6px;';
               menu.innerHTML = `
-                <a class="db-nav-item" href="${gmapsUrl(lat, lng)}" target="_blank" rel="noopener" style="${linkStyle}">Google Maps</a>
-                <a class="db-nav-item" href="${appleMapsUrl(lat, lng)}" target="_blank" rel="noopener" style="${linkStyle}">Apple Maps</a>
-                <a class="db-nav-item" href="${mapyCzUrl(lat, lng)}" target="_blank" rel="noopener" style="${linkStyle}">Mapy.cz</a>
+                <a class="db-nav-item" href="${gmapsUrl(lat, lng)}" target="_blank" rel="noopener" style="${linkStyle}">${t('navigation.google_maps')}</a>
+                <a class="db-nav-item" href="${appleMapsUrl(lat, lng)}" target="_blank" rel="noopener" style="${linkStyle}">${t('navigation.apple_maps')}</a>
+                <a class="db-nav-item" href="${mapyCzUrl(lat, lng)}" target="_blank" rel="noopener" style="${linkStyle}">${t('navigation.mapy_cz')}</a>
               `;
               wrapper.appendChild(menu);
               // jednoduchý hover efekt
@@ -8821,7 +8901,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   class SmartLoadingManager {
     constructor() {
       this.manualLoadButton = null;
-      this.loadingIndicator = null;
       this.autoLoadEnabled = true;
       this.outsideLoadedArea = false;
       this.lastCheckTime = 0;
@@ -8830,7 +8909,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     init() {
       this.createManualLoadButton();
-      this.createLoadingIndicator();
       this.loadUserPreferences();
     }
     
@@ -8842,7 +8920,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         <div class="db-manual-load-btn">
           <button id="db-load-new-area-btn" onclick="window.smartLoadingManager.loadNewAreaData()">
             <span class="icon">📍</span>
-            <span class="text">Načíst místa v okolí</span>
+            <span class="text">${t('map.load_nearby', 'Load places nearby')}</span>
           </button>
         </div>
       `;
@@ -8854,23 +8932,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       this.hideManualLoadButton();
-    }
-    
-    createLoadingIndicator() {
-      this.loadingIndicator = document.createElement('div');
-      this.loadingIndicator.id = 'db-loading-indicator';
-      this.loadingIndicator.className = 'db-loading-indicator';
-      this.loadingIndicator.innerHTML = `
-        <div class="db-loading-spinner"></div>
-        <span>Načítám nová místa...</span>
-      `;
-      
-      const mapContainer = document.querySelector('.leaflet-container');
-      if (mapContainer) {
-        mapContainer.appendChild(this.loadingIndicator);
-      }
-      
-      this.hideLoadingIndicator();
     }
     
     loadUserPreferences() {
@@ -8907,22 +8968,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
     
-    showLoadingIndicator() {
-      if (this.loadingIndicator) {
-        this.loadingIndicator.style.display = 'flex';
-      }
-    }
-    
-    hideLoadingIndicator() {
-      if (this.loadingIndicator) {
-        this.loadingIndicator.style.display = 'none';
-      }
-    }
-    
     async loadNewAreaData() {
       if (!map) return;
       
-      this.showLoadingIndicator();
+      // Použít globální body.db-loading
+      document.body.classList.add('db-loading');
       this.hideManualLoadButton();
       
       try {
@@ -8935,7 +8985,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.error('[DB Map] Error loading new area:', error);
         this.showManualLoadButton(); // Zobrazit tlačítko znovu při chybě
       } finally {
-        this.hideLoadingIndicator();
+        document.body.classList.remove('db-loading');
       }
     }
     
@@ -10879,10 +10929,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   };
   
   window.testLoadingIndicator = function() {
-    if (window.smartLoadingManager) {
-      window.smartLoadingManager.showLoadingIndicator();
-      setTimeout(() => window.smartLoadingManager.hideLoadingIndicator(), 3000);
-    }
+    // Použít globální body.db-loading
+    document.body.classList.add('db-loading');
+    setTimeout(() => document.body.classList.remove('db-loading'), 3000);
   };
   
   // Pravidelné čištění starého cache
