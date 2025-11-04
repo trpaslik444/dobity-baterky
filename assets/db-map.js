@@ -6038,6 +6038,14 @@ document.addEventListener('DOMContentLoaded', async function() {
    * Univerzální fetch funkce pro nearby data - používá on-demand systém
    */
   async function fetchNearby(originId, type, limit) {
+    // Pokud jsme již zjistili, že on-demand endpoint vyžaduje autorizaci a nemáme ji,
+    // vynecháme další pokusy a rovnou použijeme fallback.
+    if (window.dbNearbyUnauthorized === true) {
+      try { console.warn('[DB Map][Nearby] skip on-demand (unauthorized cached)'); } catch(_) {}
+      const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
+      const res = await fetch(url);
+      return await res.json();
+    }
     // Nejdříve zkusit získat data z on-demand status endpointu
     try {
       const statusResponse = await fetch(`/wp-json/db/v1/ondemand/status/${originId}?type=${type}`, {
@@ -6061,7 +6069,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || ''
         },
         body: JSON.stringify({
           point_id: originId,
@@ -6075,6 +6084,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (processData.status === 'processing' || processData.status === 'completed') {
           return processData;
         }
+      } else if (processResponse.status === 401 || processResponse.status === 403) {
+        // Zapamatovat si a nezkoušet pořád dokola
+        window.dbNearbyUnauthorized = true;
+        try { console.warn('[DB Map][Nearby] on-demand unauthorized, falling back', { status: processResponse.status }); } catch(_) {}
+        const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
+        const res = await fetch(url);
+        return await res.json();
       }
     } catch (error) {
       console.warn('[DB Map] On-demand process failed:', error);
