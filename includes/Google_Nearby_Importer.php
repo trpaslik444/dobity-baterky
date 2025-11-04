@@ -329,7 +329,8 @@ SVG;
             'includedTypes' => $includedTypes,
             'maxResultCount' => (int) ($config['max_results'] ?? self::DEFAULT_MAX_RESULTS),
             'languageCode' => get_locale() ?: 'cs',
-            'rankPreference' => 'RELEVANCE',
+            // Places v1 supports POPULARITY | DISTANCE; RELEVANCE is invalid
+            'rankPreference' => 'POPULARITY',
             'locationRestriction' => [
                 'circle' => [
                     'center' => [
