@@ -1090,6 +1090,8 @@ class REST_Nearby {
                 'opening_hours' => get_post_meta($post->ID, '_db_opening_hours', true),
                 'price' => get_post_meta($post->ID, '_db_price', true),
                 'description' => get_post_meta($post->ID, '_db_description', true),
+                'permalink' => get_permalink($post->ID),
+                'link' => get_permalink($post->ID),
             ];
             
             // Přidat souřadnice
