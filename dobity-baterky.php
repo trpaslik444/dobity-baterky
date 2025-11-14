@@ -129,8 +129,13 @@ if ( ! function_exists('db_user_can_see_map') ) {
             return true;
         }
         
+        // Načíst plugin.php, pokud není načteno (potřeba pro is_plugin_active na front-endu)
+        if ( ! function_exists('is_plugin_active') ) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+        
         // Pokud je Members plugin aktivní, kontrolujeme 'access_app' capability
-        if ( is_plugin_active('members/members.php') ) {
+        if ( function_exists('is_plugin_active') && is_plugin_active('members/members.php') ) {
             $cap = db_required_capability();
             
             // Debug informace (pouze pro adminy)

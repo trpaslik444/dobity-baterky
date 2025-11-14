@@ -90,7 +90,11 @@ class REST_Map {
                     $can_see = db_user_can_see_map();
                     // Pokud funkce vrací false, ale uživatel není přihlášen a není Members plugin,
                     // povolit přístup (veřejný přístup)
-                    if ( ! $can_see && ! is_user_logged_in() && ! is_plugin_active('members/members.php') ) {
+                    // Načíst plugin.php, pokud není načteno (potřeba pro is_plugin_active na front-endu)
+                    if ( ! function_exists('is_plugin_active') ) {
+                        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+                    }
+                    if ( ! $can_see && ! is_user_logged_in() && function_exists('is_plugin_active') && ! is_plugin_active('members/members.php') ) {
                         return true;
                     }
                     return $can_see;
