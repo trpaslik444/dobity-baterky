@@ -579,6 +579,9 @@ class REST_Map {
                     'modified' => $post->post_modified,
                     'author' => $post->post_author,
                     'status' => $post->post_status,
+                    // URL pro otevření detailu
+                    'permalink' => get_permalink($post->ID),
+                    'link' => get_permalink($post->ID),
                 ];
 
                 if ($has_ids_filter || !empty($favorite_assignments)) {
