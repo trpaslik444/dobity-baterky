@@ -422,7 +422,9 @@
     }
 
     function renderDetailIsochrones(map, lat, lng, focusBounds) {
-        fetch(`/wp-json/db/v1/isochrones?lat=${lat}&lng=${lng}`)
+        const restBase = (window.DBDetail && window.DBDetail.restUrl) || '/wp-json/db/v1/';
+        const isochronesUrl = restBase.replace(/\/$/, '') + '/isochrones?lat=' + encodeURIComponent(lat) + '&lng=' + encodeURIComponent(lng);
+        fetch(isochronesUrl)
             .then(function(response) {
                 if (!response.ok) {
                     throw new Error(response.statusText || 'isochrones_fetch_failed');
@@ -486,7 +488,9 @@
             headers['X-WP-Nonce'] = restNonce;
         }
 
-        fetch(`/wp-json/db/v1/nearby?origin_id=${postId}&type=poi&limit=6`, { headers: headers })
+        const restBase = (window.DBDetail && window.DBDetail.restUrl) || '/wp-json/db/v1/';
+        const nearbyUrl = restBase.replace(/\/$/, '') + '/nearby?origin_id=' + encodeURIComponent(postId) + '&type=poi&limit=6';
+        fetch(nearbyUrl, { headers: headers })
             .then(function(response) {
                 if (!response.ok) {
                     throw new Error(response.statusText || 'nearby_fetch_failed');

@@ -321,6 +321,7 @@ window.DBDetail = <?php echo wp_json_encode(array(
     'lat'       => $lat !== '' ? (float) $lat : null,
     'lng'       => $lng !== '' ? (float) $lng : null,
     'restNonce' => $rest_nonce,
+    'restUrl'   => esc_url_raw(rest_url('db/v1/')),
 )); ?>;
 </script>
 <script src="<?php echo esc_url(DB_PLUGIN_URL . 'assets/single-templates.js'); ?>"></script>

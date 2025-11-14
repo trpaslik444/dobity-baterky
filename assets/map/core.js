@@ -100,6 +100,18 @@ function initEventDelegation() {
           openFavoritesAssignModal(featureId, props);
         }
         break;
+      case 'open-admin-edit':
+        // Handler je přidán přímo v detail modalu, ale pro případ, že by se volal z jiného místa
+        if (featureId) {
+          const feature = window.features?.find(f => f.properties.id == featureId);
+          if (feature && feature.properties) {
+            const postId = feature.properties.id;
+            const adminUrl = (dbMapData && dbMapData.adminUrl) || '/wp-admin/';
+            const editUrl = adminUrl.replace(/\/$/, '') + '/post.php?post=' + encodeURIComponent(postId) + '&action=edit';
+            window.open(editUrl, '_blank', 'noopener');
+          }
+        }
+        break;
     }
   });
 }
@@ -6749,7 +6761,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       <div class="db-admin-panel">
         <h3><i class="db-icon-admin"></i>Admin panel</h3>
         <div class="db-admin-actions">
-          <button class="db-btn db-btn-primary" type="button" data-db-action="open-admin-edit">
+          <button class="db-btn db-btn-primary" type="button" data-db-action="open-admin-edit" data-feature-id="${p.id || ''}">
             <i class="db-icon-edit"></i>Upravit v admin rozhraní
           </button>
           <div class="db-admin-toggle">
@@ -7048,7 +7060,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     const navBtn = detailModal.querySelector('[data-db-action="open-navigation-detail"]');
     if (navBtn) navBtn.addEventListener('click', () => openNavigationMenu(lat, lng));
     
-    // Admin panel odstraněn z modalu – žádné admin odkazy v UI
+    // Event listener pro admin edit tlačítko
+    const adminEditBtn = detailModal.querySelector('[data-db-action="open-admin-edit"]');
+    if (adminEditBtn && props && props.id) {
+      adminEditBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const postId = props.id;
+        const adminUrl = (dbMapData && dbMapData.adminUrl) || '/wp-admin/';
+        const editUrl = adminUrl.replace(/\/$/, '') + '/post.php?post=' + encodeURIComponent(postId) + '&action=edit';
+        window.open(editUrl, '_blank', 'noopener');
+      });
+    }
     
     // Centrovat bod na mapu při otevření detail modalu
     if (lat !== null && lng !== null) {
