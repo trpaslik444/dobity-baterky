@@ -26,7 +26,6 @@ class Nearby_Settings {
     
     public function register_settings() {
         register_setting('db_nearby_settings', 'db_nearby_config', array($this, 'validate_settings'));
-        register_setting('db_google_nearby_filters', 'db_google_nearby_filters', array($this, 'validate_google_filters'));
     }
 
     public function validate_settings($input) {
@@ -62,42 +61,6 @@ class Nearby_Settings {
         return $sanitized;
     }
 
-    public function validate_google_filters($input) {
-        $sanitized = array();
-
-        $min_rating = isset($input['min_rating']) ? floatval($input['min_rating']) : 3.5;
-        $sanitized['min_rating'] = max(0.0, min(5.0, $min_rating));
-
-        $types_raw = $input['included_types'] ?? array();
-        if (is_string($types_raw)) {
-            $types_raw = preg_split('/[\s,]+/', $types_raw);
-        }
-        if (!is_array($types_raw)) {
-            $types_raw = array();
-        }
-        $types = array();
-        foreach ($types_raw as $type) {
-            $type = sanitize_key((string) $type);
-            if ($type !== '') {
-                $types[] = $type;
-            }
-        }
-        $sanitized['included_types'] = array_values(array_unique($types));
-
-        $max_results = isset($input['max_results']) ? intval($input['max_results']) : 12;
-        $sanitized['max_results'] = max(1, min(20, $max_results));
-
-        $radius_m = isset($input['radius_m']) ? intval($input['radius_m']) : 2000;
-        $sanitized['radius_m'] = max(100, min(10000, $radius_m));
-
-        $cooldown = isset($input['cooldown_hours']) ? intval($input['cooldown_hours']) : 24;
-        $sanitized['cooldown_hours'] = max(1, min(168, $cooldown));
-
-        $mode = isset($input['import_mode']) ? strtolower((string) $input['import_mode']) : 'sync';
-        $sanitized['import_mode'] = in_array($mode, ['sync', 'async'], true) ? $mode : 'sync';
-
-        return $sanitized;
-    }
 
     public function render_settings_page() {
         $config = get_option('db_nearby_config', array(
@@ -114,21 +77,6 @@ class Nearby_Settings {
             'auto_enqueue_on_get' => 0
         ));
 
-        $google_config = get_option('db_google_nearby_filters', array(
-            'min_rating' => 3.5,
-            'included_types' => array('cafe','restaurant','bar','bakery','supermarket','tourist_attraction'),
-            'max_results' => 12,
-            'radius_m' => 2000,
-            'cooldown_hours' => 24,
-            'import_mode' => 'sync',
-        ));
-        if (!is_array($google_config)) {
-            $google_config = array();
-        }
-        $included_types_value = $google_config['included_types'] ?? array('cafe','restaurant','bar','bakery','supermarket','tourist_attraction');
-        if (is_array($included_types_value)) {
-            $included_types_value = implode(", ", $included_types_value);
-        }
         ?>
         <div class="wrap">
             <h1>Nearby Places Settings</h1>
@@ -228,65 +176,7 @@ class Nearby_Settings {
                 <?php submit_button('Uložit nastavení'); ?>
             </form>
 
-            <h2 style="margin-top:40px;">Google Nearby Enrichment</h2>
-            <p>Konfigurace pro automatické obohacování databáze o podniky v okolí při zobrazení detailu nabíjecí lokality.</p>
-
-            <form method="post" action="options.php">
-                <?php settings_fields('db_google_nearby_filters'); ?>
-                <?php wp_nonce_field('db_google_nearby_filters_save', 'db_google_nearby_filters_nonce'); ?>
-
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">Minimální hodnocení</th>
-                        <td>
-                            <input type="number" name="db_google_nearby_filters[min_rating]" value="<?php echo esc_attr(isset($google_config['min_rating']) ? $google_config['min_rating'] : 3.5); ?>" step="0.1" min="0" max="5" />
-                            <p class="description">POI s nižším hodnocením budou ignorována. Výchozí hodnota je 3.5.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Povolené Google typy</th>
-                        <td>
-                            <textarea name="db_google_nearby_filters[included_types]" rows="4" cols="50" class="large-text"><?php echo esc_textarea($included_types_value); ?></textarea>
-                            <p class="description">Seznam Google Place typů oddělených čárkou nebo novým řádkem (např. <code>cafe, restaurant, tourist_attraction</code>).</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Maximální počet výsledků</th>
-                        <td>
-                            <input type="number" name="db_google_nearby_filters[max_results]" value="<?php echo esc_attr(isset($google_config['max_results']) ? $google_config['max_results'] : 12); ?>" min="1" max="20" />
-                            <p class="description">Kolik kandidátů uložíme při jednom dotazu (1–20).</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Vyhledávací radius (metry)</th>
-                        <td>
-                            <input type="number" name="db_google_nearby_filters[radius_m]" value="<?php echo esc_attr(isset($google_config['radius_m']) ? $google_config['radius_m'] : 2000); ?>" min="100" max="10000" step="50" />
-                            <p class="description">Okruh pro Places Nearby Search. Výchozí hodnota je 2000 metrů, pro turistické atrakce lze ručně zvýšit.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Režim importu</th>
-                        <td>
-                            <select name="db_google_nearby_filters[import_mode]">
-                                <option value="sync" <?php selected(isset($google_config['import_mode']) ? $google_config['import_mode'] : 'sync', 'sync'); ?>>Synchronní (okamžitý import při načtení detailu)</option>
-                                <option value="async" <?php selected(isset($google_config['import_mode']) ? $google_config['import_mode'] : 'sync', 'async'); ?>>Asynchronní (naplánovat import na pozadí)</option>
-                            </select>
-                            <p class="description">Asynchronní režim nezablokuje načítání detailu – nové piny se objeví po dokončení úlohy na pozadí, detaily lze doplnit dodatečně.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Cooldown po kliknutí (hodiny)</th>
-                        <td>
-                            <input type="number" name="db_google_nearby_filters[cooldown_hours]" value="<?php echo esc_attr(isset($google_config['cooldown_hours']) ? $google_config['cooldown_hours'] : 24); ?>" min="1" max="168" />
-                            <p class="description">Jak často lze pro stejnou nabíječku znovu spouštět import. Pomáhá hlídat Google API kvóty.</p>
-                        </td>
-                    </tr>
-                </table>
-
-                <?php submit_button('Uložit Google Nearby konfiguraci'); ?>
-            </form>
-
-            <h2>Cache Management</h2>
+            <h2 style="margin-top:40px;">Cache Management</h2>
             <p>
                 <button type="button" class="button" onclick="clearNearbyCache()">Vymazat všechny cache</button>
                 <span id="cache-status"></span>

@@ -4,7 +4,6 @@ declare(strict_types=1);
 namespace DB;
 
 use DB\Charging_Discovery;
-use DB\Google_Nearby_Importer;
 use DB\Jobs\Charging_Discovery_Worker;
 use DB\Jobs\Charging_Quota_Manager;
 use WP_Error;
@@ -225,16 +224,6 @@ class REST_Charging_Discovery {
         }
         
         $response['data'] = $data;
-
-        try {
-            $importer = new Google_Nearby_Importer();
-            $enrichment = $importer->maybe_import_for_charging($postId);
-            $response['google_nearby_enrichment'] = $enrichment;
-        } catch (\Throwable $e) {
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('[Charging External] Nearby enrichment failed: ' . $e->getMessage());
-            }
-        }
 
         return rest_ensure_response($response);
     }
