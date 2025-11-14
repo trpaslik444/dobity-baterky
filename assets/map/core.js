@@ -3275,6 +3275,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       const currentIsMobile = window.innerWidth <= 900;
       const topbarExists = document.querySelector('.db-map-topbar');
       
+      // Odstranit duplicitní search icon na desktopu
+      if (!currentIsMobile) {
+        const duplicateSearchIcon = document.querySelector('.db-search-icon');
+        if (duplicateSearchIcon) {
+          duplicateSearchIcon.remove();
+        }
+      }
+      
       if (topbarExists) {
 
         
@@ -9424,10 +9432,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     searchInput.value = '';
   }
   
-  // Přidání lupové ikony do topbaru
+  // Přidání lupové ikony do topbaru - pouze na mobilu (na desktopu je search form přímo v topbaru)
   function addSearchIcon() {
+    const isMobile = window.innerWidth <= 900;
+    // Na desktopu není potřeba - už je tam search form
+    if (!isMobile) {
+      return;
+    }
+    
     const topbar = document.querySelector('.db-map-topbar');
-    if (topbar && !document.querySelector('.db-search-icon')) {
+    // Zkontrolovat, zda už není tlačítko db-search-toggle (mobilní verze ho už má)
+    if (topbar && !document.querySelector('.db-search-icon') && !document.querySelector('#db-search-toggle')) {
       const searchIcon = document.createElement('button');
       searchIcon.className = 'db-map-topbar-btn db-search-icon';
       searchIcon.setAttribute('data-db-action', 'open-search');
@@ -9450,7 +9465,17 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // Spustit po načtení DOM
-  document.addEventListener('DOMContentLoaded', addSearchIcon);
+  document.addEventListener('DOMContentLoaded', () => {
+    // Odstranit duplicitní search icon na desktopu, pokud existuje
+    const isMobile = window.innerWidth <= 900;
+    if (!isMobile) {
+      const duplicateSearchIcon = document.querySelector('.db-search-icon');
+      if (duplicateSearchIcon) {
+        duplicateSearchIcon.remove();
+      }
+    }
+    addSearchIcon();
+  });
   
 
 
