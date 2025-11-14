@@ -103,12 +103,18 @@ function initEventDelegation() {
       case 'open-admin-edit':
         // Handler je přidán přímo v detail modalu, ale pro případ, že by se volal z jiného místa
         if (featureId) {
-          const feature = window.features?.find(f => f.properties.id == featureId);
-          if (feature && feature.properties) {
-            const postId = feature.properties.id;
-            const adminUrl = (dbMapData && dbMapData.adminUrl) || '/wp-admin/';
-            const editUrl = adminUrl.replace(/\/$/, '') + '/post.php?post=' + encodeURIComponent(postId) + '&action=edit';
-            window.open(editUrl, '_blank', 'noopener');
+          try {
+            const feature = window.features?.find(f => f.properties.id == featureId);
+            if (feature && feature.properties) {
+              const postId = feature.properties.id;
+              // dbMapData může být nedostupné v initEventDelegation, použít globální proměnnou nebo fallback
+              const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
+              const adminUrl = (dbData && dbData.adminUrl) ? dbData.adminUrl : '/wp-admin/';
+              const editUrl = adminUrl.replace(/\/$/, '') + '/post.php?post=' + encodeURIComponent(postId) + '&action=edit';
+              window.open(editUrl, '_blank', 'noopener');
+            }
+          } catch (err) {
+            console.warn('[DB Map] Error opening admin edit:', err);
           }
         }
         break;
