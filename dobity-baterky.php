@@ -40,6 +40,9 @@ if ( ! defined( 'DB_PLUGIN_URL' ) ) {
 if ( ! defined( 'DB_PLUGIN_VERSION' ) ) {
     define( 'DB_PLUGIN_VERSION', '2.0.6' );
 }
+if ( ! defined( 'DB_MAP_ROUTE_QUERY_VAR' ) ) {
+    define( 'DB_MAP_ROUTE_QUERY_VAR', 'db_map_app' );
+}
 
 // -----------------------------------------------------------------------------
 // Access helpers – jednotná kontrola přístupu k mapové appce
@@ -86,6 +89,31 @@ if ( ! function_exists('db_ensure_capability_exists') ) {
     }
 }
 
+if ( ! function_exists( 'db_map_route_slug' ) ) {
+    /**
+     * Vrací slug mapové aplikace (např. /mapa). Lze upravit filtrem.
+     */
+    function db_map_route_slug(): string {
+        $slug = apply_filters( 'db_map_route_slug', 'mapa' );
+        $slug = trim( (string) $slug );
+        return $slug !== '' ? trim( $slug, '/' ) : 'mapa';
+    }
+}
+
+if ( ! function_exists( 'db_register_map_route' ) ) {
+    /**
+     * Zaregistruje rewrite pravidlo pro mapovou aplikaci.
+     */
+    function db_register_map_route(): void {
+        $slug = db_map_route_slug();
+        add_rewrite_rule(
+            '^' . preg_quote( $slug, '/' ) . '/?$',
+            'index.php?' . DB_MAP_ROUTE_QUERY_VAR . '=1',
+            'top'
+        );
+    }
+}
+
 if ( ! function_exists('db_user_can_see_map') ) {
     /**
      * Kontrola přístupu s fallbackem pro případ bez Members pluginu
@@ -125,6 +153,44 @@ if ( ! function_exists('db_user_can_see_map') ) {
         
         // Pokud Members plugin není aktivní, povolíme přístup všem přihlášeným
         return true;
+    }
+}
+
+if ( ! function_exists( 'db_is_map_frontend_context' ) ) {
+    /**
+     * Zjistí, zda aktuální request odpovídá mapové stránce dostupné oprávněnému uživateli.
+     * Výsledek se memoizuje pro opakované použití v rámci requestu.
+     */
+    function db_is_map_frontend_context(): bool {
+        static $is_map_request = null;
+
+        if ( $is_map_request !== null ) {
+            return $is_map_request;
+        }
+
+        if ( ! function_exists( 'db_user_can_see_map' ) || ! db_user_can_see_map() ) {
+            $is_map_request = false;
+            return $is_map_request;
+        }
+
+        $is_map_request = false;
+
+        // Kontrola shortcode na aktuálním příspěvku/stránce
+        global $post;
+        if ( $post && has_shortcode( (string) $post->post_content, 'db_map' ) ) {
+            $is_map_request = true;
+        }
+
+        // Dodatečná kontrola přes helper (pokud existuje)
+        if ( function_exists( 'db_is_map_app_page' ) && db_is_map_app_page() ) {
+            $is_map_request = true;
+        }
+
+        if ( intval( get_query_var( DB_MAP_ROUTE_QUERY_VAR ) ) === 1 ) {
+            $is_map_request = true;
+        }
+
+        return $is_map_request;
     }
 }
 
@@ -184,14 +250,9 @@ require_once DB_PLUGIN_DIR . 'includes/Jobs/Optimized_Worker_Manager.php';
 require_once DB_PLUGIN_DIR . 'includes/REST_On_Demand.php';
 require_once DB_PLUGIN_DIR . 'includes/REST_Isochrones.php';
 
-add_action('init', static function () {
-    if (class_exists('DB\\Google_Nearby_Importer')) {
-        \DB\Google_Nearby_Importer::register_async_hooks();
-    }
-});
-
 // Hooky aktivace a deaktivace s bezpečnostním wrapperem
 function db_safe_activate() {
+    db_register_map_route();
     try {
         if ( class_exists( 'DB\Activation' ) ) {
             DB\Activation::activate();
@@ -431,33 +492,56 @@ add_action('init', function() {
     }
 }, 30);
 
+add_action( 'init', function() {
+    db_register_map_route();
+}, 5 );
+
+add_filter( 'query_vars', function( array $vars ): array {
+    if ( ! in_array( DB_MAP_ROUTE_QUERY_VAR, $vars, true ) ) {
+        $vars[] = DB_MAP_ROUTE_QUERY_VAR;
+    }
+    return $vars;
+} );
+
+add_action( 'template_redirect', function() {
+    if ( intval( get_query_var( DB_MAP_ROUTE_QUERY_VAR ) ) !== 1 ) {
+        return;
+    }
+
+    if ( ! db_user_can_see_map() ) {
+        if ( ! is_user_logged_in() ) {
+            $redirect = wp_login_url( home_url( '/' . db_map_route_slug() . '/' ) );
+            wp_safe_redirect( $redirect );
+            exit;
+        }
+
+        wp_die(
+            esc_html__( 'K zobrazení mapy nemáte oprávnění.', 'dobity-baterky' ),
+            esc_html__( 'Přístup zamítnut', 'dobity-baterky' ),
+            array( 'response' => 403 )
+        );
+    }
+
+    status_header( 200 );
+    nocache_headers();
+
+    $template = DB_PLUGIN_DIR . 'templates/map-app.php';
+    if ( file_exists( $template ) ) {
+        include $template;
+    } else {
+        wp_die( esc_html__( 'Šablona mapy nebyla nalezena.', 'dobity-baterky' ), '', array( 'response' => 500 ) );
+    }
+    exit;
+} );
+
 // Načítání assetů s ochranou - spouští se až po init
 add_action('wp_enqueue_scripts', function() {
 
     // Enqueue map assets pouze pro uživatele s přístupem k mapě
-    if ( ! function_exists('db_user_can_see_map') || ! db_user_can_see_map() ) {
+    if ( ! db_is_map_frontend_context() ) {
         return;
     }
 
-    // Zkontrolovat, zda je to mapová stránka
-    $is_map_page = false;
-    
-    // Kontrola 1: stránka obsahující [db_map] shortcode
-    global $post;
-    if ( $post && has_shortcode( (string) $post->post_content, 'db_map' ) ) {
-        $is_map_page = true;
-    }
-    
-    // Kontrola 2: funkce db_is_map_app_page (pokud existuje)
-    if ( function_exists('db_is_map_app_page') && db_is_map_app_page() ) {
-        $is_map_page = true;
-    }
-    
-    // Načítat assety pouze na mapových stránkách
-    if ( ! $is_map_page ) {
-        return;
-    }
-    
     // CSS - správné pořadí
     wp_enqueue_style( 'leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', array(), '1.9.4' );
     wp_enqueue_style( 'leaflet-markercluster', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css', array('leaflet'), '1.5.3' );
@@ -467,10 +551,10 @@ add_action('wp_enqueue_scripts', function() {
     // JavaScript - správné pořadí: Leaflet -> MarkerCluster -> vlastní
     wp_enqueue_script( 'leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', array(), '1.9.4', true );
     wp_enqueue_script( 'leaflet-markercluster', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js', array('leaflet'), '1.5.3', true );
-    wp_enqueue_script( 'db-map', plugins_url( 'assets/db-map.js', DB_PLUGIN_FILE ), array('leaflet','leaflet-markercluster'), DB_PLUGIN_VERSION, true );
+    wp_enqueue_script( 'db-map-loader', plugins_url( 'assets/map/loader.js', DB_PLUGIN_FILE ), array('leaflet','leaflet-markercluster'), DB_PLUGIN_VERSION, true );
     
     // On-Demand Processor
-    wp_enqueue_script( 'db-ondemand', plugins_url( 'assets/ondemand-processor.js', DB_PLUGIN_FILE ), array('jquery'), DB_PLUGIN_VERSION, true );
+    wp_enqueue_script( 'db-ondemand', plugins_url( 'assets/ondemand-processor.js', DB_PLUGIN_FILE ), array('jquery','db-map-loader'), DB_PLUGIN_VERSION, true );
     
     // Data pro JS
     // Příprava favorites payload
@@ -495,11 +579,13 @@ add_action('wp_enqueue_scripts', function() {
         $translations = $translation_manager->get_frontend_translations();
     }
     
-    wp_localize_script( 'db-map', 'dbMapData', array(
+    wp_localize_script( 'db-map-loader', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
         'restNonce' => wp_create_nonce( 'wp_rest' ),
         'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
         'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
+        'assetsBase' => plugins_url( 'assets/map/', DB_PLUGIN_FILE ),
+        'version' => DB_PLUGIN_VERSION,
         'isMapPage' => function_exists('db_is_map_app_page') ? db_is_map_app_page() : false,
         'pwaEnabled' => class_exists('PWAforWP') ? true : false,
         'isAdmin' => current_user_can('administrator') || current_user_can('editor'),
@@ -534,6 +620,159 @@ add_action('wp_enqueue_scripts', function() {
         'nonce' => wp_create_nonce( 'wp_rest' )
     ));
 }, 20);
+
+/**
+ * Odstraní těžké/nechtěné skripty a styly na mapové stránce.
+ */
+add_action( 'wp_enqueue_scripts', function() {
+    if ( ! db_is_map_frontend_context() ) {
+        return;
+    }
+
+    $script_substrings = apply_filters(
+        'db_map_unwanted_script_sources',
+        array(
+            '/wp-content/plugins/woocommerce/',
+            '/wp-content/plugins/woocommerce-payments/',
+            '/wp-content/plugins/woocommerce-gateway-',
+            '/wp-content/plugins/woo-stripe',
+            '/wp-content/plugins/woocom',
+            '/wp-content/plugins/gutenberg/',
+            '/wp-content/plugins/google-site-kit/',
+            '/wp-content/plugins/jetpack/',
+            'js.stripe.com/v3',
+            'prebid-load.js',
+            'stats.wp.com/w.js',
+        )
+    );
+
+    $style_substrings = apply_filters(
+        'db_map_unwanted_style_sources',
+        array(
+            '/wp-content/plugins/woocommerce/',
+            '/wp-content/plugins/woocom',
+            '/wp-content/plugins/gutenberg/',
+            '/wp-content/plugins/google-site-kit/',
+            '/wp-content/plugins/jetpack/',
+        )
+    );
+
+    $scripts = wp_scripts();
+    if ( $scripts instanceof \WP_Scripts ) {
+        foreach ( (array) $scripts->queue as $handle ) {
+            if ( ! isset( $scripts->registered[ $handle ] ) ) {
+                continue;
+            }
+            $src = $scripts->registered[ $handle ]->src ?? '';
+            if ( ! $src ) {
+                continue;
+            }
+
+            $full_src = $src;
+            if ( 0 === strpos( $src, '//' ) ) {
+                $full_src = ( is_ssl() ? 'https:' : 'http:' ) . $src;
+            } elseif ( '/' === substr( $src, 0, 1 ) ) {
+                $full_src = home_url( $src );
+            }
+
+            foreach ( $script_substrings as $needle ) {
+                if ( $needle && false !== strpos( $full_src, $needle ) ) {
+                    wp_dequeue_script( $handle );
+                    wp_deregister_script( $handle );
+                    break;
+                }
+            }
+        }
+    }
+
+    $styles = wp_styles();
+    if ( $styles instanceof \WP_Styles ) {
+        foreach ( (array) $styles->queue as $handle ) {
+            if ( ! isset( $styles->registered[ $handle ] ) ) {
+                continue;
+            }
+            $src = $styles->registered[ $handle ]->src ?? '';
+            if ( ! $src ) {
+                continue;
+            }
+
+            $full_src = $src;
+            if ( 0 === strpos( $src, '//' ) ) {
+                $full_src = ( is_ssl() ? 'https:' : 'http:' ) . $src;
+            } elseif ( '/' === substr( $src, 0, 1 ) ) {
+                $full_src = home_url( $src );
+            }
+
+            foreach ( $style_substrings as $needle ) {
+                if ( $needle && false !== strpos( $full_src, $needle ) ) {
+                    wp_dequeue_style( $handle );
+                    wp_deregister_style( $handle );
+                    break;
+                }
+            }
+        }
+    }
+}, 999 );
+
+/**
+ * Ořezání DNS-prefetch / prefetch hintů na mapové stránce.
+ */
+add_filter( 'wp_resource_hints', function( array $urls, string $relation_type ): array {
+    if ( ! db_is_map_frontend_context() ) {
+        return $urls;
+    }
+
+    if ( ! in_array( $relation_type, array( 'dns-prefetch', 'prefetch', 'preconnect', 'prerender', 'preload' ), true ) ) {
+        return $urls;
+    }
+
+    $blocked = apply_filters(
+        'db_map_blocked_resource_hints',
+        array(
+            'googleads',
+            'doubleclick',
+            'googletagmanager',
+            'googletagservices',
+            'googlesyndication',
+            'ads.pubmatic',
+            'switchadhub',
+            'amazon-adsystem',
+            'criteo',
+            'jetpack',
+            'woocommerce',
+            'gutenberg',
+            'google-site-kit',
+            'stripe.com',
+            'wp.com',
+        )
+    );
+
+    $filtered = array();
+
+    foreach ( $urls as $entry ) {
+        $href = is_array( $entry ) ? ( $entry['href'] ?? '' ) : $entry;
+
+        if ( ! $href ) {
+            continue;
+        }
+
+        $should_block = false;
+        foreach ( $blocked as $needle ) {
+            if ( $needle && false !== strpos( $href, $needle ) ) {
+                $should_block = true;
+                break;
+            }
+        }
+
+        if ( $should_block ) {
+            continue;
+        }
+
+        $filtered[] = $entry;
+    }
+
+    return $filtered;
+}, 10, 2 );
 
 // Registrace capability v Members pluginu - spustí se až když je Members dostupný
 add_action('init', function() {

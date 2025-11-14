@@ -13,7 +13,7 @@ echo "<h1>🧪 Test Smart Loading Manager</h1>";
 // Test 1: Kontrola existence souborů
 echo "<h2>1. Kontrola souborů</h2>";
 $files_to_check = [
-    'assets/db-map.js',
+    'assets/map/core.js',
     'assets/db-map.css',
     'docs/SMART_LOADING_GUIDE.md'
 ];
@@ -28,7 +28,7 @@ foreach ($files_to_check as $file) {
 
 // Test 2: Kontrola JavaScript kódu
 echo "<h2>2. Kontrola JavaScript kódu</h2>";
-$js_content = file_get_contents('assets/db-map.js');
+$js_content = file_get_contents('assets/map/core.js');
 
 $js_checks = [
     'SmartLoadingManager' => 'class SmartLoadingManager',
@@ -114,7 +114,7 @@ echo "- JavaScript: $js_lines řádků<br>";
 echo "- CSS: $css_lines řádků<br>";
 
 // Velikost souborů
-$js_size = round(filesize('assets/db-map.js') / 1024, 2);
+$js_size = round(filesize('assets/map/core.js') / 1024, 2);
 $css_size = round(filesize('assets/db-map.css') / 1024, 2);
 
 echo "- JavaScript: {$js_size} KB<br>";
