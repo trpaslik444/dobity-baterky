@@ -494,6 +494,12 @@ add_action('init', function() {
 
 add_action( 'init', function() {
     db_register_map_route();
+    
+    // Pokud je to první načtení po aktualizaci pluginu, nastavit flag pro flush rewrite rules
+    if (get_option('db_map_route_registered', false) === false) {
+        update_option('db_rewrite_flush_needed', true);
+        update_option('db_map_route_registered', true);
+    }
 }, 5 );
 
 add_filter( 'query_vars', function( array $vars ): array {
