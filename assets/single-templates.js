@@ -6,6 +6,16 @@
 (function() {
     'use strict';
 
+    function escapeHtml(value) {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
     // Počkáme na načtení DOM
     document.addEventListener('DOMContentLoaded', function() {
         initNavigationDropdown();
@@ -57,22 +67,25 @@
      * Inicializace map
      */
     function initMaps() {
-        const mapContainer = document.getElementById('db-single-map');
-        if (!mapContainer) return;
+        const detailMapContainer = document.getElementById('db-detail-map');
+        if (detailMapContainer && typeof window.DBDetail === 'object') {
+            initDetailMap(detailMapContainer, window.DBDetail);
+        }
 
-        // Kontrola, zda máme souřadnice
-        const lat = parseFloat(mapContainer.dataset.lat);
-        const lng = parseFloat(mapContainer.dataset.lng);
-        const title = mapContainer.dataset.title || 'Lokalita';
+        const legacyMapContainer = document.getElementById('db-single-map');
+        if (!legacyMapContainer) return;
+
+        const lat = parseFloat(legacyMapContainer.dataset.lat);
+        const lng = parseFloat(legacyMapContainer.dataset.lng);
+        const title = legacyMapContainer.dataset.title || 'Lokalita';
 
         if (isNaN(lat) || isNaN(lng)) return;
 
-        // Načtení Leaflet CSS a JS
         loadLeafletResources().then(function() {
-            createMap(mapContainer, lat, lng, title);
+            initStandardMap(legacyMapContainer, lat, lng, title);
         }).catch(function(error) {
             console.error('Chyba při načítání mapy:', error);
-            showMapError(mapContainer);
+            showMapError(legacyMapContainer);
         });
     }
 
@@ -107,25 +120,21 @@
     /**
      * Vytvoření mapy
      */
-    function createMap(container, lat, lng, title) {
+    function initStandardMap(container, lat, lng, title) {
         try {
             const map = L.map(container.id).setView([lat, lng], 15);
             
-            // Přidání OpenStreetMap vrstvy
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             }).addTo(map);
 
-            // Přidání markeru
             const marker = L.marker([lat, lng]).addTo(map);
             marker.bindPopup(title);
 
-            // Oprava velikosti mapy
             setTimeout(function() {
                 map.invalidateSize();
             }, 200);
 
-            // Přidání event listeneru pro resize
             window.addEventListener('resize', function() {
                 map.invalidateSize();
             });
@@ -366,6 +375,179 @@
             }
         `;
         document.head.appendChild(style);
+    }
+
+    function initDetailMap(container, detailSettings) {
+        const settings = detailSettings || {};
+        const lat = (typeof settings.lat === 'number') ? settings.lat : parseFloat(container.dataset.lat);
+        const lng = (typeof settings.lng === 'number') ? settings.lng : parseFloat(container.dataset.lng);
+        const title = settings.title || container.dataset.title || 'Nabíjecí bod';
+        const postId = settings.postId;
+        const restNonce = settings.restNonce;
+
+        if (!isFinite(lat) || !isFinite(lng)) {
+            showMapError(container);
+            return;
+        }
+
+        loadLeafletResources().then(function() {
+            const map = L.map(container, { zoomControl: false }).setView([lat, lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            const focusBounds = L.latLngBounds([[lat, lng]]);
+            const originMarker = L.circleMarker([lat, lng], {
+                radius: 8,
+                color: '#049FE8',
+                weight: 3,
+                fillColor: '#049FE8',
+                fillOpacity: 0.85
+            }).addTo(map);
+            originMarker.bindPopup(escapeHtml(title));
+            focusBounds.extend(originMarker.getLatLng());
+
+            renderDetailIsochrones(map, lat, lng, focusBounds);
+            if (postId) {
+                renderDetailNearby(map, postId, restNonce, focusBounds);
+            }
+
+            setTimeout(function() {
+                map.invalidateSize();
+            }, 250);
+        }).catch(function(error) {
+            console.error('Chyba při načítání mapy:', error);
+            showMapError(container);
+        });
+    }
+
+    function renderDetailIsochrones(map, lat, lng, focusBounds) {
+        fetch(`/wp-json/db/v1/isochrones?lat=${lat}&lng=${lng}`)
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error(response.statusText || 'isochrones_fetch_failed');
+                }
+                return response.json();
+            })
+            .then(function(data) {
+                if (!data || !data.geojson || !Array.isArray(data.geojson.features)) {
+                    return;
+                }
+
+                const ranges = Array.isArray(data.ranges) ? data.ranges.slice().sort(function(a, b) { return a - b; }) : [];
+                const colorPalette = [
+                    { fill: 'rgba(4,159,232,0.16)', stroke: '#049FE8' },
+                    { fill: 'rgba(79,70,229,0.18)', stroke: '#4F46E5' },
+                    { fill: 'rgba(147,51,234,0.18)', stroke: '#9333EA' }
+                ];
+                const valueIndexMap = {};
+                ranges.forEach(function(value, index) {
+                    valueIndexMap[value] = index;
+                });
+
+                const layer = L.geoJSON(data.geojson, {
+                    style: function(feature) {
+                        const value = feature && feature.properties ? feature.properties.value : null;
+                        const paletteIndex = (value !== null && valueIndexMap[value] !== undefined) ? valueIndexMap[value] : 0;
+                        const palette = colorPalette[paletteIndex % colorPalette.length];
+                        return {
+                            color: palette.stroke,
+                            weight: 1.2,
+                            fillColor: palette.fill,
+                            fillOpacity: 0.28,
+                            opacity: 0.65
+                        };
+                    }
+                }).addTo(map);
+
+                try {
+                    const layerBounds = layer.getBounds();
+                    if (layerBounds && layerBounds.isValid()) {
+                        focusBounds.extend(layerBounds);
+                        map.fitBounds(focusBounds.pad(0.18));
+                    }
+                } catch (error) {
+                    // ignore fit errors
+                }
+            })
+            .catch(function(error) {
+                console.warn('Nepodařilo se načíst isochrony:', error);
+            });
+    }
+
+    function renderDetailNearby(map, postId, restNonce, focusBounds) {
+        const listEl = document.getElementById('db-detail-nearby-list');
+        if (!listEl) {
+            return;
+        }
+
+        const headers = {};
+        if (restNonce) {
+            headers['X-WP-Nonce'] = restNonce;
+        }
+
+        fetch(`/wp-json/db/v1/nearby?origin_id=${postId}&type=poi&limit=6`, { headers: headers })
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error(response.statusText || 'nearby_fetch_failed');
+                }
+                return response.json();
+            })
+            .then(function(data) {
+                if (!data || !Array.isArray(data.items) || data.items.length === 0) {
+                    listEl.innerHTML = '<div class="db-detail-placeholder">V okolí jsme nenašli žádná zajímavá místa.</div>';
+                    return;
+                }
+
+                listEl.innerHTML = '';
+                data.items.slice(0, 6).forEach(function(item) {
+                    const title = escapeHtml(item.title || item.name || 'Neznámé místo');
+                    const distanceText = typeof item.distance_m === 'number' ? formatDistance(item.distance_m) : null;
+                    const durationText = typeof item.duration_s === 'number' ? formatTime(Math.max(1, Math.round(item.duration_s / 60))) : null;
+
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'db-detail-nearby-item';
+                    button.innerHTML = `
+                        <span class="db-detail-nearby-title">${title}</span>
+                        <span class="db-detail-nearby-meta">
+                            ${distanceText ? `<span>${escapeHtml(distanceText)}</span>` : ''}
+                            ${durationText ? `<span>${escapeHtml(durationText)}</span>` : ''}
+                        </span>
+                    `;
+
+                    const detailUrl = item.permalink || item.link || item.url || null;
+                    if (detailUrl) {
+                        button.addEventListener('click', function() {
+                            window.open(detailUrl, '_blank', 'noopener');
+                        });
+                    }
+
+                    listEl.appendChild(button);
+
+                    if (typeof item.lat === 'number' && typeof item.lng === 'number') {
+                        const poiMarker = L.circleMarker([item.lat, item.lng], {
+                            radius: 6,
+                            color: '#FF8DAA',
+                            weight: 2,
+                            fillColor: 'rgba(255,141,170,0.7)',
+                            fillOpacity: 0.7
+                        }).addTo(map);
+                        poiMarker.bindPopup(title);
+                        focusBounds.extend(poiMarker.getLatLng());
+                    }
+                });
+
+                try {
+                    map.fitBounds(focusBounds.pad(0.18));
+                } catch (error) {
+                    // ignore fit errors
+                }
+            })
+            .catch(function(error) {
+                console.warn('Nepodařilo se načíst body v okolí:', error);
+                listEl.innerHTML = '<div class="db-detail-placeholder">Nepodařilo se načíst body v okolí.</div>';
+            });
     }
 
     // Přidání stylů pro notifikace
