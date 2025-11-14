@@ -221,6 +221,30 @@ $attrib   = get_post_meta($post_id, '_attribution', true);
                     </div>
                 <?php endif; ?>
 
+                <?php
+                // Zobrazit plný obsah postu (pokud existuje)
+                // Toto umožňuje editorům přidat detailní texty, shortcodes atd.
+                $post_content = get_post_field('post_content', $post_id);
+                if (!empty($post_content) && trim($post_content) !== '') :
+                    ?>
+                    <div class="db-detail-section db-detail-content">
+                        <h2>Detailní informace</h2>
+                        <div class="db-detail-content-body">
+                            <?php
+                            // Použít the_content() pro správné zpracování shortcodes a formátování
+                            // Musíme nastavit globální $post pro správné fungování the_content()
+                            global $post;
+                            $original_post = $post;
+                            $post = get_post($post_id);
+                            setup_postdata($post);
+                            the_content();
+                            wp_reset_postdata();
+                            $post = $original_post;
+                            ?>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
                 <?php if (!empty($phone) || !empty($website) || !empty($email)) : ?>
                     <div class="db-detail-section">
                         <h2>Kontakt</h2>
