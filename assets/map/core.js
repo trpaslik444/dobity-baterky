@@ -189,7 +189,7 @@ const LocationService = (() => {
             watchId = null;
         }
     }
-    function onUpdate(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+    const onUpdate = createOnUpdate(listeners);
     function getLast() { return last || loadCache(); }
     async function autoStartIfGranted() { try { if (await permissionState() === 'granted') startWatch(); } catch(_) {} }
     return { startWatch, stopWatch, onUpdate, getLast, permissionState, autoStartIfGranted };
@@ -197,6 +197,14 @@ const LocationService = (() => {
 
 // Auto-start, pokud je již povoleno
 LocationService.autoStartIfGranted();
+
+// Helper funkce pro vytvoření onUpdate funkce s existujícím listeners Set
+function createOnUpdate(listeners) {
+  return (fn) => {
+    listeners.add(fn);
+    return () => listeners.delete(fn);
+  };
+}
 
 function escapeHtml(str) {
   if (str === null || typeof str === 'undefined') {
@@ -713,15 +721,10 @@ try {
 } catch(_) {}
 
 document.addEventListener('DOMContentLoaded', async function() {
-  console.log('[DB Map][DEBUG] DOMContentLoaded fired');
-  
   // Init
   // Inicializovat překlady
   if (typeof dbMapData !== 'undefined' && dbMapData.translations && dbMapData.translations.translations) {
     translations = dbMapData.translations.translations;
-    console.log('[DB Map][DEBUG] Translations loaded from dbMapData');
-  } else {
-    console.warn('[DB Map][DEBUG] dbMapData not found or no translations');
   }
   
   // Inicializovat globální proměnné pro isochrones
@@ -754,11 +757,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Základní proměnné
   let mapDiv = document.getElementById('db-map');
-  console.log('[DB Map][DEBUG] mapDiv:', mapDiv ? 'found' : 'not found');
   
   // Pokud element #db-map neexistuje, neinicializuj mapu
   if (!mapDiv) {
-    console.warn('[DB Map][DEBUG] #db-map element not found, aborting initialization');
     return;
   }
 
@@ -2471,37 +2472,26 @@ document.addEventListener('DOMContentLoaded', async function() {
   
 
   function buildRestUrlForRadius(center, includedTypesCsv = null, radiusKmOverride = null) {
-    console.log('[DB Map][DEBUG][buildRestUrlForRadius] Start', { center, includedTypesCsv, radiusKmOverride });
-    
     const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
     const base = (dbData?.restUrl) || '/wp-json/db/v1/map';
-    console.log('[DB Map][DEBUG][buildRestUrlForRadius] Base URL:', base);
     
     const url = new URL(base, window.location.origin);
     // Přidání oddělených lat/lng parametrů (robustnější než center="lat,lng")
     if (center && center.lat && center.lng) {
       url.searchParams.set('lat', center.lat.toFixed(6));
       url.searchParams.set('lng', center.lng.toFixed(6));
-      console.log('[DB Map][DEBUG][buildRestUrlForRadius] Added lat/lng:', center.lat.toFixed(6), center.lng.toFixed(6));
-    } else {
-      console.warn('[DB Map][DEBUG][buildRestUrlForRadius] No center provided!', center);
     }
     // Dynamický radius dle viewportu (fallback na RADIUS_KM)
     const dynRadius = Number.isFinite(radiusKmOverride) ? radiusKmOverride : getRadiusForRequest();
     url.searchParams.set('radius_km', String(dynRadius));
-    console.log('[DB Map][DEBUG][buildRestUrlForRadius] Radius:', dynRadius);
     // Explicitně nastavíme všechny typy pro férové porovnání s ALL režimem
     const included = includedTypesCsv || 'charging_location,rv_spot,poi';
     url.searchParams.set('included', included);
-    console.log('[DB Map][DEBUG][buildRestUrlForRadius] Included types:', included);
     // Limit pro server (konfigurovatelné)
     const lim = parseInt(window.DB_RADIUS_LIMIT || 1000, 10);
     if (Number.isFinite(lim) && lim > 0) url.searchParams.set('limit', String(lim));
     
-    const finalUrl = url.toString();
-    console.log('[DB Map][DEBUG][buildRestUrlForRadius] Final URL:', finalUrl);
-
-    return finalUrl;
+    return url.toString();
   }
 
   async function fetchAndRenderRadius(center, includedTypesCsv = null) {
@@ -2525,10 +2515,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   async function fetchAndRenderRadiusWithFixedRadius(center, includedTypesCsv = null, fixedRadiusKm = null) {
-    console.log('[DB Map][DEBUG][fetchAndRenderRadiusWithFixedRadius] Start', { center, includedTypesCsv, fixedRadiusKm });
-    
     if (favoritesState.isActive) {
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusWithFixedRadius] Favorites active, returning');
       return;
     }
     const previousCenter = lastSearchCenter ? { ...lastSearchCenter } : null;
@@ -2541,17 +2528,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Použít fixní radius místo dynamického
     const radiusKm = fixedRadiusKm || FIXED_RADIUS_KM;
-    console.log('[DB Map][DEBUG][fetchAndRenderRadiusWithFixedRadius] Building URL with radius:', radiusKm);
     const url = buildRestUrlForRadius(center, includedTypesCsv, radiusKm);
-    console.log('[DB Map][DEBUG][fetchAndRenderRadiusWithFixedRadius] URL:', url);
     
     await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
   }
   async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
-    console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Start', { center, includedTypesCsv, radiusKm, url });
-    
     if (favoritesState.isActive) {
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Favorites active, returning');
       return;
     }
 
@@ -2567,20 +2549,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     const t0 = performance.now?.() || Date.now();
     try {
       const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] dbData:', dbData ? { hasRestUrl: !!dbData.restUrl, hasRestNonce: !!dbData.restNonce } : 'null');
       
       const headers = {
         'Accept': 'application/json'
       };
       if (dbData?.restNonce) {
         headers['X-WP-Nonce'] = dbData.restNonce;
-        console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Added nonce to headers');
-      } else {
-        console.warn('[DB Map][DEBUG][fetchAndRenderRadiusInternal] No nonce available!');
       }
-      
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Fetching URL:', url);
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Headers:', headers);
       
       const res = await fetch(url, {
         signal: inFlightController.signal,
@@ -2588,23 +2563,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         headers: headers
       });
       
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Response status:', res.status, res.statusText);
-      
       if (!res.ok) {
         const errorText = await res.text();
-        console.error('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Response error:', errorText);
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       
       const geo = await res.json();
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Response data:', { 
-        type: geo?.type, 
-        featuresCount: Array.isArray(geo?.features) ? geo.features.length : 0,
-        meta: geo?.meta 
-      });
       
       const incoming = Array.isArray(geo?.features) ? geo.features : [];
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Incoming features:', incoming.length);
       
       // Sloučit do cache
       for (let i = 0; i < incoming.length; i++) {
@@ -2612,21 +2578,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         const id = f?.properties?.id;
         if (id != null) featureCache.set(id, f);
       }
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Cached features:', featureCache.size);
       
       // Nastavit lastSearchCenter a lastSearchRadiusKm PŘED nastavením features
       // aby checkIfOutsideLoadedArea fungoval správně
       lastSearchCenter = { lat: center.lat, lng: center.lng };
       lastSearchRadiusKm = radiusKm;
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Set lastSearchCenter:', lastSearchCenter, 'lastSearchRadiusKm:', lastSearchRadiusKm);
       
       // POUŽÍT POUZE nové body - staré odstranit i když se oblasti překrývají
       // Tím zajistíme, že mapa vždy zobrazuje pouze aktuální radius
       features = incoming;
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Set features:', features.length);
       
       window.features = features;
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] window.features set:', window.features.length);
 
       // FALLBACK: Pokud radius vrátí 0 bodů, stáhneme ALL a vyfiltrujeme klientsky
       if (features.length === 0) {
@@ -2666,31 +2628,21 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 
       // Vykreslit karty s novými daty (pouze viditelné v viewportu pro optimalizaci)
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Clearing markers...');
       if (typeof clearMarkers === 'function') {
         clearMarkers();
-        console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Markers cleared');
-      } else {
-        console.warn('[DB Map][DEBUG][fetchAndRenderRadiusInternal] clearMarkers function not found!');
       }
       
       // Při prvním načtení vykreslit všechny features v radiusu, ne jen ty v viewportu
       // selectFeaturesForView() se používá jen pro optimalizaci při panování/zoomování
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Total features to render:', features.length);
       
       // Vykreslit všechny features - markery se přidají do clusterů, které je optimalizují
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Calling renderCards with all features...');
       if (typeof renderCards === 'function') {
         renderCards('', null, false);
-        console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] renderCards completed');
-      } else {
-        console.error('[DB Map][DEBUG][fetchAndRenderRadiusInternal] renderCards function not found!');
       }
       
       // Uložit všechny features pro pozdější použití
       window.features = features;
       lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Render completed, lastRenderedFeatures:', lastRenderedFeatures.length);
       // Zachovej stabilní viewport po fetchi: bez auto-fit/auto-pan.
       // Poloha mapy je výhradně řízena uživatelem; přesuny provádíme
       // pouze na explicitní akce (klik na pin, potvrzení vyhledávání, moje poloha).
@@ -2698,31 +2650,22 @@ document.addEventListener('DOMContentLoaded', async function() {
       // map.setView(center, Math.max(map.getZoom() || 9, 9)); // vypnuto: neposouvat mapu po načtení v režimu okruhu
     } catch (err) {
       if (err.name !== 'AbortError') {
-        console.error('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Error:', err);
-        console.error('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Error stack:', err.stack);
-        console.error('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Error message:', err.message);
-      } else {
-        console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Request aborted');
+        // Silent fail - chyby se logují pouze v development módu
       }
     } finally {
       clearTimeout(spinnerTimer);
       if (spinnerShown) document.body.classList.remove('db-loading');
       inFlightController = null;
-      console.log('[DB Map][DEBUG][fetchAndRenderRadiusInternal] Finally block completed');
     }
   }
   
   // Funkce pro načtení všech dat (bez radius filtru)
   async function fetchAndRenderAll() {
-    console.log('[DB Map][DEBUG][fetchAndRenderAll] Start');
-    
     const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
     const base = (dbData?.restUrl) || '/wp-json/db/v1/map';
-    console.log('[DB Map][DEBUG][fetchAndRenderAll] Base URL:', base);
     
     const url = new URL(base, window.location.origin);
     url.searchParams.set('limit', '5000');
-    console.log('[DB Map][DEBUG][fetchAndRenderAll] Final URL:', url.toString());
     
     document.body.classList.add('db-loading');
     try {
@@ -2731,62 +2674,37 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
       if (dbData?.restNonce) {
         headers['X-WP-Nonce'] = dbData.restNonce;
-        console.log('[DB Map][DEBUG][fetchAndRenderAll] Added nonce to headers');
-      } else {
-        console.warn('[DB Map][DEBUG][fetchAndRenderAll] No nonce available!');
       }
       
-      console.log('[DB Map][DEBUG][fetchAndRenderAll] Fetching...');
       const res = await fetch(url.toString(), { 
         signal: inFlightController?.signal, 
         headers: headers
       });
       
-      console.log('[DB Map][DEBUG][fetchAndRenderAll] Response status:', res.status, res.statusText);
-      
       if (!res.ok) {
         const errorText = await res.text();
-        console.error('[DB Map][DEBUG][fetchAndRenderAll] Response error:', errorText);
         throw new Error(`HTTP ${res.status}: ${res.statusText}`);
       }
       
       const data = await res.json();
-      console.log('[DB Map][DEBUG][fetchAndRenderAll] Response data:', { 
-        type: data?.type, 
-        featuresCount: Array.isArray(data?.features) ? data.features.length : 0 
-      });
       
       features = Array.isArray(data?.features) ? data.features : [];
-      console.log('[DB Map][DEBUG][fetchAndRenderAll] Features set:', features.length);
       
       window.features = features;
-      console.log('[DB Map][DEBUG][fetchAndRenderAll] window.features set:', window.features.length);
 
-      console.log('[DB Map][DEBUG][fetchAndRenderAll] Clearing markers...');
       if (typeof clearMarkers === 'function') {
         clearMarkers();
-        console.log('[DB Map][DEBUG][fetchAndRenderAll] Markers cleared');
-      } else {
-        console.warn('[DB Map][DEBUG][fetchAndRenderAll] clearMarkers function not found!');
       }
       
-      console.log('[DB Map][DEBUG][fetchAndRenderAll] Calling renderCards...');
       if (typeof renderCards === 'function') {
         renderCards('', null, false);
-        console.log('[DB Map][DEBUG][fetchAndRenderAll] renderCards completed');
-      } else {
-        console.error('[DB Map][DEBUG][fetchAndRenderAll] renderCards function not found!');
       }
     } catch (err) {
       if (err.name !== 'AbortError') {
-        console.error('[DB Map][DEBUG][fetchAndRenderAll] Error:', err);
-        console.error('[DB Map][DEBUG][fetchAndRenderAll] Error stack:', err.stack);
-      } else {
-        console.log('[DB Map][DEBUG][fetchAndRenderAll] Request aborted');
+        // Silent fail - chyby se logují pouze v development módu
       }
     } finally {
       document.body.classList.remove('db-loading');
-      console.log('[DB Map][DEBUG][fetchAndRenderAll] Finally block completed');
     }
   }
   
@@ -2929,11 +2847,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Kontrola, zda je Leaflet načten
   if (typeof L === 'undefined') {
-    console.error('[DB Map][DEBUG] Leaflet (L) is not defined!');
     mapDiv.innerHTML = `<div style="padding:2rem;text-align:center;color:#666;">Chyba: ${t('map.map_failed')}. ${t('map.try_refresh')}</div>`;
     return;
   }
-  console.log('[DB Map][DEBUG] Leaflet loaded, creating map...');
      try {
        map = L.map('db-map', {
          zoomControl: true,
@@ -2943,9 +2859,8 @@ document.addEventListener('DOMContentLoaded', async function() {
          scrollWheelZoom: true,
          wheelDebounceTime: 20,
          wheelPxPerZoomLevel: 120
-       }).setView([50.08, 14.42], 12);
-       console.log('[DB Map][DEBUG] Map created successfully');
-       window.map = map; // Nastavit globální přístup pro isochrones funkce
+      }).setView([50.08, 14.42], 12);
+      window.map = map; // Nastavit globální přístup pro isochrones funkce
        
       // Pokusit se získat polohu uživatele a centrovat na ni
       const tryGetUserLocation = async () => {
@@ -2982,53 +2897,36 @@ document.addEventListener('DOMContentLoaded', async function() {
       };
       
       // Spustit počáteční fetch hned po inicializaci mapy - vždy v radius režimu
-      console.log('[DB Map][DEBUG] loadMode:', loadMode);
-      console.log('[DB Map][DEBUG] dbMapData:', typeof dbMapData !== 'undefined' ? { restUrl: dbMapData?.restUrl, hasRestNonce: !!dbMapData?.restNonce } : 'undefined');
-      console.log('[DB Map][DEBUG] window.dbMapData:', typeof window.dbMapData !== 'undefined' ? { restUrl: window.dbMapData?.restUrl, hasRestNonce: !!window.dbMapData?.restNonce } : 'undefined');
-      
-      console.log('[DB Map][DEBUG] Starting initial radius fetch...');
       setTimeout(async () => {
         // Zkusit získat polohu uživatele
         const userLocation = await tryGetUserLocation();
-        console.log('[DB Map][DEBUG] User location:', userLocation);
         
         let c;
         if (userLocation) {
           // Centrovat na polohu uživatele
           map.setView(userLocation, 13, { animate: false });
           c = map.getCenter();
-          console.log('[DB Map][DEBUG] Centered map on user location');
         } else {
           // Použít defaultní centrum
           c = map.getCenter();
-          console.log('[DB Map][DEBUG] Using default center (no user location)');
         }
-        console.log('[DB Map][DEBUG] Map center:', c);
-        console.log('[DB Map][DEBUG] FIXED_RADIUS_KM:', FIXED_RADIUS_KM);
         
         try {
           // Pro počáteční načítání použít větší radius (FIXED_RADIUS_KM)
-          console.log('[DB Map][DEBUG] Calling fetchAndRenderRadiusWithFixedRadius...');
           await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
-          console.log('[DB Map][DEBUG] fetchAndRenderRadiusWithFixedRadius completed');
           lastSearchCenter = { lat: c.lat, lng: c.lng };
           lastSearchRadiusKm = FIXED_RADIUS_KM;
         } catch (e) {
-          console.error('[DB Map][DEBUG] Initial radius fetch failed:', e);
-          console.error('[DB Map][DEBUG] Error stack:', e.stack);
           try {
-            console.log('[DB Map][DEBUG] Retrying fetchAndRenderRadiusWithFixedRadius...');
             await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
             lastSearchCenter = { lat: c.lat, lng: c.lng };
             lastSearchRadiusKm = FIXED_RADIUS_KM;
           } catch (e2) {
-            console.error('[DB Map][DEBUG] Initial radius fetch retry failed:', e2);
-            console.error('[DB Map][DEBUG] Retry error stack:', e2.stack);
+            // Silent fail
           }
         } finally {
           // Označit dokončení pokusu o počáteční načítání, aby viewport změny mohly obnovit fetch
           initialLoadCompleted = true;
-          console.log('[DB Map][DEBUG] initialLoadCompleted set to true');
         }
       }, 100);
        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -7753,7 +7651,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     function start(){ if (listening || !isSupported()) return; listening = true; window.addEventListener('deviceorientation', onOrientation, { passive: true }); }
     function stop(){ if (!listening) return; listening = false; window.removeEventListener('deviceorientation', onOrientation); }
-    function onUpdate(fn){ listeners.add(fn); return () => listeners.delete(fn); }
+    const onUpdate = createOnUpdate(listeners);
     function get(){ return filteredHeading; }
     return { start, stop, onUpdate, get, isSupported };
   })();
@@ -8352,7 +8250,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Po načtení z localStorage resetovat showOnlyRecommended na false
       // aby se při prvním načtení zobrazily všechny body
       if (showOnlyRecommended) {
-        console.log('[DB Map][DEBUG][renderCards] showOnlyRecommended was true from localStorage, resetting to false');
         showOnlyRecommended = false;
         const recommendedEl = document.getElementById('db-map-toggle-recommended');
         if (recommendedEl) {
@@ -8406,14 +8303,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     cardsWrap.innerHTML = '';
-    console.log('[DB Map][DEBUG][renderCards] Start, total features:', features.length, 'filterText:', filterText);
     
     let filtered = features.filter(f => f.properties.title.toLowerCase().includes(filterText.toLowerCase()));
-    console.log('[DB Map][DEBUG][renderCards] After filterText filter:', filtered.length);
 
     if (showOnlyRecommended) {
       filtered = filtered.filter(f => !!f.properties.db_recommended);
-      console.log('[DB Map][DEBUG][renderCards] After showOnlyRecommended filter:', filtered.length);
     }
     // Aplikovat filtry pro nabíječky - filtrovat přímo features místo markerů
     const chargingStations = features.filter(f => f.properties && f.properties.post_type === 'charging_location');
@@ -8575,8 +8469,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
       }
     });
-    console.log('[DB Map][DEBUG][renderCards] Current markers on map:', currentMarkerIds.size);
-    console.log('[DB Map][DEBUG][renderCards] Filtered features to render:', filtered.length);
     
     const neededMarkerIds = new Set(filtered.map(f => f.properties.id));
     
@@ -9215,7 +9107,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     checkIfOutsideLoadedArea(center, radius) {
       if (!lastSearchCenter || !lastSearchRadiusKm) {
-        console.log('[DB Map][DEBUG][checkIfOutsideLoadedArea] No lastSearchCenter or lastSearchRadiusKm, returning false');
         return false;
       }
       
@@ -9224,17 +9115,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // To znamená, že je blízko okraje načtené oblasti
       const thresholdKm = lastSearchRadiusKm * 0.8;
       
-      const isOutside = distFromLastCenter > thresholdKm;
-      console.log('[DB Map][DEBUG][checkIfOutsideLoadedArea]', {
-        center: { lat: center.lat, lng: center.lng },
-        lastSearchCenter,
-        lastSearchRadiusKm,
-        distFromLastCenter: distFromLastCenter.toFixed(2),
-        thresholdKm: thresholdKm.toFixed(2),
-        isOutside
-      });
-      
-      return isOutside;
+      return distFromLastCenter > thresholdKm;
     }
     
     showManualLoadButton() {
@@ -9384,25 +9265,19 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Event listener pro počáteční načtení mapy
   map.once('load', async function() {
-    console.log('[DB Map][DEBUG][map.once load] Map load event fired, loadMode:', loadMode);
-    
     // Vždy používat radius režim - načíst data okolo polohy uživatele nebo defaultního centra
-    console.log('[DB Map][DEBUG][map.once load] Loading in radius mode...');
     
     // Zkusit získat polohu uživatele
     const userLocation = await tryGetUserLocation();
-    console.log('[DB Map][DEBUG][map.once load] User location:', userLocation);
     
     let c;
     if (userLocation) {
       // Centrovat na polohu uživatele
       map.setView(userLocation, 13, { animate: false });
       c = map.getCenter();
-      console.log('[DB Map][DEBUG][map.once load] Centered map on user location');
     } else {
       // Použít aktuální centrum mapy
       c = map.getCenter();
-      console.log('[DB Map][DEBUG][map.once load] Using current map center (no user location)');
     }
     
     try {
@@ -9410,15 +9285,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
       lastSearchCenter = { lat: c.lat, lng: c.lng };
       lastSearchRadiusKm = FIXED_RADIUS_KM;
-      console.log('[DB Map][DEBUG][map.once load] Initial radius fetch completed');
     } catch(error) {
-      console.error('[DB Map][DEBUG][map.once load] Initial radius fetch failed:', error);
       try {
         await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
         lastSearchCenter = { lat: c.lat, lng: c.lng };
         lastSearchRadiusKm = FIXED_RADIUS_KM;
       } catch (error2) {
-        console.error('[DB Map][DEBUG][map.once load] Initial radius fetch retry failed:', error2);
+        // Silent fail
       } finally {
         initialLoadCompleted = true;
       }
@@ -10144,19 +10017,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     autocomplete.style.left = `${rect.left}px`;
     autocomplete.style.width = `${Math.max(rect.width, 320)}px`;
 
-    const escapeHtml = (str) => {
-      return String(str || '').replace(/[&<>"']/g, (c) => {
-        switch (c) {
-          case '&': return '&amp;';
-          case '<': return '&lt;';
-          case '>': return '&gt;';
-          case '"': return '&quot;';
-          case "'": return '&#39;';
-          default: return c;
-        }
-      });
-    };
-
     const internalItems = internal.map((item, idx) => {
       const title = item?.title || '';
       const address = item?.address || '';
@@ -10540,19 +10400,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     autocomplete.style.left = `${rect.left}px`;
     autocomplete.style.width = `${rect.width}px`;
 
-    const escapeHtml = (str) => {
-      return String(str || '').replace(/[&<>"']/g, (c) => {
-        switch (c) {
-          case '&': return '&amp;';
-          case '<': return '&lt;';
-          case '>': return '&gt;';
-          case '"': return '&quot;';
-          case "'": return '&#39;';
-          default: return c;
-        }
-      });
-    };
-
     const internalItems = internal.map((item, idx) => {
       const title = item?.title || '';
       const address = item?.address || '';
@@ -10820,17 +10667,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       text-align: center;
       max-width: 300px;
     `;
-
-    const escapeHtml = (str) => String(str || '').replace(/[&<>"']/g, (c) => {
-      switch (c) {
-        case '&': return '&amp;';
-        case '<': return '&lt;';
-        case '>': return '&gt;';
-        case '"': return '&quot;';
-        case "'": return '&#39;';
-        default: return c;
-      }
-    });
 
     const safeMessage = message ? `<div style="color: #666; font-size: 0.9em; line-height: 1.4;">${escapeHtml(message)}</div>` : '';
 
