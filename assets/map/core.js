@@ -208,8 +208,8 @@ const LocationService = (() => {
     return { startWatch, stopWatch, onUpdate, getLast, permissionState, autoStartIfGranted };
 })();
 
-// Auto-start, pokud je již povoleno
-LocationService.autoStartIfGranted();
+// Auto-start odstraněn - geolocation se spouští pouze po user gesture (klik na tlačítko)
+// aby se vyhnuli varování "Only request geolocation information in response to a user gesture"
 
 // Helper funkce pro vytvoření onUpdate funkce s existujícím listeners Set
 function createOnUpdate(listeners) {
@@ -4968,7 +4968,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
   async function loadNearbyForMobileSheet(containerEl, centerId, lat, lng) {
-    if (!containerEl || !centerId) return;
+    if (!containerEl || !centerId) {
+      return;
+    }
     
     // Najít feature podle ID
     const feature = features.find(f => f.properties.id == centerId);
@@ -4985,19 +4987,109 @@ document.addEventListener('DOMContentLoaded', async function() {
     const p = feature.properties || {};
     const type = (p.post_type === 'charging_location') ? 'charging_location' : 'poi';
     
-    // Zkontrolovat, zda má bod nearby data
+    // Nejdříve zkontrolovat frontend cache pro nearby data
+    const cacheKey = `nearby_${centerId}_${type}`;
+    const cached = optimizedNearbyCache?.get(cacheKey);
+    const cacheTimeout = OPTIMIZATION_CONFIG?.nearbyCacheTimeout || 300000; // 5 minut
+    
+    // Funkce pro zobrazení nearby items (sdílená pro cache i API data)
+    const renderNearbyItems = (items) => {
+      const nearbyItems = items.slice(0, 3).map(item => {
+        const distKm = ((item.distance_m || 0) / 1000).toFixed(1);
+        const mins = Math.round((item.duration_s || 0) / 60);
+        
+        // Získat originální ikonu podle typu místa
+        const getItemIcon = (props) => {
+          if (props.svg_content && props.svg_content.trim() !== '') {
+            return props.svg_content;
+          } else if (props.icon_slug && props.icon_slug.trim() !== '') {
+            const iconUrl = getIconUrl(props.icon_slug);
+            return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+          } else if (props.post_type === 'charging_location') {
+            const cachedFeature = featureCache.get(props.id);
+            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+              return recolorChargerIcon(cachedFeature.properties.svg_content, props);
+            }
+            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+              const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+              return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '⚡';
+            }
+            return '⚡';
+          } else if (props.post_type === 'rv_spot') {
+            return '🏕️';
+          } else if (props.post_type === 'poi') {
+            const cachedFeature = featureCache.get(props.id);
+            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+              return cachedFeature.properties.svg_content;
+            }
+            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+              const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+              return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+            }
+            return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+            </svg>`;
+          }
+          return '📍';
+        };
+        
+        // Získat barvu čtverečku pro blízké body
+        const getNearbySquareColor = (props) => {
+          if (props.post_type === 'charging_location') {
+            const mode = getChargerMode(props);
+            const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+            const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
+            if (mode === 'hybrid') {
+              return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
+            }
+            return mode === 'dc' ? dcColor : acColor;
+          } else if (props.post_type === 'rv_spot') {
+            return '#FCE67D';
+          } else if (props.post_type === 'poi') {
+            return item.icon_color || '#FCE67D';
+          }
+          return '#049FE8';
+        };
+
+        return `
+          <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode='distance-active';renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}">
+            <div class="nearby-item-icon" style="background: ${getNearbySquareColor(item)};">
+              ${getItemIcon(item)}
+            </div>
+            <div class="nearby-item-info">
+              <div class="nearby-item-distance">${distKm} km</div>
+              <div class="nearby-item-time">${mins} min</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      containerEl.innerHTML = nearbyItems;
+    };
+    
+    if (cached && Date.now() - cached.timestamp < cacheTimeout && cached.data && cached.data.items && Array.isArray(cached.data.items) && cached.data.items.length > 0) {
+      // Máme data v cache - zobrazit je okamžitě
+      renderNearbyItems(cached.data.items);
+      return;
+    }
+    
+    // Pokus o načtení s retry logikou (stejně jako původní loadNearbyForCard)
+    // Nejdříve zkusit zkontrolovat, zda má bod nearby data - pokud ne, zobrazit loading
+    // Ale stále pokračovat v načítání, protože data se mohou načíst z API
     const hasNearbyData = await checkNearbyDataAvailable(centerId, type);
     
     if (!hasNearbyData) {
+      // Zobrazit loading stav, ale pokračovat v načítání z API
       containerEl.innerHTML = `
         <div style="text-align: center; padding: 20px; color: #666;">
           <div style="font-size: 24px; margin-bottom: 8px;">⏳</div>
           <div>Načítání blízkých míst...</div>
         </div>
       `;
-      return;
+      // Nekončit funkci - pokračovat v načítání z API
     }
-    // Pokus o načtení s retry logikou (stejně jako původní loadNearbyForCard)
     let attempts = 0;
     const maxAttempts = 3;
     
@@ -5005,95 +5097,23 @@ document.addEventListener('DOMContentLoaded', async function() {
       const data = await fetchNearby(centerId, type, 3);
       
       if (Array.isArray(data.items) && data.items.length > 0) {
-        // Zobrazit 3 nejbližší v novém formátu
-        const items = data.items.slice(0, 3);
-        const nearbyItems = items.map(item => {
-          const distKm = ((item.distance_m || 0) / 1000).toFixed(1);
-          const mins = Math.round((item.duration_s || 0) / 60);
-          
-          // Získat originální ikonu podle typu místa
-          const getItemIcon = (props) => {
-            
-            if (props.svg_content && props.svg_content.trim() !== '') {
-              // Pro POI použít SVG obsah
-              return props.svg_content;
-            } else if (props.icon_slug && props.icon_slug.trim() !== '') {
-              // Pro POI použít icon_slug jako fallback
-              const iconUrl = getIconUrl(props.icon_slug);
-              return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
-            } else if (props.post_type === 'charging_location') {
-              // Pro charging locations zkusit načíst ikonu z featureCache
-              const cachedFeature = featureCache.get(props.id);
-              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
-                return recolorChargerIcon(cachedFeature.properties.svg_content, props);
-              }
-              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
-                const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
-                return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '⚡';
-              }
-              // Fallback pro nabíječky
-              return '⚡';
-            } else if (props.post_type === 'rv_spot') {
-              // Fallback pro RV
-              return '🏕️';
-            } else if (props.post_type === 'poi') {
-              // Pro POI bez SVG obsahu zkusit načíst ikonu podle názvu typu
-              // Zkusit získat ikonu z featureCache pokud je dostupná
-              const cachedFeature = featureCache.get(props.id);
-              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
-                return cachedFeature.properties.svg_content;
-              }
-              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
-                const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
-                return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
-              }
-              // Fallback pro POI - použít generickou ikonu podniku
-              return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-                <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-                <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-              </svg>`;
-            }
-            return '📍';
-          };
-          
-          // Získat barvu čtverečku pro blízké body
-          const getNearbySquareColor = (props) => {
-            if (props.post_type === 'charging_location') {
-              const mode = getChargerMode(props);
-              const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
-              const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
-              if (mode === 'hybrid') {
-                return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
-              }
-              return mode === 'dc' ? dcColor : acColor;
-            } else if (props.post_type === 'rv_spot') {
-              return '#FCE67D';
-            } else if (props.post_type === 'poi') {
-              return item.icon_color || '#FCE67D';
-            }
-            return '#049FE8';
-          };
-
-          return `
-            <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode='distance-active';renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}">
-              <div class="nearby-item-icon" style="background: ${getNearbySquareColor(item)};">
-                ${getItemIcon(item)}
-              </div>
-              <div class="nearby-item-info">
-                <div class="nearby-item-distance">${distKm} km</div>
-                <div class="nearby-item-time">${mins} min</div>
-              </div>
-            </div>
-          `;
-        }).join('');
+        // Uložit do cache pro budoucí použití
+        optimizedNearbyCache.set(cacheKey, {
+          data: data,
+          timestamp: Date.now()
+        });
         
-        containerEl.innerHTML = nearbyItems;
+        // Zobrazit data
+        renderNearbyItems(data.items);
         return;
       }
       
-      // Pokud nemáme data, ale běží recompute, zkus znovu
-      if ((data.running || data.partial || data.stale) && attempts < maxAttempts) {
+      // Pokud nemáme items, ale běží recompute nebo jsou stale bez chyby, zkus znovu
+      // ALE: pokud máme isochrony ale ne items a stale=true, nespouštět retry - on-demand už by měl běžet
+      const hasItems = Array.isArray(data.items) && data.items.length > 0;
+      const shouldRetry = !hasItems && (data.running || (data.partial && !data.error) || (data.stale && !data.error && !data.isochrones));
+      
+      if (shouldRetry && attempts < maxAttempts) {
         attempts++;
         containerEl.innerHTML = `
           <div style="text-align: center; padding: 8px; color: #049FE8; font-size: 0.8em;">
@@ -5102,6 +5122,22 @@ document.addEventListener('DOMContentLoaded', async function() {
           </div>
         `;
         setTimeout(tryLoad, 2000);
+        return;
+      }
+      
+      // Pokud máme stale data s isochrony ale bez items, nespouštět retry - zobrazit prázdný stav
+      if (!hasItems && data.stale && data.isochrones && !data.running) {
+        // Pokračovat k zobrazení prázdného stavu
+      }
+      
+      // Pokud máme chybu (např. unauthorized), zobrazit chybovou zprávu
+      if (data.error && !data.items) {
+        containerEl.innerHTML = `
+          <div style="text-align: center; padding: 8px; color: #FF8DAA; font-size: 0.8em;">
+            <div style="font-size: 16px; margin-bottom: 4px;">⚠️</div>
+            <div>Blízká místa nelze načíst</div>
+          </div>
+        `;
         return;
       }
       
@@ -5854,8 +5890,35 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Vytvořit nový promise pro tento request
     const requestPromise = (async () => {
       try {
-      // Nejdříve zkusit získat data z on-demand status endpointu
-      const statusResponse = await fetch(`/wp-json/db/v1/ondemand/status/${originId}?type=${type}`, {
+      // Nejdříve zkusit nearby API - to kontroluje cache/databázi a je rychlejší
+      const nearbyUrl = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=1`;
+      const nearbyResponse = await fetch(nearbyUrl, {
+        headers: {
+          'X-WP-Nonce': dbMapData?.restNonce || ''
+        }
+      });
+      
+      if (nearbyResponse.ok) {
+        const nearbyData = await nearbyResponse.json();
+        
+        // Zkontrolovat, zda máme data (items nebo isochrony)
+        const hasItems = nearbyData.items && Array.isArray(nearbyData.items) && nearbyData.items.length > 0;
+        const hasIsochrones = nearbyData.isochrones && nearbyData.isochrones.geojson;
+        const hasData = hasItems || hasIsochrones;
+        
+        if (hasData) {
+          // Data jsou k dispozici v cache/databázi
+          optimizedNearbyCache.set(cacheKey, {
+            data: true,
+            timestamp: Date.now()
+          });
+          return true;
+        }
+      }
+      
+      // Pokud nearby API nemá data, zkusit on-demand status endpoint
+      const statusUrl = `/wp-json/db/v1/ondemand/status/${originId}?type=${type}`;
+      const statusResponse = await fetch(statusUrl, {
         headers: {
           'X-WP-Nonce': dbMapData?.restNonce || ''
         }
@@ -5863,6 +5926,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       if (statusResponse.ok) {
         const statusData = await statusResponse.json();
+        
         if (statusData.status === 'completed' && statusData.items && statusData.items.length > 0) {
           // Data jsou k dispozici
           optimizedNearbyCache.set(cacheKey, {
@@ -5875,7 +5939,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Pokud data nejsou k dispozici, spustit on-demand zpracování
       // Nejdříve získat token
-      const tokenResponse = await fetch('/wp-json/db/v1/ondemand/token', {
+      const tokenUrl = '/wp-json/db/v1/ondemand/token';
+      const tokenResponse = await fetch(tokenUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -5898,7 +5963,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       const tokenData = await tokenResponse.json();
       
-      const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
+      const processUrl = '/wp-json/db/v1/ondemand/process';
+      const processResponse = await fetch(processUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -5913,6 +5979,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       if (processResponse.ok) {
         const processData = await processResponse.json();
+        
         // Máme data pokud máme items NEBO isochrony
         const hasItems = processData.status === 'completed' && processData.items && Array.isArray(processData.items) && processData.items.length > 0;
         const hasIsochrones = processData.status === 'completed' && processData.isochrones && processData.isochrones.geojson;
@@ -5946,12 +6013,32 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         return hasData;
-            } else if (processResponse.status === 403) {
-        // 403 Forbidden - uložit do cache jako prázdná data
+            } else if (processResponse.status === 403 || processResponse.status === 429) {
+        // 403 Forbidden nebo 429 Rate Limit - zkusit nearby API jako fallback
+        const nearbyResponse = await fetch(`/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=1`, {
+          headers: {
+            'X-WP-Nonce': dbMapData?.restNonce || ''
+          }
+        });
+        
+        if (nearbyResponse.ok) {
+          const nearbyData = await nearbyResponse.json();
+          const hasItems = nearbyData.items && Array.isArray(nearbyData.items) && nearbyData.items.length > 0;
+          const hasIsochrones = nearbyData.isochrones && nearbyData.isochrones.geojson;
+          const hasData = hasItems || hasIsochrones;
+          
+          optimizedNearbyCache.set(cacheKey, {
+            data: hasData,
+            timestamp: Date.now()
+          });
+          return hasData;
+        }
+        
+        // Uložit do cache jako prázdná data
         optimizedNearbyCache.set(cacheKey, {
           data: false,
           timestamp: Date.now(),
-          error: '403 Forbidden'
+          error: `HTTP ${processResponse.status}`
         });
         return false;
       } else {
@@ -5974,7 +6061,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Uložit do mapy aktivních requestů
     activeOnDemandRequests.set(requestKey, requestPromise);
     
-    return await requestPromise;
+    const result = await requestPromise;
+    return result;
   }
   /**
    * Načíst nearby places pro detail modal s optimalizovaným cache
@@ -6245,19 +6333,44 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   /**
-   * Univerzální fetch funkce pro nearby data - používá on-demand systém
+   * Univerzální fetch funkce pro nearby data - používá nearby API jako primární zdroj
    */
   async function fetchNearby(originId, type, limit) {
-    // Pokud jsme již zjistili, že on-demand endpoint vyžaduje autorizaci a nemáme ji,
-    // vynecháme další pokusy a rovnou použijeme fallback.
-    if (window.dbNearbyUnauthorized === true) {
+    // Nejdříve zkusit nearby API - to kontroluje cache/databázi a je rychlejší
+    // Toto by mělo být primární zdroj dat
+    try {
       const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
       const res = await fetch(url);
-      return await res.json();
+      
+      if (res.ok) {
+        const nearbyData = await res.json();
+        
+        // Zkontrolovat, zda máme data (items nebo isochrony)
+        const hasItems = nearbyData.items && Array.isArray(nearbyData.items) && nearbyData.items.length > 0;
+        const hasIsochrones = nearbyData.isochrones && nearbyData.isochrones.geojson;
+        
+        // Pokud máme items, vrať je (i když jsou stale - lepší než nic)
+        if (hasItems) {
+          return nearbyData;
+        }
+        
+        // Pokud nemáme items, POKRAČOVAT k on-demand zpracování, i když máme isochrony
+        // Protože items jsou to, co chceme zobrazit v mobile sheetu
+      }
+    } catch (error) {
+      // Tichá chyba - zkusit on-demand jako fallback
     }
+    
+    // Pokud nearby API nemá data nebo je neplatná odpověď, zkusit on-demand pouze pokud není rate limited
+    if (window.dbNearbyUnauthorized === true || window.dbNearbyRateLimited === true) {
+      // Už víme, že on-demand nefunguje - vrátit prázdný výsledek
+      return { items: [], isochrones: null };
+    }
+    
     // Nejdříve zkusit získat data z on-demand status endpointu
     try {
-      const statusResponse = await fetch(`/wp-json/db/v1/ondemand/status/${originId}?type=${type}`, {
+      const statusUrl = `/wp-json/db/v1/ondemand/status/${originId}?type=${type}`;
+      const statusResponse = await fetch(statusUrl, {
         headers: {
           'X-WP-Nonce': dbMapData?.restNonce || ''
         }
@@ -6265,17 +6378,19 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       if (statusResponse.ok) {
         const statusData = await statusResponse.json();
+        
         if (statusData.status === 'completed' && statusData.items && statusData.items.length > 0) {
           return statusData;
         }
       }
     } catch (error) {
-      // Tichá chyba - nepotřebujeme logovat každý pokus
+      // Tichá chyba
     }
     
     // Pokud data nejsou k dispozici, spustit on-demand zpracování
     try {
-      const processResponse = await fetch('/wp-json/db/v1/ondemand/process', {
+      const processUrl = '/wp-json/db/v1/ondemand/process';
+      const processResponse = await fetch(processUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -6290,6 +6405,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       if (processResponse.ok) {
         const processData = await processResponse.json();
+        
         if (processData.status === 'processing' || processData.status === 'completed') {
           return processData;
         }
@@ -6297,23 +6413,35 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Zapamatovat si a nezkoušet pořád dokola
         if (!window.dbNearbyUnauthorized) {
           window.dbNearbyUnauthorized = true;
-          // Logovat pouze jednou při prvním zjištění
-          if (typeof console !== 'undefined' && console.warn) {
-            console.warn('[DB Map][Nearby] On-demand endpoint requires authorization, using fallback');
-          }
         }
-        const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
-        const res = await fetch(url);
-        return await res.json();
+        // Vrátit prázdný výsledek - nearby API už jsme zkusili
+        return { items: [], isochrones: null };
+      } else if (processResponse.status === 429) {
+        // Rate limiting - zapamatovat si a nezkoušet pořád dokola
+        if (!window.dbNearbyRateLimited) {
+          window.dbNearbyRateLimited = true;
+        }
+        // Vrátit prázdný výsledek - nearby API už jsme zkusili
+        return { items: [], isochrones: null };
       }
     } catch (error) {
-      // Tichá chyba - nepotřebujeme logovat každý pokus
+      // Tichá chyba
     }
     
-    // Fallback na starý nearby endpoint
-    const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
-    const res = await fetch(url);
-    return await res.json();
+    // Konečný fallback - zkusit nearby API ještě jednou
+    try {
+      const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const finalData = await res.json();
+        return finalData;
+      }
+    } catch (error) {
+      // Tichá chyba
+    }
+    
+    // Pokud vše selhalo, vrátit prázdný výsledek
+    return { items: [], isochrones: null };
   }
   // Funkce pro kontrolu otevírací doby
   function checkIfOpen(openingHours) {

@@ -124,16 +124,36 @@ class On_Demand_Processor {
             $nearby_data = null;
             $isochrones_data = null;
             
-            // Určit správný meta klíč podle typu
-            $meta_key = ($point_type === 'poi') ? '_db_nearby_cache_poi_foot' : 
-                       (($point_type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
+            // Zjistit origin post type pro správné přemapování
+            $origin_post = get_post($point_id);
+            $origin_post_type = $origin_post ? $origin_post->post_type : $point_type;
             
-            // Zkusit různé meta klíče pro nearby data
+            // Určit správný meta klíč podle typu - musí odpovídat tomu, jak se typ přemapoval v recompute_nearby_for_origin
+            // Pokud je origin poi, hledá se charging_location (a ukládá se pod _db_nearby_cache_charger_foot)
+            // Pokud je origin charging_location, hledá se poi (a ukládá se pod _db_nearby_cache_poi_foot)
+            $meta_key = null;
+            if ($origin_post_type === 'poi') {
+                // Pro POI origin se hledají charging locations, ukládá se pod charger_foot
+                $meta_key = '_db_nearby_cache_charger_foot';
+            } elseif ($origin_post_type === 'charging_location') {
+                // Pro charging_location origin se hledají POI, ukládá se pod poi_foot
+                $meta_key = '_db_nearby_cache_poi_foot';
+            } elseif ($origin_post_type === 'rv_spot') {
+                // Pro rv_spot origin se hledají charging locations, ukládá se pod charger_foot
+                $meta_key = '_db_nearby_cache_charger_foot';
+            } else {
+                // Fallback na původní logiku
+                $meta_key = ($point_type === 'poi') ? '_db_nearby_cache_poi_foot' : 
+                           (($point_type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
+            }
+            
+            // Zkusit různé meta klíče pro nearby data - nejdříve správný podle origin typu
             $nearby_keys = array(
                 $meta_key,
                 '_db_nearby_cache_poi_foot',
                 '_db_nearby_cache_charging_location_foot',
                 '_db_nearby_cache_charger_foot',
+                '_db_nearby_cache_rv_foot',
                 '_db_nearby_data'
             );
             

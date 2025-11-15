@@ -109,23 +109,10 @@ class REST_On_Demand {
     
     /**
      * Kontrola oprávnění pro on-demand zpracování
+     * Umožňuje anonymní přístup - validace se provádí přes token v callback
      */
     public function check_ondemand_permission($request) {
-        // Pouze přihlášení uživatelé s oprávněním
-        if (!is_user_logged_in()) {
-            return false;
-        }
-        
-        // Kontrola capability pro mapu
-        if (function_exists('db_user_can_see_map') && !db_user_can_see_map()) {
-            return false;
-        }
-        
-        // Alternativně: kontrola WordPress capabilities
-        if (!current_user_can('read')) {
-            return false;
-        }
-        
+        // Veřejný endpoint - token validace proběhne v callback funkci
         return true;
     }
     
@@ -137,11 +124,27 @@ class REST_On_Demand {
         $point_type = $request->get_param('point_type');
         $token = $request->get_param('token');
         
-        // Ověřit token
-        $stored_token = get_transient('db_ondemand_token_' . $point_id);
-        
-        if (!$stored_token || !hash_equals($stored_token, $token)) {
-            return new \WP_Error('unauthorized', 'Neplatný token', array('status' => 403));
+        // Veřejný přístup s 'frontend-trigger' tokenem (pro anonymní uživatele)
+        if ($token === 'frontend-trigger') {
+            // Rate limiting pro veřejný přístup - max 1 request za 1 sekundu na IP
+            // Zkráceno z 5s na 1s, aby neblokovalo opakované pokusy
+            $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            $rate_limit_key = 'db_ondemand_rate_' . md5($ip . $point_id);
+            $last_request = get_transient($rate_limit_key);
+            
+            if ($last_request !== false) {
+                return new \WP_Error('rate_limit', 'Příliš mnoho požadavků. Zkuste to za chvíli.', array('status' => 429));
+            }
+            
+            // Nastavit rate limit - 1 sekunda
+            set_transient($rate_limit_key, time(), 1);
+        } else {
+            // Validace tokenu pro přihlášené uživatele
+            $stored_token = get_transient('db_ondemand_token_' . $point_id);
+            
+            if (!$stored_token || !hash_equals($stored_token, $token)) {
+                return new \WP_Error('unauthorized', 'Neplatný token', array('status' => 403));
+            }
         }
         
         // Zpracovat bod

@@ -417,12 +417,49 @@ class Nearby_Recompute_Job {
                 $quota_manager->save_ors_headers($headers, 'matrix');
 
                 if ($code === 401 || $code === 403) {
+                    $response_body = wp_remote_retrieve_body($res);
+                    $error_detail = json_decode($response_body, true);
                     $this->debug_log('[Matrix] unauthorized', [
                         'origin_id' => $origin_id,
                         'chunk_index' => $chunk_index,
-                        'http_code' => $code
+                        'http_code' => $code,
+                        'response_body' => $this->truncate_body($response_body),
+                        'error_detail' => $error_detail
                     ]);
+                    
+                    // Pokud ORS API nefunguje, zkusit fallback na basic provider
                     $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, current_time('c'), 'unauthorized', 6 * HOUR_IN_SECONDS);
+                    
+                    // Fallback na basic provider - použít Haversine výpočet bez ORS API
+                    // Použít pouze pokud je to první chunk a ještě nebyly zpracovány žádné items
+                    if ($done === 0 && empty($items)) {
+                        // Zkusit použít basic provider pro všechny kandidáty
+                        $basic_items = [];
+                        $speed = (float)(get_option('db_nearby_config', [])['walking_speed_m_s'] ?? 1.3);
+                        foreach ($candidates as $cand) {
+                            $distance_m = (int) round($this->haversine_m($lat, $lng, (float)$cand['lat'], (float)$cand['lng']));
+                            $duration_s = $speed > 0 ? (int) round($distance_m / $speed) : (int) $distance_m;
+                            $name = $this->resolve_candidate_name($cand);
+                            $basic_items[] = [
+                                'id'         => (int)$cand['id'],
+                                'post_type'  => (string)$cand['type'],
+                                'name'       => $name,
+                                'title'      => $name,
+                                'duration_s' => $duration_s,
+                                'distance_m' => $distance_m,
+                                'walk_m'     => $distance_m,
+                                'secs'       => $duration_s,
+                                'provider'   => 'basic.haversine.fallback',
+                                'profile'    => $profile,
+                            ];
+                        }
+                        usort($basic_items, fn($a,$b) => ($a['duration_s'] <=> $b['duration_s']));
+                        $this->write_cache($origin_id, $meta_key, $basic_items, false, count($basic_items), count($basic_items), current_time('c'), null);
+                        // Uvolnit locky
+                        delete_post_meta($origin_id, $lock_key);
+                        delete_transient($transient_lock_key);
+                        return;
+                    }
                     return;
                 }
                 if ($code === 429) {
