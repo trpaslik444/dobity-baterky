@@ -71,8 +71,13 @@ if ( $is_desktop ) {
     $footer_template = locate_template( array( 'footer.php' ) );
     if ( $footer_template ) {
         // Uložit všechny wp_footer callbacks před jejich dočasným odstraněním
+        // Musíme vytvořit hlubokou kopii, protože remove_all_actions modifikuje původní objekt
         global $wp_filter;
-        $wp_footer_callbacks = isset( $wp_filter['wp_footer'] ) ? $wp_filter['wp_footer'] : null;
+        $wp_footer_callbacks = null;
+        if ( isset( $wp_filter['wp_footer'] ) && is_object( $wp_filter['wp_footer'] ) ) {
+            // Vytvořit hlubokou kopii WP_Hook objektu pomocí clone
+            $wp_footer_callbacks = clone $wp_filter['wp_footer'];
+        }
         
         // Dočasně odstranit wp_footer akci, aby se nevolala při include footer.php
         // (zavoláme ji sami později pouze jednou)
@@ -84,6 +89,7 @@ if ( $is_desktop ) {
         $full_footer = ob_get_clean();
         
         // Obnovit wp_footer callbacks před voláním wp_footer()
+        // Použít uloženou kopii, která nebyla modifikována remove_all_actions
         if ( $wp_footer_callbacks !== null ) {
             $wp_filter['wp_footer'] = $wp_footer_callbacks;
         }
@@ -101,7 +107,7 @@ if ( $is_desktop ) {
             echo $footer_content;
         }
     }
-    // Zavolat wp_footer() pouze jednou (callbacks byly obnoveny)
+    // Zavolat wp_footer() pouze jednou (callbacks byly obnoveny z kopie)
     wp_footer();
 } else {
     wp_footer();
