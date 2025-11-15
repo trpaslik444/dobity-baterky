@@ -46,7 +46,19 @@ class Feedback {
 	}
 
 	public function enqueue_frontend() {
-		$enabled = is_user_logged_in() && ( current_user_can( 'edit_posts' ) || isset( $_GET['feedback'] ) );
+		// Feedback je viditelný pro early adopters (stejně jako mapa) i pro adminy/editory
+		$enabled = false;
+		if ( isset( $_GET['feedback'] ) ) {
+			$enabled = true; // Vždy povolit pokud je feedback parametr v URL
+		} elseif ( is_user_logged_in() ) {
+			// Použít stejnou logiku jako pro mapu (early adopters mají access_app capability)
+			if ( function_exists( 'db_user_can_see_map' ) ) {
+				$enabled = db_user_can_see_map();
+			} else {
+				// Fallback pro případ, kdy funkce ještě není definována
+				$enabled = current_user_can( 'edit_posts' );
+			}
+		}
 		if ( ! $enabled ) return;
 
 		wp_enqueue_style(
