@@ -97,6 +97,31 @@ class On_Demand_Processor {
             if ($nearby_data) {
                 $result['items'] = $nearby_data['items'] ?? [];
                 $result['isochrones'] = $nearby_data['isochrones'] ?? null;
+            } else {
+                // Pokud nearby data nejsou, zkusit načíst alespoň isochrony
+                $isochrones_keys = array(
+                    'db_isochrones_v1_foot-walking',
+                    '_db_isochrones_cache'
+                );
+                
+                foreach ($isochrones_keys as $key) {
+                    $data = get_post_meta($point_id, $key, true);
+                    if ($data) {
+                        $isochrones_data = is_string($data) ? json_decode($data, true) : $data;
+                        if ($isochrones_data && isset($isochrones_data['geojson']) && isset($isochrones_data['geojson']['features'])) {
+                            // Přidat user_settings pokud chybí
+                            if (!isset($isochrones_data['user_settings'])) {
+                                $isochrones_data['user_settings'] = array(
+                                    'enabled' => true,
+                                    'walking_speed' => 4.5
+                                );
+                            }
+                            $result['items'] = [];
+                            $result['isochrones'] = $isochrones_data;
+                            break;
+                        }
+                    }
+                }
             }
             
         } catch (\Exception $e) {
@@ -195,14 +220,16 @@ class On_Demand_Processor {
                 );
             }
             
-            if (!$nearby_data) {
-                return null;
+            // Pokud máme nearby data, vždy vrátit i isochrony (pokud jsou)
+            if ($nearby_data) {
+                return array(
+                    'items' => $nearby_data['items'] ?? [],
+                    'isochrones' => $isochrones_data
+                );
             }
             
-            return array(
-                'items' => $nearby_data['items'] ?? [],
-                'isochrones' => $isochrones_data
-            );
+            // Pokud nemáme ani nearby data ani isochrony, vrátit null
+            return null;
             
         } catch (\Exception $e) {
             return null;
