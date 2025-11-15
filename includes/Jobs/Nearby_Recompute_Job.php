@@ -225,14 +225,6 @@ class Nearby_Recompute_Job {
         try {
             $cfg = get_option('db_nearby_config', []);
             
-            $orsKey    = trim((string)($cfg['ors_api_key'] ?? ''));
-            $provider  = (string)($cfg['provider'] ?? 'ors');
-            $profile   = 'foot-walking'; // Vždy používáme pěší trasu pro všechny typy
-            $radiusKm  = (float)($cfg['radius_km'] ?? 5);
-            $maxCand   = (int)($cfg['max_candidates'] ?? 60);
-            // Zvýšit implicitní batch pro Matrix, aby se minimalizoval počet requestů
-            $batchSize = (int)($cfg['matrix_batch_size'] ?? 1000);
-
             // Získat souřadnice origin postu podle jeho typu
             $origin_post = get_post($origin_id);
             if (!$origin_post) {
@@ -248,6 +240,40 @@ class Nearby_Recompute_Job {
                 elseif ($type === 'poi') { $type = 'charging_location'; $meta_key = '_db_nearby_cache_charger_foot'; }
                 elseif ($type === 'rv_spot') { $type = 'charging_location'; $meta_key = '_db_nearby_cache_charger_foot'; }
             }
+            
+            // KONTROLA: Zkontrolovat, zda už máme fresh data v databázi - pokud ano, NEPROVÁDĚT recompute
+            $existing_cache = get_post_meta($origin_id, $meta_key, true);
+            if ($existing_cache) {
+                $payload = is_string($existing_cache) ? json_decode($existing_cache, true) : $existing_cache;
+                
+                // Pokud máme data bez chyby
+                if ($payload && !isset($payload['error'])) {
+                    $computed_at = isset($payload['computed_at']) ? strtotime($payload['computed_at']) : null;
+                    $has_items = !empty($payload['items']) && is_array($payload['items']) && count($payload['items']) > 0;
+                    $is_partial = (bool)($payload['partial'] ?? false);
+                    
+                    // Pokud máme items a data nejsou stale, NEPROVÁDĚT recompute
+                    if ($has_items && $computed_at && !$is_partial) {
+                        $ttl_days = (int)($cfg['cache_ttl_days'] ?? 30);
+                        $is_stale = (time() - $computed_at) > ($ttl_days * DAY_IN_SECONDS);
+                        
+                        if (!$is_stale) {
+                            error_log("[DB Nearby] Data already exist and are fresh for #$origin_id/$type, skipping recompute");
+                            delete_post_meta($origin_id, $lock_key);
+                            delete_transient($transient_lock_key);
+                            return;
+                        }
+                    }
+                }
+            }
+            
+            $orsKey    = trim((string)($cfg['ors_api_key'] ?? ''));
+            $provider  = (string)($cfg['provider'] ?? 'ors');
+            $profile   = 'foot-walking'; // Vždy používáme pěší trasu pro všechny typy
+            $radiusKm  = (float)($cfg['radius_km'] ?? 5);
+            $maxCand   = (int)($cfg['max_candidates'] ?? 60);
+            // Zvýšit implicitní batch pro Matrix, aby se minimalizoval počet requestů
+            $batchSize = (int)($cfg['matrix_batch_size'] ?? 1000);
             
             $lat = $lng = null;
             if ($origin_post->post_type === 'charging_location') {
