@@ -495,19 +495,51 @@ class Nearby_Recompute_Job {
                         'retry_after' => $retry_after_header
                     ]);
                     $this->write_cache($origin_id, $meta_key, $items, true, $done, $total, current_time('c'), 'rate_limited', 120);
-                $manager = new \DB\Jobs\API_Quota_Manager();
-                $retry_until = $manager->get_retry_until();
-                $delay = $retry_until ? max(120, ($retry_until - time()) + 30 * MINUTE_IN_SECONDS) : 120;
-
-                if (!Nearby_Cron_Tools::schedule_recompute($delay, $origin_id, $type)) {
-                    // fallback do fronty, aby se neztratila práce
-                    try {
-                        $queue = new Nearby_Queue_Manager();
-                        $queue->enqueue($origin_id, $type, 2);
-                    } catch (\Throwable $__) {
-                            // tichý fallback – chyba už je zalogována v debug logu
+                    
+                    // Fallback na basic provider - použít Haversine výpočet bez ORS API
+                    // Použít pouze pokud je to první chunk a ještě nebyly zpracovány žádné items
+                    if ($done === 0 && empty($items)) {
+                        // Zkusit použít basic provider pro všechny kandidáty
+                        $basic_items = [];
+                        $speed = (float)(get_option('db_nearby_config', [])['walking_speed_m_s'] ?? 1.3);
+                        foreach ($candidates as $cand) {
+                            $distance_m = (int) round($this->haversine_m($lat, $lng, (float)$cand['lat'], (float)$cand['lng']));
+                            $duration_s = $speed > 0 ? (int) round($distance_m / $speed) : (int) $distance_m;
+                            $name = $this->resolve_candidate_name($cand);
+                            $basic_items[] = [
+                                'id'         => (int)$cand['id'],
+                                'post_type'  => (string)$cand['type'],
+                                'name'       => $name,
+                                'title'      => $name,
+                                'duration_s' => $duration_s,
+                                'distance_m' => $distance_m,
+                                'walk_m'     => $distance_m,
+                                'secs'       => $duration_s,
+                                'provider'   => 'basic.haversine.fallback',
+                                'profile'    => $profile,
+                            ];
                         }
+                        usort($basic_items, fn($a,$b) => ($a['duration_s'] <=> $b['duration_s']));
+                        $this->write_cache($origin_id, $meta_key, $basic_items, false, count($basic_items), count($basic_items), current_time('c'), null);
+                        // Uvolnit locky
+                        delete_post_meta($origin_id, $lock_key);
+                        delete_transient($transient_lock_key);
+                        return;
                     }
+                    
+                    $manager = new \DB\Jobs\API_Quota_Manager();
+                    $retry_until = $manager->get_retry_until();
+                    $delay = $retry_until ? max(120, ($retry_until - time()) + 30 * MINUTE_IN_SECONDS) : 120;
+
+                    if (!Nearby_Cron_Tools::schedule_recompute($delay, $origin_id, $type)) {
+                        // fallback do fronty, aby se neztratila práce
+                        try {
+                            $queue = new Nearby_Queue_Manager();
+                            $queue->enqueue($origin_id, $type, 2);
+                        } catch (\Throwable $__) {
+                                // tichý fallback – chyba už je zalogována v debug logu
+                            }
+                        }
                     return;
                 }
                 if ($code < 200 || $code >= 300 || empty($json['durations'])) {

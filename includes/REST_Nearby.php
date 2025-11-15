@@ -200,14 +200,27 @@ class REST_Nearby {
         $type      = $request->get_param('type'); // 'poi' | 'charging_location' | 'rv_spot'
         $limit     = max(1, (int)$request->get_param('limit'));
 
-        // Cache key pro tento požadavek
-        $cache_key = 'db_nearby_response_' . $origin_id . '_' . $type . '_' . $limit;
+        // Získat origin post pro přemapování typu (stejně jako v recompute_nearby_for_origin)
+        $origin_post = get_post($origin_id);
+        $original_type = $type;
+        
+        // Přemapovat typ stejně jako v recompute_nearby_for_origin
+        // charging_location => poi, poi => charging_location, rv_spot => charging_location
+        if ($origin_post && $type === $origin_post->post_type) {
+            if ($type === 'charging_location') { $type = 'poi'; }
+            elseif ($type === 'poi') { $type = 'charging_location'; }
+            elseif ($type === 'rv_spot') { $type = 'charging_location'; }
+        }
+        
+        // Cache key pro tento požadavek (s původním typem, aby cache fungovala správně)
+        $cache_key = 'db_nearby_response_' . $origin_id . '_' . $original_type . '_' . $limit;
         $cached_response = wp_cache_get($cache_key, 'db_nearby');
         
         if ($cached_response !== false) {
             return rest_ensure_response($cached_response);
         }
 
+        // Použít přemapovaný typ pro určení meta klíče
         $meta_key = ($type === 'poi') ? '_db_nearby_cache_poi_foot' : (($type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
 
         $cache     = get_post_meta($origin_id, $meta_key, true);

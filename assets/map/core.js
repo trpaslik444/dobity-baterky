@@ -4995,86 +4995,86 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Funkce pro zobrazení nearby items (sdílená pro cache i API data)
     const renderNearbyItems = (items) => {
       const nearbyItems = items.slice(0, 3).map(item => {
-        const distKm = ((item.distance_m || 0) / 1000).toFixed(1);
-        const mins = Math.round((item.duration_s || 0) / 60);
-        
-        // Získat originální ikonu podle typu místa
-        const getItemIcon = (props) => {
-          if (props.svg_content && props.svg_content.trim() !== '') {
-            return props.svg_content;
-          } else if (props.icon_slug && props.icon_slug.trim() !== '') {
-            const iconUrl = getIconUrl(props.icon_slug);
-            return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
-          } else if (props.post_type === 'charging_location') {
-            const cachedFeature = featureCache.get(props.id);
-            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
-              return recolorChargerIcon(cachedFeature.properties.svg_content, props);
-            }
-            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
-              const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
-              return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '⚡';
-            }
-            return '⚡';
-          } else if (props.post_type === 'rv_spot') {
-            return '🏕️';
-          } else if (props.post_type === 'poi') {
-            const cachedFeature = featureCache.get(props.id);
-            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
-              return cachedFeature.properties.svg_content;
-            }
-            if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
-              const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+          const distKm = ((item.distance_m || 0) / 1000).toFixed(1);
+          const mins = Math.round((item.duration_s || 0) / 60);
+          
+          // Získat originální ikonu podle typu místa
+          const getItemIcon = (props) => {
+            if (props.svg_content && props.svg_content.trim() !== '') {
+              return props.svg_content;
+            } else if (props.icon_slug && props.icon_slug.trim() !== '') {
+              const iconUrl = getIconUrl(props.icon_slug);
               return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+            } else if (props.post_type === 'charging_location') {
+              const cachedFeature = featureCache.get(props.id);
+              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+                return recolorChargerIcon(cachedFeature.properties.svg_content, props);
+              }
+              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+                const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+                return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '⚡';
+              }
+              return '⚡';
+            } else if (props.post_type === 'rv_spot') {
+              return '🏕️';
+            } else if (props.post_type === 'poi') {
+              const cachedFeature = featureCache.get(props.id);
+              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+                return cachedFeature.properties.svg_content;
+              }
+              if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+                const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+                return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+              }
+              return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+                <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+              </svg>`;
             }
-            return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-              <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-              <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-            </svg>`;
-          }
-          return '📍';
-        };
-        
-        // Získat barvu čtverečku pro blízké body
-        const getNearbySquareColor = (props) => {
-          if (props.post_type === 'charging_location') {
-            const mode = getChargerMode(props);
-            const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
-            const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
-            if (mode === 'hybrid') {
-              return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
+            return '📍';
+          };
+          
+          // Získat barvu čtverečku pro blízké body
+          const getNearbySquareColor = (props) => {
+            if (props.post_type === 'charging_location') {
+              const mode = getChargerMode(props);
+              const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+              const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
+              if (mode === 'hybrid') {
+                return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
+              }
+              return mode === 'dc' ? dcColor : acColor;
+            } else if (props.post_type === 'rv_spot') {
+              return '#FCE67D';
+            } else if (props.post_type === 'poi') {
+              return item.icon_color || '#FCE67D';
             }
-            return mode === 'dc' ? dcColor : acColor;
-          } else if (props.post_type === 'rv_spot') {
-            return '#FCE67D';
-          } else if (props.post_type === 'poi') {
-            return item.icon_color || '#FCE67D';
-          }
-          return '#049FE8';
-        };
+            return '#049FE8';
+          };
 
-        return `
-          <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode='distance-active';renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}">
-            <div class="nearby-item-icon" style="background: ${getNearbySquareColor(item)};">
-              ${getItemIcon(item)}
+          return `
+            <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){highlightMarkerById(${item.id});map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],15,{animate:true});sortMode='distance-active';renderCards('',${item.id});if(window.innerWidth <= 900){openMobileSheet(target);}else{openDetailModal(target);}}">
+              <div class="nearby-item-icon" style="background: ${getNearbySquareColor(item)};">
+                ${getItemIcon(item)}
+              </div>
+              <div class="nearby-item-info">
+                <div class="nearby-item-distance">${distKm} km</div>
+                <div class="nearby-item-time">${mins} min</div>
+              </div>
             </div>
-            <div class="nearby-item-info">
-              <div class="nearby-item-distance">${distKm} km</div>
-              <div class="nearby-item-time">${mins} min</div>
-            </div>
-          </div>
-        `;
-      }).join('');
-      
-      containerEl.innerHTML = nearbyItems;
+          `;
+        }).join('');
+        
+        containerEl.innerHTML = nearbyItems;
     };
     
     if (cached && Date.now() - cached.timestamp < cacheTimeout && cached.data && cached.data.items && Array.isArray(cached.data.items) && cached.data.items.length > 0) {
       // Máme data v cache - zobrazit je okamžitě
       renderNearbyItems(cached.data.items);
-      return;
-    }
-    
+        return;
+      }
+      
     // Pokus o načtení s retry logikou (stejně jako původní loadNearbyForCard)
     // Nejdříve zkusit zkontrolovat, zda má bod nearby data - pokud ne, zobrazit loading
     // Ale stále pokračovat v načítání, protože data se mohou načíst z API
@@ -5130,12 +5130,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Pokračovat k zobrazení prázdného stavu
       }
       
-      // Pokud máme chybu (např. unauthorized), zobrazit chybovou zprávu
-      if (data.error && !data.items) {
+      // Pokud máme chybu (např. unauthorized, rate_limited), zobrazit chybovou zprávu
+      if (data.error && !hasItems) {
+        const errorMessage = data.error === 'rate_limited' 
+          ? 'Příliš mnoho požadavků. Zkuste to za chvíli.' 
+          : 'Blízká místa nelze načíst';
         containerEl.innerHTML = `
           <div style="text-align: center; padding: 8px; color: #FF8DAA; font-size: 0.8em;">
             <div style="font-size: 16px; margin-bottom: 4px;">⚠️</div>
-            <div>Blízká místa nelze načíst</div>
+            <div>${errorMessage}</div>
           </div>
         `;
         return;
@@ -6338,24 +6341,24 @@ document.addEventListener('DOMContentLoaded', async function() {
   async function fetchNearby(originId, type, limit) {
     // Nejdříve zkusit nearby API - to kontroluje cache/databázi a je rychlejší
     // Toto by mělo být primární zdroj dat
+    let nearbyApiData = null;
     try {
       const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
       const res = await fetch(url);
       
       if (res.ok) {
-        const nearbyData = await res.json();
+        nearbyApiData = await res.json();
         
         // Zkontrolovat, zda máme data (items nebo isochrony)
-        const hasItems = nearbyData.items && Array.isArray(nearbyData.items) && nearbyData.items.length > 0;
-        const hasIsochrones = nearbyData.isochrones && nearbyData.isochrones.geojson;
+        const hasItems = nearbyApiData.items && Array.isArray(nearbyApiData.items) && nearbyApiData.items.length > 0;
         
         // Pokud máme items, vrať je (i když jsou stale - lepší než nic)
         if (hasItems) {
-          return nearbyData;
-        }
-        
+          return nearbyApiData;
+    }
         // Pokud nemáme items, POKRAČOVAT k on-demand zpracování, i když máme isochrony
         // Protože items jsou to, co chceme zobrazit v mobile sheetu
+        // Ale uložit nearbyApiData pro případný fallback
       }
     } catch (error) {
       // Tichá chyba - zkusit on-demand jako fallback
@@ -6363,7 +6366,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Pokud nearby API nemá data nebo je neplatná odpověď, zkusit on-demand pouze pokud není rate limited
     if (window.dbNearbyUnauthorized === true || window.dbNearbyRateLimited === true) {
-      // Už víme, že on-demand nefunguje - vrátit prázdný výsledek
+      // Už víme, že on-demand nefunguje - pokud máme nearbyApiData (i bez items), vrátit ho jako fallback
+      if (nearbyApiData) {
+        return nearbyApiData;
+      }
+      // Jinak vrátit prázdný výsledek
       return { items: [], isochrones: null };
     }
     
@@ -6414,24 +6421,62 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!window.dbNearbyUnauthorized) {
           window.dbNearbyUnauthorized = true;
         }
-        // Vrátit prázdný výsledek - nearby API už jsme zkusili
+        // Fallback: pokud máme nearbyApiData (i bez items), vrátit ho
+        if (nearbyApiData) {
+          return nearbyApiData;
+        }
         return { items: [], isochrones: null };
       } else if (processResponse.status === 429) {
         // Rate limiting - zapamatovat si a nezkoušet pořád dokola
         if (!window.dbNearbyRateLimited) {
           window.dbNearbyRateLimited = true;
         }
-        // Vrátit prázdný výsledek - nearby API už jsme zkusili
+        // FALLBACK: Pokud máme nearbyApiData, použít ho
+        // Pokud má items (i stale), použít je
+        // Pokud má error, vrátit ho (frontend zobrazí chybu)
+        if (nearbyApiData) {
+          const hasItems = !!(nearbyApiData.items && Array.isArray(nearbyApiData.items) && nearbyApiData.items.length > 0);
+          const hasError = !!nearbyApiData.error;
+          
+          // Pokud má items, použít je (i když jsou stale)
+          if (hasItems) {
+            return nearbyApiData;
+          }
+          
+          // Pokud má error, vrátit ho (frontend zobrazí chybu)
+          if (hasError) {
+            return nearbyApiData;
+          }
+          
+          // Jinak vrátit prázdný (ale s isochrony pokud jsou)
+          return nearbyApiData;
+          }
+        // Pokud nearbyApiData nemáme, zkusit nearby API ještě jednou jako poslední pokus
+        try {
+        const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
+        const res = await fetch(url);
+          if (res.ok) {
+            const finalData = await res.json();
+            return finalData;
+      }
+    } catch (error) {
+          // Tichá chyba
+        }
         return { items: [], isochrones: null };
       }
     } catch (error) {
       // Tichá chyba
     }
     
-    // Konečný fallback - zkusit nearby API ještě jednou
+    // Konečný fallback - pokud máme nearbyApiData, vrátit ho (i když nemá items)
+    if (nearbyApiData) {
+      return nearbyApiData;
+    }
+    
+    // Poslední pokus - zkusit nearby API ještě jednou
     try {
-      const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
-      const res = await fetch(url);
+    const url = `/wp-json/db/v1/nearby?origin_id=${originId}&type=${type}&limit=${limit}`;
+    const res = await fetch(url);
       if (res.ok) {
         const finalData = await res.json();
         return finalData;
