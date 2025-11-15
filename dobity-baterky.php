@@ -887,10 +887,16 @@ add_action('template_redirect', function() {
     if ($is_sw_request) {
         $sw_file = DB_PLUGIN_DIR . 'assets/sw.js';
         if (file_exists($sw_file)) {
+            // Získat WordPress site path pro Service-Worker-Allowed hlavičku
+            $site_path = parse_url(home_url('/'), PHP_URL_PATH);
+            if (!$site_path || $site_path === '/') {
+                $site_path = '/';
+            }
+            
             // Nastavit správné hlavičky pro ServiceWorker
             status_header(200);
             header('Content-Type: application/javascript; charset=utf-8');
-            header('Service-Worker-Allowed: /'); // Povolit root scope
+            header('Service-Worker-Allowed: ' . $site_path); // Povolit scope pro WordPress site path
             header('Cache-Control: public, max-age=3600'); // Cache na 1 hodinu
             
             // Vypnout WordPress output
@@ -1190,17 +1196,19 @@ add_action('wp_footer', function() {
                 });
             }
             
-            // Zaregistrovat náš vlastní ServiceWorker s root scope
-            // ServiceWorker je servován z /db-sw.js endpointu, který umožňuje root scope
+            // Zaregistrovat náš vlastní ServiceWorker
+            // Scope je omezen na WordPress site path (ne celý origin) pro bezpečnost
             function registerServiceWorker() {
-                const rootScope = window.location.origin + '/';
+                // Získat WordPress site path (např. '/' nebo '/blog' pro subdirectory instalace)
+                const sitePath = '<?php echo esc_js(parse_url(home_url('/'), PHP_URL_PATH)); ?>';
+                const siteScope = window.location.origin + sitePath;
                 
                 // Zkontrolovat, zda už není zaregistrován
                 // Kontrola dostupnosti getRegistrations() pro Safari kompatibilitu
                 if (typeof navigator.serviceWorker.getRegistrations === 'function') {
                     navigator.serviceWorker.getRegistrations().then(function(registrations) {
                         const ourSW = registrations.find(function(reg) {
-                            return reg.scope === rootScope;
+                            return reg.scope === siteScope || reg.scope.startsWith(siteScope);
                         });
                         
                         if (ourSW) {
@@ -1208,8 +1216,8 @@ add_action('wp_footer', function() {
                             return;
                         }
                         
-                        // Registrovat s root scope (ServiceWorker je servován z /db-sw.js s hlavičkou Service-Worker-Allowed: /)
-                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
+                        // Registrovat s scope omezeným na WordPress site path
+                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: sitePath })
                             .then(function(registration) {
                                 console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
                             })
@@ -1219,7 +1227,7 @@ add_action('wp_footer', function() {
                     }).catch(function(error) {
                         console.warn('[DB PWA] Chyba při kontrole ServiceWorker registrací:', error);
                         // Pokusit se zaregistrovat i při chybě
-                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
+                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: sitePath })
                             .then(function(registration) {
                                 console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
                             })
@@ -1228,15 +1236,15 @@ add_action('wp_footer', function() {
                             });
                     });
                 } else {
-                    // Fallback pro Safari - zkusit získat registraci pro root scope
-                    navigator.serviceWorker.getRegistration('/').then(function(registration) {
-                        if (registration && registration.scope === rootScope) {
+                    // Fallback pro Safari - zkusit získat registraci pro site scope
+                    navigator.serviceWorker.getRegistration(sitePath).then(function(registration) {
+                        if (registration && (registration.scope === siteScope || registration.scope.startsWith(siteScope))) {
                             console.log('[DB PWA] ServiceWorker už je zaregistrován:', registration.scope);
                             return;
                         }
                         
-                        // Registrovat s root scope
-                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
+                        // Registrovat s scope omezeným na WordPress site path
+                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: sitePath })
                             .then(function(registration) {
                                 console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
                             })
@@ -1245,7 +1253,7 @@ add_action('wp_footer', function() {
                             });
                     }).catch(function(error) {
                         // Pokud getRegistration selže, zkusit registrovat přímo
-                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
+                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: sitePath })
                             .then(function(registration) {
                                 console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
                             })

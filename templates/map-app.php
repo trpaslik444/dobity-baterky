@@ -36,10 +36,20 @@ $is_desktop = ! wp_is_mobile();
 if ( $is_desktop ) {
     $header_template = locate_template( array( 'header.php' ) );
     if ( $header_template ) {
+        // Dočasně odstranit wp_head akci, aby se nevolala znovu (už byla volána výše)
+        global $wp_filter;
+        $wp_head_callbacks = isset( $wp_filter['wp_head'] ) ? $wp_filter['wp_head'] : null;
+        remove_all_actions( 'wp_head' );
+        
         // Načíst header template a extrahovat pouze obsah body
         ob_start();
         include $header_template;
         $full_header = ob_get_clean();
+        
+        // Obnovit wp_head callbacks
+        if ( $wp_head_callbacks !== null ) {
+            $wp_filter['wp_head'] = $wp_head_callbacks;
+        }
         
         // Extrahovat pouze obsah mezi <body> tagy (bez samotných tagů)
         if ( preg_match( '/<body[^>]*>(.*?)<\/body>/is', $full_header, $matches ) ) {
