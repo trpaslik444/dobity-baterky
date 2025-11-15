@@ -2403,13 +2403,24 @@ document.addEventListener('DOMContentLoaded', async function() {
   const tryGetUserLocation = async () => {
     try {
       // Zkontrolovat, zda je geolokace dostupná
-      if (!navigator.geolocation) return null;
+      if (!navigator.geolocation) {
+        // Pokud není geolokace dostupná, zkusit použít uloženou polohu z cache
+        if (typeof LocationService !== 'undefined' && LocationService.getLast) {
+          const lastLoc = LocationService.getLast();
+          if (lastLoc && lastLoc.lat && lastLoc.lng) {
+            return [lastLoc.lat, lastLoc.lng];
+          }
+        }
+        return null;
+      }
       
-      // Zkusit získat poslední uloženou polohu z LocationService
+      // Nejdřív zkusit získat poslední uloženou polohu z LocationService
+      let cachedLoc = null;
       if (typeof LocationService !== 'undefined' && LocationService.getLast) {
         const lastLoc = LocationService.getLast();
         if (lastLoc && lastLoc.lat && lastLoc.lng) {
-          // Zkontrolovat, zda není příliš stará (max 1 hodina)
+          cachedLoc = lastLoc;
+          // Pokud je poloha čerstvá (max 1 hodina), použít ji
           if (lastLoc.ts && (Date.now() - lastLoc.ts) < 3600000) {
             return [lastLoc.lat, lastLoc.lng];
           }
@@ -2417,20 +2428,37 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       // Pokusit se získat aktuální polohu
-      const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve, 
-          reject, 
-          { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
-        );
-      });
-      
-      if (pos && pos.coords) {
-        return [pos.coords.latitude, pos.coords.longitude];
+      try {
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            resolve, 
+            reject, 
+            { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+          );
+        });
+        
+        if (pos && pos.coords) {
+          return [pos.coords.latitude, pos.coords.longitude];
+        }
+      } catch (err) {
+        // Pokud získání aktuální polohy selže, použít uloženou polohu z cache jako fallback
+        if (cachedLoc && cachedLoc.lat && cachedLoc.lng) {
+          console.debug('[DB Map] Using cached location after geolocation error:', err.message);
+          return [cachedLoc.lat, cachedLoc.lng];
+        }
+        // Tiše selhat - použije se defaultní pozice
+        console.debug('[DB Map] Geolocation not available or denied:', err.message);
       }
     } catch (err) {
-      // Tiše selhat - použije se defaultní pozice
-      console.debug('[DB Map] Geolocation not available or denied:', err.message);
+      // Pokud vše selže, zkusit použít uloženou polohu z cache
+      if (typeof LocationService !== 'undefined' && LocationService.getLast) {
+        const lastLoc = LocationService.getLast();
+        if (lastLoc && lastLoc.lat && lastLoc.lng) {
+          console.debug('[DB Map] Using cached location after error:', err.message);
+          return [lastLoc.lat, lastLoc.lng];
+        }
+      }
+      console.debug('[DB Map] Geolocation error:', err.message);
     }
     return null;
   };
@@ -2879,32 +2907,56 @@ document.addEventListener('DOMContentLoaded', async function() {
       const tryGetUserLocation = async () => {
         try {
           // Zkontrolovat, zda je geolokace dostupná
-          if (!navigator.geolocation) return null;
+          if (!navigator.geolocation) {
+            // Pokud není geolokace dostupná, zkusit použít uloženou polohu z cache
+            const lastLoc = LocationService.getLast();
+            if (lastLoc && lastLoc.lat && lastLoc.lng) {
+              return [lastLoc.lat, lastLoc.lng];
+            }
+            return null;
+          }
           
-          // Zkusit získat poslední uloženou polohu z LocationService
+          // Nejdřív zkusit získat poslední uloženou polohu z LocationService
+          let cachedLoc = null;
           const lastLoc = LocationService.getLast();
           if (lastLoc && lastLoc.lat && lastLoc.lng) {
-            // Zkontrolovat, zda není příliš stará (max 1 hodina)
+            cachedLoc = lastLoc;
+            // Pokud je poloha čerstvá (max 1 hodina), použít ji
             if (lastLoc.ts && (Date.now() - lastLoc.ts) < 3600000) {
               return [lastLoc.lat, lastLoc.lng];
             }
           }
           
           // Pokusit se získat aktuální polohu
-          const pos = await new Promise((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(
-              resolve, 
-              reject, 
-              { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
-            );
-          });
-          
-          if (pos && pos.coords) {
-            return [pos.coords.latitude, pos.coords.longitude];
+          try {
+            const pos = await new Promise((resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(
+                resolve, 
+                reject, 
+                { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
+              );
+            });
+            
+            if (pos && pos.coords) {
+              return [pos.coords.latitude, pos.coords.longitude];
+            }
+          } catch (err) {
+            // Pokud získání aktuální polohy selže, použít uloženou polohu z cache jako fallback
+            if (cachedLoc && cachedLoc.lat && cachedLoc.lng) {
+              console.debug('[DB Map] Using cached location after geolocation error:', err.message);
+              return [cachedLoc.lat, cachedLoc.lng];
+            }
+            // Tiše selhat - použije se defaultní pozice
+            console.debug('[DB Map] Geolocation not available or denied:', err.message);
           }
         } catch (err) {
-          // Tiše selhat - použije se defaultní pozice
-          console.debug('[DB Map] Geolocation not available or denied:', err.message);
+          // Pokud vše selže, zkusit použít uloženou polohu z cache
+          const lastLoc = LocationService.getLast();
+          if (lastLoc && lastLoc.lat && lastLoc.lng) {
+            console.debug('[DB Map] Using cached location after error:', err.message);
+            return [lastLoc.lat, lastLoc.lng];
+          }
+          console.debug('[DB Map] Geolocation error:', err.message);
         }
         return null;
       };
