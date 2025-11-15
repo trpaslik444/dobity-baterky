@@ -1166,14 +1166,29 @@ add_action('wp_footer', function() {
             };
             
             // Odstranit existující registrace s nesprávným originem
-            navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                registrations.forEach(function(registration) {
-                    if (registration.scope && !registration.scope.startsWith(window.location.origin)) {
+            // Kontrola dostupnosti getRegistrations() pro Safari kompatibilitu
+            if (typeof navigator.serviceWorker.getRegistrations === 'function') {
+                navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                    registrations.forEach(function(registration) {
+                        if (registration.scope && !registration.scope.startsWith(window.location.origin)) {
+                            console.warn('[DB PWA] Odstraňuji ServiceWorker s nesprávným originem:', registration.scope);
+                            registration.unregister();
+                        }
+                    });
+                }).catch(function(error) {
+                    console.warn('[DB PWA] Chyba při získávání ServiceWorker registrací:', error);
+                });
+            } else {
+                // Fallback pro Safari - zkusit získat registraci pro root scope
+                navigator.serviceWorker.getRegistration('/').then(function(registration) {
+                    if (registration && registration.scope && !registration.scope.startsWith(window.location.origin)) {
                         console.warn('[DB PWA] Odstraňuji ServiceWorker s nesprávným originem:', registration.scope);
                         registration.unregister();
                     }
+                }).catch(function(error) {
+                    // Ignorovat chyby - může to být normální, pokud není žádná registrace
                 });
-            });
+            }
             
             // Zaregistrovat náš vlastní ServiceWorker s root scope
             // ServiceWorker je servován z /db-sw.js endpointu, který umožňuje root scope
@@ -1181,25 +1196,64 @@ add_action('wp_footer', function() {
                 const rootScope = window.location.origin + '/';
                 
                 // Zkontrolovat, zda už není zaregistrován
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                    const ourSW = registrations.find(function(reg) {
-                        return reg.scope === rootScope;
-                    });
-                    
-                    if (ourSW) {
-                        console.log('[DB PWA] ServiceWorker už je zaregistrován:', ourSW.scope);
-                        return;
-                    }
-                    
-                    // Registrovat s root scope (ServiceWorker je servován z /db-sw.js s hlavičkou Service-Worker-Allowed: /)
-                    navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
-                        .then(function(registration) {
-                            console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
-                        })
-                        .catch(function(error) {
-                            console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                // Kontrola dostupnosti getRegistrations() pro Safari kompatibilitu
+                if (typeof navigator.serviceWorker.getRegistrations === 'function') {
+                    navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                        const ourSW = registrations.find(function(reg) {
+                            return reg.scope === rootScope;
                         });
-                });
+                        
+                        if (ourSW) {
+                            console.log('[DB PWA] ServiceWorker už je zaregistrován:', ourSW.scope);
+                            return;
+                        }
+                        
+                        // Registrovat s root scope (ServiceWorker je servován z /db-sw.js s hlavičkou Service-Worker-Allowed: /)
+                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
+                            .then(function(registration) {
+                                console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                            })
+                            .catch(function(error) {
+                                console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                            });
+                    }).catch(function(error) {
+                        console.warn('[DB PWA] Chyba při kontrole ServiceWorker registrací:', error);
+                        // Pokusit se zaregistrovat i při chybě
+                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
+                            .then(function(registration) {
+                                console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                            })
+                            .catch(function(error) {
+                                console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                            });
+                    });
+                } else {
+                    // Fallback pro Safari - zkusit získat registraci pro root scope
+                    navigator.serviceWorker.getRegistration('/').then(function(registration) {
+                        if (registration && registration.scope === rootScope) {
+                            console.log('[DB PWA] ServiceWorker už je zaregistrován:', registration.scope);
+                            return;
+                        }
+                        
+                        // Registrovat s root scope
+                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
+                            .then(function(registration) {
+                                console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                            })
+                            .catch(function(error) {
+                                console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                            });
+                    }).catch(function(error) {
+                        // Pokud getRegistration selže, zkusit registrovat přímo
+                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
+                            .then(function(registration) {
+                                console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                            })
+                            .catch(function(error) {
+                                console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                            });
+                    });
+                }
             }
             
             // Zaregistrovat po načtení stránky
