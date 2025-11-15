@@ -60,19 +60,29 @@ if ( $is_desktop ) {
 if ( $is_desktop ) {
     $footer_template = locate_template( array( 'footer.php' ) );
     if ( $footer_template ) {
+        // Dočasně odstranit wp_footer akci, aby se nevolala při include footer.php
+        // (zavoláme ji sami později pouze jednou)
+        remove_all_actions( 'wp_footer' );
+        
         // Načíst footer template a extrahovat pouze obsah před </body>
         ob_start();
         include $footer_template;
         $full_footer = ob_get_clean();
         
         // Extrahovat obsah před </body> tagem (bez samotného tagu)
+        // A také odstranit případné volání wp_footer() z footer obsahu (PHP kód)
         if ( preg_match( '/(.*?)<\/body>/is', $full_footer, $matches ) ) {
-            echo $matches[1];
+            $footer_content = $matches[1];
+            // Odstranit případné volání wp_footer() z footer obsahu
+            $footer_content = preg_replace( '/<\?php\s*wp_footer\(\);\s*\?>/i', '', $footer_content );
+            echo $footer_content;
         } else {
-            // Pokud není </body>, použijeme celý obsah
-            echo $full_footer;
+            // Pokud není </body>, použijeme celý obsah, ale odstraníme wp_footer()
+            $footer_content = preg_replace( '/<\?php\s*wp_footer\(\);\s*\?>/i', '', $full_footer );
+            echo $footer_content;
         }
     }
+    // Zavolat wp_footer() pouze jednou (akce byla dočasně odstraněna, takže se nevolá z footer.php)
     wp_footer();
 } else {
     wp_footer();
