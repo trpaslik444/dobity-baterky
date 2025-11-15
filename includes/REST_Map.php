@@ -85,23 +85,14 @@ class REST_Map {
                     return false;
                 }
 
-                // Kontrola přístupu - pokud funkce existuje, použít ji
+                // Kontrola přístupu - vždy vynucovat db_user_can_see_map() pro bezpečnost
+                // Tato funkce vyžaduje přihlášeného uživatele s příslušnou capability
                 if ( function_exists('db_user_can_see_map') ) {
-                    $can_see = db_user_can_see_map();
-                    // Pokud funkce vrací false, ale uživatel není přihlášen a není Members plugin,
-                    // povolit přístup (veřejný přístup)
-                    // Načíst plugin.php, pokud není načteno (potřeba pro is_plugin_active na front-endu)
-                    if ( ! function_exists('is_plugin_active') ) {
-                        require_once ABSPATH . 'wp-admin/includes/plugin.php';
-                    }
-                    if ( ! $can_see && ! is_user_logged_in() && function_exists('is_plugin_active') && ! is_plugin_active('members/members.php') ) {
-                        return true;
-                    }
-                    return $can_see;
+                    return db_user_can_see_map();
                 }
                 
-                // Pokud funkce neexistuje, povolit přístup (veřejný přístup)
-                return true;
+                // Pokud funkce neexistuje, zamítnout přístup (bezpečnostní opatření)
+                return false;
             },
         ) );
 
