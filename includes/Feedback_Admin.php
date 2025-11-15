@@ -87,8 +87,8 @@ class Feedback_Admin {
 		// Pokud je component_key něco jako id nebo class, hledej v assets
 		if ( preg_match( '/^[a-z][a-z0-9_-]*$/', $component_key ) ) {
 			$search_files = array(
-				$plugin_dir . 'assets/db-map.js',
-				$plugin_dir . 'assets/db-map.min.js',
+				$plugin_dir . 'assets/map/core.js',
+				$plugin_dir . 'assets/map/core.js',
 				$plugin_dir . 'assets/feedback.js',
 			);
 			
@@ -118,7 +118,7 @@ class Feedback_Admin {
 			$context['description'] = 'Mapa aplikace';
 			$context['related_files'] = array(
 				array( 'path' => 'includes/Frontend_Map.php', 'role' => 'Loads map data' ),
-				array( 'path' => 'assets/db-map.js', 'role' => 'Map logic' ),
+				array( 'path' => 'assets/map/core.js', 'role' => 'Map core logic' ),
 				array( 'path' => 'templates/', 'role' => 'Template files' ),
 			);
 		}

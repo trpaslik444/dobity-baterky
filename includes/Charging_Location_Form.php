@@ -1959,13 +1959,11 @@ class Charging_Location_Form {
             }
         }
         
-        // Přidat taxonomie POUZE pro termy přiřazené k příspěvku, a jen pokud nejsou duplicitní
-        if (!empty($terms) && !is_wp_error($terms) && !empty($selected_types)) {
+        // Přidat VŠECHNY dostupné taxonomie (ne jen ty přiřazené), aby bylo možné vytvářet místa manuálně
+        // Pokud jsou přiřazené taxonomie, zobrazíme je jako zaškrtnuté, jinak všechny jako nezaškrtnuté
+        if (!empty($terms) && !is_wp_error($terms)) {
             foreach ($terms as $term) {
                 $term_name_lower = strtolower(trim($term->name));
-                if (!in_array($term->term_id, $selected_types)) {
-                    continue; // zobrazujeme pouze vybrané termy
-                }
                 
                 // Kontrola, jestli už není OCM konektor se stejným názvem
                 $is_duplicate = false;
@@ -2234,12 +2232,18 @@ class Charging_Location_Form {
                     <?php endforeach; ?>
                     </div>
                 <?php else : ?>
-                    <div style="padding: 20px; text-align: center; background: #f8f9fa; border: 1px dashed #dee2e6; border-radius: 6px; color: #6c757d;">
-                        <p style="margin: 0;">Žádné typy konektorů nebyly nalezeny.</p>
+                    <div style="padding: 20px; text-align: center; background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; color: #856404;">
+                        <p style="margin: 0; font-weight: 600;">⚠️ Žádné typy konektorů nebyly nalezeny.</p>
                         <p style="margin: 10px 0 0 0; font-size: 13px;">
-                            <a href="<?php echo admin_url('edit-tags.php?taxonomy=charger_type'); ?>" target="_blank">
-                                Vytvořte typy konektorů v administraci
+                            Pro vytvoření nabíjecího místa manuálně je potřeba nejdříve vytvořit typy konektorů.
+                        </p>
+                        <p style="margin: 10px 0 0 0; font-size: 13px;">
+                            <a href="<?php echo admin_url('edit-tags.php?taxonomy=charger_type'); ?>" target="_blank" class="button button-primary" style="margin-top: 10px;">
+                                ➕ Vytvořit typy konektorů
                             </a>
+                        </p>
+                        <p style="margin: 15px 0 0 0; font-size: 12px; color: #856404;">
+                            <strong>Alternativa:</strong> Můžete použít vyhledávání v OpenChargeMap (box nahoře) pro automatické načtení typů konektorů.
                         </p>
                     </div>
                 <?php endif; ?>
@@ -2584,80 +2588,100 @@ class Charging_Location_Form {
             }
             
             // Uložit počty konektorů (podporuje jak ID, tak názvy)
+            // Uložit pouze pro vybrané konektory (ty, které jsou v charger_type)
             $counts = array();
             if (isset($_POST['charger_count']) && is_array($_POST['charger_count'])) {
                 foreach ($_POST['charger_count'] as $key => $count) {
-                    $cnt = intval($count);
-                    if ($cnt > 0) {
-                        $counts[$key] = $cnt;
+                    // Uložit pouze pokud je tento konektor vybraný v charger_type
+                    if (in_array($key, $charger_types, true)) {
+                        $cnt = intval($count);
+                        if ($cnt > 0) {
+                            $counts[$key] = $cnt;
+                        }
                     }
                 }
             }
             update_post_meta($post_id, '_db_charger_counts', $counts);
             
-            // Uložit stavy konektorů
+            // Uložit stavy konektorů (pouze pro vybrané konektory)
             $statuses = array();
             if (isset($_POST['charger_status']) && is_array($_POST['charger_status'])) {
                 foreach ($_POST['charger_status'] as $key => $status) {
-                    $statuses[$key] = sanitize_text_field($status);
+                    // Uložit pouze pokud je tento konektor vybraný v charger_type
+                    if (in_array($key, $charger_types, true)) {
+                        $statuses[$key] = sanitize_text_field($status);
+                    }
                 }
             }
             update_post_meta($post_id, '_db_charger_status', $statuses);
             
-            // Uložit výkony konektorů
+            // Uložit výkony konektorů (pouze pro vybrané konektory)
             $powers = array();
             if (isset($_POST['charger_power']) && is_array($_POST['charger_power'])) {
                 foreach ($_POST['charger_power'] as $key => $power) {
-                    $power_val = intval($power);
-                    if ($power_val > 0) {
-                        $powers[$key] = $power_val;
+                    // Uložit pouze pokud je tento konektor vybraný v charger_type
+                    if (in_array($key, $charger_types, true)) {
+                        $power_val = intval($power);
+                        if ($power_val > 0) {
+                            $powers[$key] = $power_val;
+                        }
                     }
                 }
             }
             update_post_meta($post_id, '_db_charger_power', $powers);
             
-            // Uložit fáze konektorů (pouze pro AC)
+            // Uložit fáze konektorů (pouze pro AC, pouze pro vybrané konektory)
             $phases = array();
             if (isset($_POST['charger_phase']) && is_array($_POST['charger_phase'])) {
                 foreach ($_POST['charger_phase'] as $key => $phase) {
-                    if (!empty($phase)) {
+                    // Uložit pouze pokud je tento konektor vybraný v charger_type
+                    if (in_array($key, $charger_types, true) && !empty($phase)) {
                         $phases[$key] = sanitize_text_field($phase);
                     }
                 }
             }
             update_post_meta($post_id, '_db_charger_phase', $phases);
             
-            // Uložit napětí konektorů
+            // Uložit napětí konektorů (pouze pro vybrané konektory)
             $voltages = array();
             if (isset($_POST['charger_voltage']) && is_array($_POST['charger_voltage'])) {
                 foreach ($_POST['charger_voltage'] as $key => $voltage) {
-                    $voltage_val = intval($voltage);
-                    if ($voltage_val > 0) {
-                        $voltages[$key] = $voltage_val;
+                    // Uložit pouze pokud je tento konektor vybraný v charger_type
+                    if (in_array($key, $charger_types, true)) {
+                        $voltage_val = intval($voltage);
+                        if ($voltage_val > 0) {
+                            $voltages[$key] = $voltage_val;
+                        }
                     }
                 }
             }
             update_post_meta($post_id, '_db_charger_voltage', $voltages);
             
-            // Uložit proudy konektorů
+            // Uložit proudy konektorů (pouze pro vybrané konektory)
             $amperages = array();
             if (isset($_POST['charger_amperage']) && is_array($_POST['charger_amperage'])) {
                 foreach ($_POST['charger_amperage'] as $key => $amperage) {
-                    $amperage_val = intval($amperage);
-                    if ($amperage_val > 0) {
-                        $amperages[$key] = $amperage_val;
+                    // Uložit pouze pokud je tento konektor vybraný v charger_type
+                    if (in_array($key, $charger_types, true)) {
+                        $amperage_val = intval($amperage);
+                        if ($amperage_val > 0) {
+                            $amperages[$key] = $amperage_val;
+                        }
                     }
                 }
             }
             update_post_meta($post_id, '_db_charger_amperage', $amperages);
 
-            // Uložit způsob připojení (kabel / zásuvka)
+            // Uložit způsob připojení (kabel / zásuvka, pouze pro vybrané konektory)
             $conn_methods = array();
             if (isset($_POST['charger_connection_method']) && is_array($_POST['charger_connection_method'])) {
                 foreach ($_POST['charger_connection_method'] as $key => $method) {
-                    $m = sanitize_text_field($method);
-                    if ($m !== '') {
-                        $conn_methods[$key] = $m;
+                    // Uložit pouze pokud je tento konektor vybraný v charger_type
+                    if (in_array($key, $charger_types, true)) {
+                        $m = sanitize_text_field($method);
+                        if ($m !== '') {
+                            $conn_methods[$key] = $m;
+                        }
                     }
                 }
             }
@@ -2670,14 +2694,41 @@ class Charging_Location_Form {
             
             error_log('[CHARGING DEBUG] Uloženo: ' . count($counts) . ' konektorů, ' . count($powers) . ' výkonů, ' . count($voltages) . ' napětí');
         } else {
-            wp_set_post_terms($post_id, array(), 'charger_type', false);
-            delete_post_meta($post_id, '_db_charger_counts');
-            delete_post_meta($post_id, '_db_charger_status');
-            delete_post_meta($post_id, '_db_charger_power');
-            delete_post_meta($post_id, '_db_charger_phase');
-            delete_post_meta($post_id, '_db_charger_voltage');
-            delete_post_meta($post_id, '_db_charger_amperage');
-            delete_post_meta($post_id, '_ocm_connector_names');
+            // Pokud není charger_type v POST, musíme rozlišit mezi:
+            // 1. Nový post (auto-draft) - nechat prázdné
+            // 2. Existující post, kde uživatel odškrtl všechny checkboxy - smazat data
+            
+            // Zkontrolovat, jestli je post existující (není auto-draft) a formulář byl odeslán
+            $is_existing_post = $post && $post->post_status !== 'auto-draft' && $post->ID > 0;
+            $form_was_submitted = isset($_POST['_db_address']) || isset($_POST['_db_provider']) || isset($_POST['_db_lat']);
+            
+            if (isset($_POST['charger_type']) && is_array($_POST['charger_type']) && empty($_POST['charger_type'])) {
+                // Explicitní prázdný array = smazat všechno
+                wp_set_post_terms($post_id, array(), 'charger_type', false);
+                delete_post_meta($post_id, '_db_charger_counts');
+                delete_post_meta($post_id, '_db_charger_status');
+                delete_post_meta($post_id, '_db_charger_power');
+                delete_post_meta($post_id, '_db_charger_phase');
+                delete_post_meta($post_id, '_db_charger_voltage');
+                delete_post_meta($post_id, '_db_charger_amperage');
+                delete_post_meta($post_id, '_ocm_connector_names');
+                error_log('[CHARGING DEBUG] Explicitně smazáno - prázdný charger_type array');
+            } elseif ($is_existing_post && $form_was_submitted) {
+                // Existující post a formulář byl odeslán, ale charger_type není v POST
+                // To znamená, že uživatel odškrtl všechny checkboxy → smazat data
+                wp_set_post_terms($post_id, array(), 'charger_type', false);
+                delete_post_meta($post_id, '_db_charger_counts');
+                delete_post_meta($post_id, '_db_charger_status');
+                delete_post_meta($post_id, '_db_charger_power');
+                delete_post_meta($post_id, '_db_charger_phase');
+                delete_post_meta($post_id, '_db_charger_voltage');
+                delete_post_meta($post_id, '_db_charger_amperage');
+                delete_post_meta($post_id, '_ocm_connector_names');
+                error_log('[CHARGING DEBUG] Smazáno - existující post, formulář odeslán, všechny checkboxy odškrtnuté');
+            } else {
+                // Nový post nebo formulář nebyl odeslán - zachovat stávající data (nebo nechat prázdné pro nový post)
+                error_log('[CHARGING DEBUG] charger_type není v POST - zachovávám stávající data (nový post nebo formulář nebyl odeslán)');
+            }
         }
         
         // Celkový počet stanic

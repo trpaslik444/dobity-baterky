@@ -49,6 +49,8 @@ class POI_Boxes {
 
         $google_cache_expires = get_post_meta( $post->ID, '_poi_google_cache_expires', true );
         $tripadvisor_cache_expires = get_post_meta( $post->ID, '_poi_tripadvisor_cache_expires', true );
+        $manual_override = get_post_meta( $post->ID, '_poi_manual_override', true ) === '1';
+        $manual_override_updated = (int) get_post_meta( $post->ID, '_poi_manual_override_updated', true );
 
         // Google Places API data
         $place_id = $google_place_id;
@@ -126,6 +128,26 @@ class POI_Boxes {
                                         /* translators: %s: datum expirace */
                                         esc_html__( 'Aktuálně uložená data expirují %s (Google povoluje maximálně 30 dní).', 'dobity-baterky' ),
                                         esc_html( date_i18n( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), intval( $google_cache_expires ) ) )
+                                    );
+                                    ?>
+                                </p>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th><label for="_poi_manual_override"><?php esc_html_e( 'Manuální správa', 'dobity-baterky' ); ?></label></th>
+                        <td>
+                            <label>
+                                <input type="checkbox" name="_poi_manual_override" id="_poi_manual_override" value="1" <?php checked( $manual_override ); ?> />
+                                <?php esc_html_e( 'Zabránit automatickému přepisování dat z Google Places', 'dobity-baterky' ); ?>
+                            </label>
+                            <?php if ( $manual_override_updated ) : ?>
+                                <p class="description">
+                                    <?php
+                                    printf(
+                                        /* translators: %s: lidsky čitelný čas */
+                                        esc_html__( 'Manuální režim zapnut %s nazpět.', 'dobity-baterky' ),
+                                        esc_html( human_time_diff( $manual_override_updated, current_time( 'timestamp' ) ) )
                                     );
                                     ?>
                                 </p>
@@ -924,6 +946,14 @@ class POI_Boxes {
                 delete_post_meta( $post_id, '_poi_google_cache' );
                 delete_post_meta( $post_id, '_poi_google_cache_expires' );
             }
+        }
+        $prev_manual = get_post_meta( $post_id, '_poi_manual_override', true );
+        $manual_flag = ! empty( $_POST['_poi_manual_override'] ) ? '1' : '0';
+        update_post_meta( $post_id, '_poi_manual_override', $manual_flag );
+        if ( $manual_flag === '1' && $prev_manual !== '1' ) {
+            update_post_meta( $post_id, '_poi_manual_override_updated', current_time( 'timestamp' ) );
+        } elseif ( $manual_flag !== '1' ) {
+            delete_post_meta( $post_id, '_poi_manual_override_updated' );
         }
         if ( isset( $_POST['_poi_tripadvisor_location_id'] ) ) {
             $new_tripadvisor_id = sanitize_text_field( $_POST['_poi_tripadvisor_location_id'] );

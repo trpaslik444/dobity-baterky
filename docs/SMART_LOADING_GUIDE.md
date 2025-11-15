@@ -191,7 +191,7 @@ console.log(window.getCacheStats());
 ### **Implementace**
 
 #### **Soubory upravené:**
-- `assets/db-map.js` - Hlavní logika
+- `assets/map/core.js` – Hlavní logika (shared core)
 - `assets/db-map.css` - Styly komponent
 
 #### **Nové funkce:**

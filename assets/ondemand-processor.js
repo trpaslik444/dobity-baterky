@@ -385,7 +385,21 @@ class OnDemandProcessor {
 
 // Inicializace
 document.addEventListener('DOMContentLoaded', () => {
+function dbInitOnDemandProcessor() {
     window.onDemandProcessor = new OnDemandProcessor();
+}
+
+if (window.dbMapLoader && window.dbMapLoader.readyPromise) {
+    window.dbMapLoader.readyPromise.then(dbInitOnDemandProcessor).catch((error) => {
+        console.error('[DB OnDemand] Map loader selhal, inicializuji fallbackem.', error);
+        dbInitOnDemandProcessor();
+    });
+} else {
+    window.addEventListener('db-map-ready', function handleDbMapReady() {
+        window.removeEventListener('db-map-ready', handleDbMapReady);
+        dbInitOnDemandProcessor();
+    });
+}
 });
 
 // CSS styly

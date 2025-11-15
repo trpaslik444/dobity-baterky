@@ -56,7 +56,7 @@ class Frontend_Map {
         // JavaScript - správné pořadí: Leaflet -> MarkerCluster -> vlastní
         wp_enqueue_script( 'leaflet', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js', array(), '1.9.4', true );
         wp_enqueue_script( 'leaflet-markercluster', 'https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js', array('leaflet'), '1.5.3', true );
-        wp_enqueue_script( 'db-map', plugins_url( 'assets/db-map.js', DB_PLUGIN_FILE ), array('leaflet','leaflet-markercluster'), DB_PLUGIN_VERSION, true );
+        wp_enqueue_script( 'db-map-loader', plugins_url( 'assets/map/loader.js', DB_PLUGIN_FILE ), array('leaflet','leaflet-markercluster'), DB_PLUGIN_VERSION, true );
         
         // PWA optimalizace - dočasně deaktivováno pro testování
         // if (function_exists('db_is_map_app_page') && db_is_map_app_page()) {
@@ -86,7 +86,7 @@ class Frontend_Map {
             $translations = $translation_manager->get_frontend_translations();
         }
         
-        wp_localize_script( 'db-map', 'dbMapData', array(
+        wp_localize_script( 'db-map-loader', 'dbMapData', array(
             'restUrl'   => rest_url( 'db/v1/map' ),
             'searchUrl' => rest_url( 'db/v1/map-search' ),
             'poiExternalUrl' => rest_url( 'db/v1/poi-external' ),
@@ -94,6 +94,8 @@ class Frontend_Map {
             'restNonce' => wp_create_nonce( 'wp_rest' ),
             'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
             'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
+            'assetsBase' => plugins_url( 'assets/map/', DB_PLUGIN_FILE ),
+            'version' => DB_PLUGIN_VERSION,
             'isMapPage' => function_exists('db_is_map_app_page') ? db_is_map_app_page() : false,
             'pwaEnabled' => class_exists('PWAforWP') ? true : false,
             'ajaxUrl'   => admin_url('admin-ajax.php'),

@@ -79,13 +79,20 @@ class REST_Map {
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_map' ),
             'permission_callback' => function ( $request ) {
-                // Zkontroluj nonce autentizaci
-                if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                // Zkontroluj nonce autentizaci (pokud je poslán)
+                $nonce = $request->get_header( 'X-WP-Nonce' );
+                if ( $nonce && ! wp_verify_nonce( $nonce, 'wp_rest' ) ) {
                     return false;
                 }
 
-                // Jednoduchá kontrola - necháme Members plugin, aby měl kontrolu
-                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+                // Kontrola přístupu - vždy vynucovat db_user_can_see_map() pro bezpečnost
+                // Tato funkce vyžaduje přihlášeného uživatele s příslušnou capability
+                if ( function_exists('db_user_can_see_map') ) {
+                    return db_user_can_see_map();
+                }
+                
+                // Pokud funkce neexistuje, zamítnout přístup (bezpečnostní opatření)
+                return false;
             },
         ) );
 
@@ -579,6 +586,9 @@ class REST_Map {
                     'modified' => $post->post_modified,
                     'author' => $post->post_author,
                     'status' => $post->post_status,
+                    // URL pro otevření detailu
+                    'permalink' => get_permalink($post->ID),
+                    'link' => get_permalink($post->ID),
                 ];
 
                 if ($has_ids_filter || !empty($favorite_assignments)) {

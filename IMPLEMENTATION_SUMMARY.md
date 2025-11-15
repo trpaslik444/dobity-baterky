@@ -85,7 +85,7 @@ console.log(window.getCacheStats());
 ## 📁 Soubory
 
 ### **Upravené:**
-- `assets/db-map.js` - Hlavní logika Smart Loading Manageru
+- `assets/map/core.js` - Hlavní logika Smart Loading Manageru
 - `assets/db-map.css` - Styly pro nové komponenty
 
 ### **Nové:**

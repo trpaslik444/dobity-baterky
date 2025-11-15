@@ -27,7 +27,7 @@ class Nearby_Settings {
     public function register_settings() {
         register_setting('db_nearby_settings', 'db_nearby_config', array($this, 'validate_settings'));
     }
-    
+
     public function validate_settings($input) {
         $sanitized = array();
         
@@ -60,7 +60,8 @@ class Nearby_Settings {
         
         return $sanitized;
     }
-    
+
+
     public function render_settings_page() {
         $config = get_option('db_nearby_config', array(
             'provider' => 'ors',
@@ -75,6 +76,7 @@ class Nearby_Settings {
             'lazy_prompt_on_click' => 1,
             'auto_enqueue_on_get' => 0
         ));
+
         ?>
         <div class="wrap">
             <h1>Nearby Places Settings</h1>
@@ -90,11 +92,11 @@ class Nearby_Settings {
                 </a>
             </nav>
             <p>Konfigurace pro walking distance routing a cache.</p>
-            
+
             <form method="post" action="options.php">
                 <?php settings_fields('db_nearby_settings'); ?>
                 <?php wp_nonce_field('db_nearby_settings_save', 'db_nearby_settings_nonce'); ?>
-                
+
                 <table class="form-table">
                     <tr>
                         <th scope="row">Routing Provider</th>
@@ -170,11 +172,11 @@ class Nearby_Settings {
                         </td>
                     </tr>
                 </table>
-                
+
                 <?php submit_button('Uložit nastavení'); ?>
             </form>
-            
-            <h2>Cache Management</h2>
+
+            <h2 style="margin-top:40px;">Cache Management</h2>
             <p>
                 <button type="button" class="button" onclick="clearNearbyCache()">Vymazat všechny cache</button>
                 <span id="cache-status"></span>
