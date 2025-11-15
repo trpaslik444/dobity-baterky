@@ -2694,9 +2694,14 @@ class Charging_Location_Form {
             
             error_log('[CHARGING DEBUG] Uloženo: ' . count($counts) . ' konektorů, ' . count($powers) . ' výkonů, ' . count($voltages) . ' napětí');
         } else {
-            // Pokud není charger_type v POST, NESMAZAT existující data - může to být nový post nebo uživatel prostě nevybral žádné
-            // Pouze pokud je to explicitní smazání (např. prázdný array), pak smazat
-            // Pro nové posty necháme data prázdná, pro existující posty zachováme stávající data
+            // Pokud není charger_type v POST, musíme rozlišit mezi:
+            // 1. Nový post (auto-draft) - nechat prázdné
+            // 2. Existující post, kde uživatel odškrtl všechny checkboxy - smazat data
+            
+            // Zkontrolovat, jestli je post existující (není auto-draft) a formulář byl odeslán
+            $is_existing_post = $post && $post->post_status !== 'auto-draft' && $post->ID > 0;
+            $form_was_submitted = isset($_POST['_db_address']) || isset($_POST['_db_provider']) || isset($_POST['_db_lat']);
+            
             if (isset($_POST['charger_type']) && is_array($_POST['charger_type']) && empty($_POST['charger_type'])) {
                 // Explicitní prázdný array = smazat všechno
                 wp_set_post_terms($post_id, array(), 'charger_type', false);
@@ -2708,9 +2713,21 @@ class Charging_Location_Form {
                 delete_post_meta($post_id, '_db_charger_amperage');
                 delete_post_meta($post_id, '_ocm_connector_names');
                 error_log('[CHARGING DEBUG] Explicitně smazáno - prázdný charger_type array');
+            } elseif ($is_existing_post && $form_was_submitted) {
+                // Existující post a formulář byl odeslán, ale charger_type není v POST
+                // To znamená, že uživatel odškrtl všechny checkboxy → smazat data
+                wp_set_post_terms($post_id, array(), 'charger_type', false);
+                delete_post_meta($post_id, '_db_charger_counts');
+                delete_post_meta($post_id, '_db_charger_status');
+                delete_post_meta($post_id, '_db_charger_power');
+                delete_post_meta($post_id, '_db_charger_phase');
+                delete_post_meta($post_id, '_db_charger_voltage');
+                delete_post_meta($post_id, '_db_charger_amperage');
+                delete_post_meta($post_id, '_ocm_connector_names');
+                error_log('[CHARGING DEBUG] Smazáno - existující post, formulář odeslán, všechny checkboxy odškrtnuté');
             } else {
-                // Pokud charger_type není v POST vůbec, zachovat stávající data (nebo nechat prázdné pro nový post)
-                error_log('[CHARGING DEBUG] charger_type není v POST - zachovávám stávající data');
+                // Nový post nebo formulář nebyl odeslán - zachovat stávající data (nebo nechat prázdné pro nový post)
+                error_log('[CHARGING DEBUG] charger_type není v POST - zachovávám stávající data (nový post nebo formulář nebyl odeslán)');
             }
         }
         
