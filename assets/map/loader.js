@@ -18,7 +18,12 @@
       }
       setTimeout(() => {
         try {
-          listener.call(document);
+          // Vytvořit syntetický event objekt pro API kompatibilitu
+          const syntheticEvent = new Event('DOMContentLoaded', {
+            bubbles: false,
+            cancelable: false
+          });
+          listener.call(document, syntheticEvent);
         } catch (error) {
           console.error('[DB Map][Loader] DOMContentLoaded callback selhal', error);
         }

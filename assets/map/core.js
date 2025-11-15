@@ -179,7 +179,20 @@ const LocationService = (() => {
                 saveCache(last);
                 listeners.forEach(fn => { try { fn(last); } catch(_) {} });
             },
-            (_) => {},
+            (err) => {
+                // Tichá chyba - geolokace může selhat z různých důvodů (permission denied, timeout, atd.)
+                // Tyto chyby jsou očekávané a neměly by se zobrazovat v konzoli
+                // Pouze logovat v debug módu, pokud je potřeba
+                if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+                    const errorMessages = {
+                        1: 'permission_denied',
+                        2: 'position_unavailable',
+                        3: 'timeout'
+                    };
+                    const errorMsg = errorMessages[err.code] || 'unknown';
+                    console.debug('[DB Map][LocationService] Geolocation error:', errorMsg);
+                }
+            },
             { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
         );
     }
