@@ -1192,8 +1192,13 @@ body.db-license-modal-open {
     transform: translateX(0) !important;
   }
   
+  /* Když je menu otevřené, zúžit mapu místo posunutí */
   .db-menu-open .db-map-root {
-    transform: translateX(30%);
+    width: calc(90vw - 30vw);
+    max-width: calc(1400px - 420px); /* Aproximace 30% z 1400px */
+    margin-left: 30vw;
+    transform: none;
+    min-width: 600px; /* Minimální šířka pro mapu, aby nebyla příliš úzká */
   }
 }
 

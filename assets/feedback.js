@@ -53,7 +53,8 @@
     if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
   });
-  document.addEventListener('click', handleElementClick);
+  // Explicitně nastaveno passive: false, protože handler volá preventDefault()
+  document.addEventListener('click', handleElementClick, { passive: false });
   modal.addEventListener('click', function(e) { 
     if (e.target === modal) closeModal(); 
   });

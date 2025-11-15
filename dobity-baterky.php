@@ -431,6 +431,13 @@ if ( file_exists( __DIR__ . '/includes/Feedback_Admin.php' ) ) {
         DB\Feedback_Admin::get_instance()->register();
     }
 }
+// Early Adopters Mailing List Admin
+if ( file_exists( __DIR__ . '/includes/Early_Adopters_Admin.php' ) ) {
+    require_once __DIR__ . '/includes/Early_Adopters_Admin.php';
+    if ( class_exists( 'DB\Early_Adopters_Admin' ) ) {
+        DB\Early_Adopters_Admin::get_instance()->register();
+    }
+}
 
 // Po načtení pluginu zkontrolovat existenci tabulek (bez nutnosti re-aktivace)
 add_action('plugins_loaded', function() {

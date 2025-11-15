@@ -97,6 +97,31 @@ class On_Demand_Processor {
             if ($nearby_data) {
                 $result['items'] = $nearby_data['items'] ?? [];
                 $result['isochrones'] = $nearby_data['isochrones'] ?? null;
+            } else {
+                // Pokud nearby data nejsou, zkusit načíst alespoň isochrony
+                $isochrones_keys = array(
+                    'db_isochrones_v1_foot-walking',
+                    '_db_isochrones_cache'
+                );
+                
+                foreach ($isochrones_keys as $key) {
+                    $data = get_post_meta($point_id, $key, true);
+                    if ($data) {
+                        $isochrones_data = is_string($data) ? json_decode($data, true) : $data;
+                        if ($isochrones_data && isset($isochrones_data['geojson']) && isset($isochrones_data['geojson']['features'])) {
+                            // Přidat user_settings pokud chybí
+                            if (!isset($isochrones_data['user_settings'])) {
+                                $isochrones_data['user_settings'] = array(
+                                    'enabled' => true,
+                                    'walking_speed' => 4.5
+                                );
+                            }
+                            $result['items'] = [];
+                            $result['isochrones'] = $isochrones_data;
+                            break;
+                        }
+                    }
+                }
             }
             
         } catch (\Exception $e) {
@@ -124,16 +149,36 @@ class On_Demand_Processor {
             $nearby_data = null;
             $isochrones_data = null;
             
-            // Určit správný meta klíč podle typu
-            $meta_key = ($point_type === 'poi') ? '_db_nearby_cache_poi_foot' : 
-                       (($point_type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
+            // Zjistit origin post type pro správné přemapování
+            $origin_post = get_post($point_id);
+            $origin_post_type = $origin_post ? $origin_post->post_type : $point_type;
             
-            // Zkusit různé meta klíče pro nearby data
+            // Určit správný meta klíč podle typu - musí odpovídat tomu, jak se typ přemapoval v recompute_nearby_for_origin
+            // Pokud je origin poi, hledá se charging_location (a ukládá se pod _db_nearby_cache_charger_foot)
+            // Pokud je origin charging_location, hledá se poi (a ukládá se pod _db_nearby_cache_poi_foot)
+            $meta_key = null;
+            if ($origin_post_type === 'poi') {
+                // Pro POI origin se hledají charging locations, ukládá se pod charger_foot
+                $meta_key = '_db_nearby_cache_charger_foot';
+            } elseif ($origin_post_type === 'charging_location') {
+                // Pro charging_location origin se hledají POI, ukládá se pod poi_foot
+                $meta_key = '_db_nearby_cache_poi_foot';
+            } elseif ($origin_post_type === 'rv_spot') {
+                // Pro rv_spot origin se hledají charging locations, ukládá se pod charger_foot
+                $meta_key = '_db_nearby_cache_charger_foot';
+            } else {
+                // Fallback na původní logiku
+                $meta_key = ($point_type === 'poi') ? '_db_nearby_cache_poi_foot' : 
+                           (($point_type === 'rv_spot') ? '_db_nearby_cache_rv_foot' : '_db_nearby_cache_charger_foot');
+            }
+            
+            // Zkusit různé meta klíče pro nearby data - nejdříve správný podle origin typu
             $nearby_keys = array(
                 $meta_key,
                 '_db_nearby_cache_poi_foot',
                 '_db_nearby_cache_charging_location_foot',
                 '_db_nearby_cache_charger_foot',
+                '_db_nearby_cache_rv_foot',
                 '_db_nearby_data'
             );
             
@@ -175,14 +220,16 @@ class On_Demand_Processor {
                 );
             }
             
-            if (!$nearby_data) {
-                return null;
+            // Pokud máme nearby data, vždy vrátit i isochrony (pokud jsou)
+            if ($nearby_data) {
+                return array(
+                    'items' => $nearby_data['items'] ?? [],
+                    'isochrones' => $isochrones_data
+                );
             }
             
-            return array(
-                'items' => $nearby_data['items'] ?? [],
-                'isochrones' => $isochrones_data
-            );
+            // Pokud nemáme ani nearby data ani isochrony, vrátit null
+            return null;
             
         } catch (\Exception $e) {
             return null;
