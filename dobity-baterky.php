@@ -1059,10 +1059,9 @@ add_action('wp_head', function() {
 }, 1);
 
 /**
- * Načte PWA helper a zaregistruje ServiceWorker
+ * Načte PWA helper script (musí být enqueued dříve než wp_print_footer_scripts)
  */
-add_action('wp_footer', function() {
-    // Načíst PWA helper
+add_action('wp_enqueue_scripts', function() {
     wp_enqueue_script(
         'db-pwa-helper',
         plugins_url('assets/pwa-helper.js', DB_PLUGIN_FILE),
@@ -1070,7 +1069,12 @@ add_action('wp_footer', function() {
         DB_PLUGIN_VERSION,
         true
     );
-    
+}, 20);
+
+/**
+ * Zaregistruje ServiceWorker a blokuje nesprávné registrace
+ */
+add_action('wp_footer', function() {
     // Registrace ServiceWorker
     $sw_url = plugins_url('assets/sw.js', DB_PLUGIN_FILE);
     ?>
