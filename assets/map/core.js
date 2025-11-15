@@ -5192,13 +5192,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         `;
         
         // Pokud je to rate limiting, zkusit znovu po retry_after sekundách
-        if (data.error === 'rate_limited' && window.dbNearbyRateLimited && window.dbNearbyRateLimited.retryAfter) {
+        if (data.error === 'rate_limited' && window.dbNearbyRateLimited && typeof window.dbNearbyRateLimited === 'object' && window.dbNearbyRateLimited.retryAfter) {
           const retryAfter = window.dbNearbyRateLimited.retryAfter * 1000;
           setTimeout(() => {
             // Zkontrolovat, zda container stále existuje
             if (containerEl && containerEl.parentNode) {
-              // Zkusit znovu načíst
-              loadNearbyForMobileSheet(f, containerEl);
+              // Zkusit znovu načíst - použít správné parametry z feature
+              const feature = features.find(f => f.properties.id == centerId);
+              if (feature && feature.properties) {
+                const lat = parseFloat(feature.properties.lat || feature.geometry?.coordinates?.[1] || 0);
+                const lng = parseFloat(feature.properties.lng || feature.geometry?.coordinates?.[0] || 0);
+                if (lat && lng) {
+                  loadNearbyForMobileSheet(containerEl, centerId, lat, lng);
+                }
+              }
             }
           }, retryAfter);
         }
@@ -6622,10 +6629,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (res.ok) {
         nearbyApiData = await res.json();
         
-        // Pokud nearby API vrací rate_limited error, nastavit flag a nevolat on-demand
+        // Pokud nearby API vrací rate_limited error, nastavit flag jako objekt (ne boolean)
         if (nearbyApiData.error === 'rate_limited') {
-          if (!window.dbNearbyRateLimited) {
-            window.dbNearbyRateLimited = true;
+          if (!window.dbNearbyRateLimited || typeof window.dbNearbyRateLimited === 'boolean') {
+            // Inicializovat jako objekt, pokud ještě není nebo je to boolean
+            window.dbNearbyRateLimited = {
+              active: true,
+              retryAfter: 2,
+              messageType: 'loading',
+              until: Date.now() + 2000
+            };
           }
         }
         
@@ -6651,7 +6664,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Pokud nearby API nemá data nebo je neplatná odpověď, zkusit on-demand pouze pokud není rate limited
-    if (window.dbNearbyUnauthorized === true || window.dbNearbyRateLimited === true) {
+    const isRateLimited = window.dbNearbyRateLimited && (window.dbNearbyRateLimited === true || (typeof window.dbNearbyRateLimited === 'object' && window.dbNearbyRateLimited.active));
+    if (window.dbNearbyUnauthorized === true || isRateLimited) {
       // Už víme, že on-demand nefunguje - pokud máme nearbyApiData (i bez items), vrátit ho jako fallback
       if (nearbyApiData) {
         return nearbyApiData;
@@ -6661,7 +6675,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Nejdříve zkusit získat data z on-demand status endpointu (pouze pokud není rate limited)
-    if (!window.dbNearbyRateLimited) {
+    if (!isRateLimited) {
       try {
         const statusUrl = `/wp-json/db/v1/ondemand/status/${originId}?type=${type}`;
         const statusResponse = await fetch(statusUrl, {
@@ -6683,7 +6697,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Pokud data nejsou k dispozici, spustit on-demand zpracování (pouze pokud není rate limited)
-    if (!window.dbNearbyRateLimited) {
+    if (!isRateLimited) {
       try {
         const processUrl = '/wp-json/db/v1/ondemand/process';
         const processResponse = await fetch(processUrl, {
@@ -6734,7 +6748,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           
           // Rate limiting - zapamatovat si, ale neblokovat úplně
           // Pouze nastavit flag pro zpomalení dalších requestů
-          if (!window.dbNearbyRateLimited) {
+          if (!window.dbNearbyRateLimited || typeof window.dbNearbyRateLimited === 'boolean') {
             window.dbNearbyRateLimited = {
               active: true,
               retryAfter: retryAfter,
@@ -6742,10 +6756,13 @@ document.addEventListener('DOMContentLoaded', async function() {
               until: Date.now() + (retryAfter * 1000)
             };
           } else {
-            // Aktualizovat retry after
-            window.dbNearbyRateLimited.retryAfter = retryAfter;
-            window.dbNearbyRateLimited.messageType = messageType;
-            window.dbNearbyRateLimited.until = Date.now() + (retryAfter * 1000);
+            // Aktualizovat retry after (pokud je to objekt)
+            if (typeof window.dbNearbyRateLimited === 'object') {
+              window.dbNearbyRateLimited.retryAfter = retryAfter;
+              window.dbNearbyRateLimited.messageType = messageType;
+              window.dbNearbyRateLimited.until = Date.now() + (retryAfter * 1000);
+              window.dbNearbyRateLimited.active = true;
+            }
           }
           
           // FALLBACK: Pokud máme nearbyApiData, použít ho
