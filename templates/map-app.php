@@ -28,12 +28,22 @@ if ( ! defined( 'ABSPATH' ) ) {
  * Hook pro vložení vlastního UI (menu, overlay apod.).
  */
 do_action( 'db_map_app_before_app' );
+
+// Detekce desktop/mobile pro zobrazení headeru a footeru
+$is_desktop = ! wp_is_mobile();
 ?>
+<?php if ( $is_desktop ) : ?>
+    <?php get_header(); ?>
+<?php endif; ?>
 <div id="db-map-app" class="db-map-app">
     <div id="db-map" class="db-map-app__canvas" aria-live="polite"></div>
 </div>
 <?php do_action( 'db_map_app_after_app' ); ?>
-<?php wp_footer(); ?>
+<?php if ( $is_desktop ) : ?>
+    <?php get_footer(); ?>
+<?php else : ?>
+    <?php wp_footer(); ?>
+<?php endif; ?>
 </body>
 </html>
 
