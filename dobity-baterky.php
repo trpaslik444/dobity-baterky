@@ -838,6 +838,7 @@ add_action('init', function() {
 add_filter('query_vars', function($vars) {
     $vars[] = 'db_location_id';
     $vars[] = 'db_location_type';
+    $vars[] = 'db_sw'; // ServiceWorker endpoint
     return $vars;
 });
 
@@ -860,7 +861,36 @@ add_action('init', function() {
         'index.php?post_type=poi&name=$matches[1]',
         'top'
     );
+    
+    // ServiceWorker endpoint pro PWA - servuje SW z root, aby mohl mít scope /
+    add_rewrite_rule(
+        '^db-sw\.js$',
+        'index.php?db_sw=1',
+        'top'
+    );
 }, 10);
+
+
+// Servovat ServiceWorker z root endpointu
+add_action('template_redirect', function() {
+    if (get_query_var('db_sw') == 1) {
+        $sw_file = DB_PLUGIN_DIR . 'assets/sw.js';
+        if (file_exists($sw_file)) {
+            // Nastavit správné hlavičky pro ServiceWorker
+            header('Content-Type: application/javascript; charset=utf-8');
+            header('Service-Worker-Allowed: /'); // Povolit root scope
+            header('Cache-Control: public, max-age=3600'); // Cache na 1 hodinu
+            
+            // Vypnout WordPress output
+            remove_all_actions('wp_head');
+            remove_all_actions('wp_footer');
+            
+            // Servovat ServiceWorker soubor
+            readfile($sw_file);
+            exit;
+        }
+    }
+});
 
 // Manager pro nabíjecí stanice s TomTom API (pouze pro AJAX handlery, ne pro meta boxy)
 if ( file_exists( __DIR__ . '/includes/Charging_Manager.php' ) ) {
@@ -1082,8 +1112,8 @@ add_action('wp_footer', function() {
     }
     $script_added = true;
     
-    // Registrace ServiceWorker
-    $sw_url = plugins_url('assets/sw.js', DB_PLUGIN_FILE);
+    // Použít vlastní endpoint pro ServiceWorker (z root, aby mohl mít scope /)
+    $sw_url = home_url('/db-sw.js');
     ?>
     <script>
     (function() {
@@ -1130,11 +1160,14 @@ add_action('wp_footer', function() {
             });
             
             // Zaregistrovat náš vlastní ServiceWorker s root scope
+            // ServiceWorker je servován z /db-sw.js endpointu, který umožňuje root scope
             function registerServiceWorker() {
+                const rootScope = window.location.origin + '/';
+                
                 // Zkontrolovat, zda už není zaregistrován
                 navigator.serviceWorker.getRegistrations().then(function(registrations) {
                     const ourSW = registrations.find(function(reg) {
-                        return reg.scope === window.location.origin + '/';
+                        return reg.scope === rootScope;
                     });
                     
                     if (ourSW) {
@@ -1142,7 +1175,7 @@ add_action('wp_footer', function() {
                         return;
                     }
                     
-                    // Registrovat s root scope
+                    // Registrovat s root scope (ServiceWorker je servován z /db-sw.js s hlavičkou Service-Worker-Allowed: /)
                     navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: '/' })
                         .then(function(registration) {
                             console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
