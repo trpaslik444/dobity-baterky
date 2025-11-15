@@ -37,8 +37,13 @@ if ( $is_desktop ) {
     $header_template = locate_template( array( 'header.php' ) );
     if ( $header_template ) {
         // Dočasně odstranit wp_head akci, aby se nevolala znovu (už byla volána výše)
+        // Musíme vytvořit hlubokou kopii, protože remove_all_actions modifikuje původní objekt
         global $wp_filter;
-        $wp_head_callbacks = isset( $wp_filter['wp_head'] ) ? $wp_filter['wp_head'] : null;
+        $wp_head_callbacks = null;
+        if ( isset( $wp_filter['wp_head'] ) && is_object( $wp_filter['wp_head'] ) ) {
+            // Vytvořit hlubokou kopii WP_Hook objektu pomocí clone
+            $wp_head_callbacks = clone $wp_filter['wp_head'];
+        }
         remove_all_actions( 'wp_head' );
         
         // Načíst header template a extrahovat pouze obsah body
@@ -47,6 +52,7 @@ if ( $is_desktop ) {
         $full_header = ob_get_clean();
         
         // Obnovit wp_head callbacks
+        // Použít uloženou kopii, která nebyla modifikována remove_all_actions
         if ( $wp_head_callbacks !== null ) {
             $wp_filter['wp_head'] = $wp_head_callbacks;
         }
