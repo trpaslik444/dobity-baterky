@@ -5167,15 +5167,42 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Pokud máme chybu (např. unauthorized, rate_limited), zobrazit chybovou zprávu
       if (data.error && !hasItems) {
-        const errorMessage = data.error === 'rate_limited' 
-          ? 'Příliš mnoho požadavků. Zkuste to za chvíli.' 
-          : 'Blízká místa nelze načíst';
+        let errorMessage = 'Blízká místa nelze načíst';
+        let icon = '⚠️';
+        let color = '#FF8DAA';
+        
+        if (data.error === 'rate_limited') {
+          // Informativní zpráva o rate limitingu - data se načítají pomaleji
+          if (window.dbNearbyRateLimited && window.dbNearbyRateLimited.messageType === 'slowing') {
+            errorMessage = 'Data se načítají pomaleji. Zkuste to za chvíli.';
+            icon = '⏳';
+            color = '#f59e0b'; // Oranžová - warning, ale ne kritická chyba
+          } else {
+            errorMessage = 'Data se načítají. Zkuste to za chvíli.';
+            icon = '⏳';
+            color = '#049FE8'; // Modrá - informativní
+          }
+        }
+        
         containerEl.innerHTML = `
-          <div style="text-align: center; padding: 8px; color: #FF8DAA; font-size: 0.8em;">
-            <div style="font-size: 16px; margin-bottom: 4px;">⚠️</div>
+          <div style="text-align: center; padding: 8px; color: ${color}; font-size: 0.8em;">
+            <div style="font-size: 16px; margin-bottom: 4px;">${icon}</div>
             <div>${errorMessage}</div>
           </div>
         `;
+        
+        // Pokud je to rate limiting, zkusit znovu po retry_after sekundách
+        if (data.error === 'rate_limited' && window.dbNearbyRateLimited && window.dbNearbyRateLimited.retryAfter) {
+          const retryAfter = window.dbNearbyRateLimited.retryAfter * 1000;
+          setTimeout(() => {
+            // Zkontrolovat, zda container stále existuje
+            if (containerEl && containerEl.parentNode) {
+              // Zkusit znovu načíst
+              loadNearbyForMobileSheet(f, containerEl);
+            }
+          }, retryAfter);
+        }
+        
         return;
       }
       
@@ -6465,6 +6492,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Pokud nearby API nemá isochrony, použít on-demand procesor pro načtení a uložení do databáze
     try {
       // Nejdříve zkontrolovat status on-demand procesu
+      // Status endpoint je nyní povolen pro anonymní přístup, takže 401 by nemělo nastat
       const statusUrl = `/wp-json/db/v1/ondemand/status/${featureId}?type=${type}`;
       const statusResponse = await fetch(statusUrl);
       
@@ -6488,66 +6516,79 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         }
       }
+      // 401/403 jsou očekávané - status endpoint může být nedostupný, pokračujeme dál
       
       // Pokud on-demand proces nemá isochrony, spustit on-demand procesor (uloží do databáze)
-      // Nejprve získat token (POST request)
-      const tokenUrl = `/wp-json/db/v1/ondemand/token`;
-      const tokenResponse = await fetch(tokenUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-WP-Nonce': dbMapData?.restNonce || ''
-        },
-        body: JSON.stringify({
-          point_id: featureId
-        })
-      });
+      // Zkusit získat token (POST request) - pokud selže, použít frontend-trigger token
+      let token = 'frontend-trigger'; // Výchozí token pro anonymní přístup
       
-      if (tokenResponse.ok) {
-        const tokenData = await tokenResponse.json();
-        const token = tokenData.token;
-        
-        // Spustit on-demand procesor (načte z ORS API a uloží do databáze)
-        const processUrl = `/wp-json/db/v1/ondemand/process`;
-        const processResponse = await fetch(processUrl, {
+      try {
+        const tokenUrl = `/wp-json/db/v1/ondemand/token`;
+        const tokenResponse = await fetch(tokenUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'X-WP-Nonce': dbMapData?.restNonce || ''
           },
           body: JSON.stringify({
-            point_id: featureId,
-            point_type: type,
-            token: token
+            point_id: featureId
           })
         });
         
-        if (processResponse.ok) {
-          const processData = await processResponse.json();
+        if (tokenResponse.ok) {
+          const tokenData = await tokenResponse.json();
+          token = tokenData.token; // Použít získaný token
+        }
+        // Pokud token endpoint selže (403/401), použít frontend-trigger token jako fallback
+        // 403/401 jsou očekávané pro anonymní uživatele - není to chyba
+      } catch (error) {
+        // Ignorovat chyby - použít frontend-trigger token
+        // Tichá chyba - token endpoint může selhat pro anonymní uživatele
+      }
+      
+      // Spustit on-demand procesor (načte z ORS API a uloží do databáze)
+      const processUrl = `/wp-json/db/v1/ondemand/process`;
+      const processResponse = await fetch(processUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-WP-Nonce': dbMapData?.restNonce || ''
+        },
+        body: JSON.stringify({
+          point_id: featureId,
+          point_type: type,
+          token: token
+        })
+      });
+      
+      if (processResponse.ok) {
+        const processData = await processResponse.json();
+        
+        // Znovu zkusit nearby API po zpracování (nyní by měly být isochrony v databázi)
+        const nearbyUrl2 = `/wp-json/db/v1/nearby?origin_id=${featureId}&type=${type}&limit=1`;
+        const nearbyResponse2 = await fetch(nearbyUrl2);
+        
+        if (nearbyResponse2.ok) {
+          const nearbyData2 = await nearbyResponse2.json();
           
-          // Znovu zkusit nearby API po zpracování (nyní by měly být isochrony v databázi)
-          const nearbyUrl2 = `/wp-json/db/v1/nearby?origin_id=${featureId}&type=${type}&limit=1`;
-          const nearbyResponse2 = await fetch(nearbyUrl2);
-          
-          if (nearbyResponse2.ok) {
-            const nearbyData2 = await nearbyResponse2.json();
+          if (nearbyData2.isochrones && nearbyData2.isochrones.geojson && nearbyData2.isochrones.geojson.features && nearbyData2.isochrones.geojson.features.length > 0) {
+            const frontendSettings = JSON.parse(localStorage.getItem('db-isochrones-settings') || '{"enabled": true, "walking_speed": 4.5}');
+            const backendEnabled = nearbyData2.isochrones.user_settings?.enabled ?? true;
+            const frontendEnabled = frontendSettings.enabled;
             
-            if (nearbyData2.isochrones && nearbyData2.isochrones.geojson && nearbyData2.isochrones.geojson.features && nearbyData2.isochrones.geojson.features.length > 0) {
-              const frontendSettings = JSON.parse(localStorage.getItem('db-isochrones-settings') || '{"enabled": true, "walking_speed": 4.5}');
-              const backendEnabled = nearbyData2.isochrones.user_settings?.enabled ?? true;
-              const frontendEnabled = frontendSettings.enabled;
-              
-              if (backendEnabled && frontendEnabled) {
-                const adjustedGeojson = adjustIsochronesForFrontendSpeed(nearbyData2.isochrones.geojson, nearbyData2.isochrones.ranges_s || [600, 1200, 1800], frontendSettings);
-                const mergedSettings = {
-                  ...(nearbyData2.isochrones.user_settings || {}),
-                  ...frontendSettings
-                };
-                renderIsochrones(adjustedGeojson, nearbyData2.isochrones.ranges_s || [600, 1200, 1800], mergedSettings, { featureId });
-              }
+            if (backendEnabled && frontendEnabled) {
+              const adjustedGeojson = adjustIsochronesForFrontendSpeed(nearbyData2.isochrones.geojson, nearbyData2.isochrones.ranges_s || [600, 1200, 1800], frontendSettings);
+              const mergedSettings = {
+                ...(nearbyData2.isochrones.user_settings || {}),
+                ...frontendSettings
+              };
+              renderIsochrones(adjustedGeojson, nearbyData2.isochrones.ranges_s || [600, 1200, 1800], mergedSettings, { featureId });
             }
           }
         }
+      } else if (processResponse.status === 403 || processResponse.status === 401) {
+        // 403/401 jsou očekávané pro anonymní uživatele bez tokenu - není to chyba
+        // Tichá chyba - nebudeme logovat do console
       }
     } catch (error) {
       console.error('[DB Map][Isochrones] Error loading isochrones via on-demand:', error);
@@ -6675,10 +6716,38 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
           return { items: [], isochrones: null };
         } else if (processResponse.status === 429) {
-          // Rate limiting - zapamatovat si a nezkoušet pořád dokola
-          if (!window.dbNearbyRateLimited) {
-            window.dbNearbyRateLimited = true;
+          // Rate limiting - zkusit získat informace z response
+          let retryAfter = 2;
+          let messageType = 'loading';
+          
+          try {
+            const errorData = await processResponse.json();
+            if (errorData.data && errorData.data.retry_after) {
+              retryAfter = Math.ceil(errorData.data.retry_after);
+            }
+            if (errorData.data && errorData.data.message_type) {
+              messageType = errorData.data.message_type;
+            }
+          } catch (e) {
+            // Ignorovat chyby při parsování
           }
+          
+          // Rate limiting - zapamatovat si, ale neblokovat úplně
+          // Pouze nastavit flag pro zpomalení dalších requestů
+          if (!window.dbNearbyRateLimited) {
+            window.dbNearbyRateLimited = {
+              active: true,
+              retryAfter: retryAfter,
+              messageType: messageType,
+              until: Date.now() + (retryAfter * 1000)
+            };
+          } else {
+            // Aktualizovat retry after
+            window.dbNearbyRateLimited.retryAfter = retryAfter;
+            window.dbNearbyRateLimited.messageType = messageType;
+            window.dbNearbyRateLimited.until = Date.now() + (retryAfter * 1000);
+          }
+          
           // FALLBACK: Pokud máme nearbyApiData, použít ho
           // Pokud má items (i stale), použít je
           // Pokud má error, vrátit ho (frontend zobrazí chybu)
