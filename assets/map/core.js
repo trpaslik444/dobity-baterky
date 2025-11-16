@@ -9681,11 +9681,23 @@ document.addEventListener('DOMContentLoaded', async function() {
           </button>
         </div>
       `;
-      
-      // Přidat do mapy
-      const mapContainer = document.querySelector('.leaflet-container');
-      if (mapContainer) {
-        mapContainer.appendChild(this.manualLoadButton);
+      // Přidat do mapy (robustní: zkusit opakovaně, než Leaflet vytvoří container)
+      const attach = () => {
+        const mapContainer = document.querySelector('.leaflet-container');
+        if (mapContainer && !document.getElementById('db-manual-load-container')) {
+          mapContainer.appendChild(this.manualLoadButton);
+          return true;
+        }
+        return false;
+      };
+      if (!attach()) {
+        let tries = 0;
+        const iv = setInterval(() => {
+          tries++;
+          if (attach() || tries > 50) { // ~5s
+            clearInterval(iv);
+          }
+        }, 100);
       }
       
       this.hideManualLoadButton();
@@ -9777,14 +9789,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
       }
       
-      // 1) Minimální zoom: pod tímto zoomem nefetchovat (šetření API)
-      if (map.getZoom() < MIN_FETCH_ZOOM) { 
-        return; 
-      }
-      
       const c = map.getCenter();
+      const tooZoomedOut = map.getZoom() < MIN_FETCH_ZOOM;
       
-      // 2) Kontrola, zda jsme mimo načtenou oblast
+      // Kontrola, zda jsme mimo načtenou oblast – prováděj i při nízkém zoomu,
+      // aby se tlačítko mohlo zobrazit, ale bez automatického fetchování
       const outsideArea = window.smartLoadingManager.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
       
       if (outsideArea) {
@@ -9797,6 +9806,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         window.smartLoadingManager.hideManualLoadButton();
       }
       
+      // Pokud je příliš malý zoom, tak dál nic nedělej (šetři API)
+      if (tooZoomedOut) {
+        return;
+      }
     } catch(_) {}
   }, 1000); // Zvýšeno z 300ms na 1000ms pro lepší výkon
   map.on('moveend', onViewportChanged);

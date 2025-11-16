@@ -63,6 +63,22 @@ if ( $is_desktop ) {
         } elseif ( preg_match( '/<body[^>]*>(.*)/is', $full_header, $matches ) ) {
             // Pokud není </body>, vezmeme vše po <body>
             echo $matches[1];
+        } else {
+            // Fallback: některá témata nemají body obsah v header.php – zkusíme běžné partialy
+            $header_partials = array(
+                'template-parts/header/site-header',
+                'template-parts/header/header',
+                'parts/header',
+            );
+            foreach ( $header_partials as $part ) {
+                $candidate = locate_template( array( $part . '.php' ) );
+                if ( $candidate ) {
+                    ob_start();
+                    include $candidate;
+                    echo ob_get_clean();
+                    break;
+                }
+            }
         }
     }
 }
@@ -110,7 +126,25 @@ if ( $is_desktop ) {
         } else {
             // Pokud není </body>, použijeme celý obsah, ale odstraníme wp_footer()
             $footer_content = preg_replace( '/<\?php\s*wp_footer\(\);\s*\?>/i', '', $full_footer );
-            echo $footer_content;
+            if ( trim( $footer_content ) !== '' ) {
+                echo $footer_content;
+            } else {
+                // Fallback: pokus o načtení běžných footer partialů
+                $footer_partials = array(
+                    'template-parts/footer/site-footer',
+                    'template-parts/footer/footer',
+                    'parts/footer',
+                );
+                foreach ( $footer_partials as $part ) {
+                    $candidate = locate_template( array( $part . '.php' ) );
+                    if ( $candidate ) {
+                        ob_start();
+                        include $candidate;
+                        echo ob_get_clean();
+                        break;
+                    }
+                }
+            }
         }
     }
     // Zavolat wp_footer() pouze jednou (callbacks byly obnoveny z kopie)

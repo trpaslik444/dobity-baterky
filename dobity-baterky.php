@@ -1105,8 +1105,13 @@ add_action('wp_head', function() {
     <link rel="manifest" href="<?php echo esc_url($manifest_url); ?>">
     <meta name="theme-color" content="#049FE8">
     <meta name="apple-mobile-web-app-capable" content="yes">
+           <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Dobitý Baterky">
+           <!-- PWA icons served from plugin (ensure PNGs exist at these paths) -->
+           <link rel="apple-touch-icon" sizes="180x180" href="<?php echo esc_url( plugins_url('assets/pwa/db-icon-180.png', DB_PLUGIN_FILE) ); ?>">
+           <link rel="icon" type="image/png" sizes="192x192" href="<?php echo esc_url( plugins_url('assets/pwa/db-icon-192.png', DB_PLUGIN_FILE) ); ?>">
+           <link rel="icon" type="image/png" sizes="512x512" href="<?php echo esc_url( plugins_url('assets/pwa/db-icon-512.png', DB_PLUGIN_FILE) ); ?>">
     <?php
 }, 1);
 
@@ -1171,30 +1176,70 @@ add_action('wp_footer', function() {
                 return originalRegister(scriptURL, options);
             };
             
-            // Odstranit existující registrace s nesprávným originem
-            // Kontrola dostupnosti getRegistrations() pro Safari kompatibilitu
-            if (typeof navigator.serviceWorker.getRegistrations === 'function') {
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                    registrations.forEach(function(registration) {
-                        if (registration.scope && !registration.scope.startsWith(window.location.origin)) {
-                            console.warn('[DB PWA] Odstraňuji ServiceWorker s nesprávným originem:', registration.scope);
-                            registration.unregister();
-                        }
-                    });
-                }).catch(function(error) {
-                    console.warn('[DB PWA] Chyba při získávání ServiceWorker registrací:', error);
-                });
-            } else {
-                // Fallback pro Safari - zkusit získat registraci pro root scope
-                navigator.serviceWorker.getRegistration('/').then(function(registration) {
-                    if (registration && registration.scope && !registration.scope.startsWith(window.location.origin)) {
-                        console.warn('[DB PWA] Odstraňuji ServiceWorker s nesprávným originem:', registration.scope);
-                        registration.unregister();
+            // Čištění registrací: neodstraňuj jiné aplikace na stejném originu.
+            // 1) Cizí origin vždy odstranit (bezpečnost).
+            // 2) Ze stejného originu odstranit POUZE naše registrace (db-sw.js) s nesprávným scope.
+            (function cleanupRegistrations() {
+                try {
+                    const sitePath = '<?php echo esc_js(parse_url(home_url('/'), PHP_URL_PATH)); ?>';
+                    const siteScope = window.location.origin + sitePath;
+                    const ourSwSuffix = '/db-sw.js';
+                    function isOurReg(reg) {
+                        try {
+                            const url = (reg && reg.active && reg.active.scriptURL)
+                                      || (reg && reg.waiting && reg.waiting.scriptURL)
+                                      || (reg && reg.installing && reg.installing.scriptURL)
+                                      || null;
+                            return !!(url && url.indexOf(ourSwSuffix) !== -1);
+                        } catch(_) { return false; }
                     }
-                }).catch(function(error) {
-                    // Ignorovat chyby - může to být normální, pokud není žádná registrace
-                });
-            }
+                    if (typeof navigator.serviceWorker.getRegistrations === 'function') {
+                        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                            registrations.forEach(function(reg) {
+                                if (!reg || !reg.scope) return;
+                                const sameOrigin = reg.scope.indexOf(window.location.origin) === 0;
+                                const ourScope = reg.scope === siteScope || reg.scope.indexOf(sitePath) === 0;
+                                const ours = isOurReg(reg);
+                                if (!sameOrigin) {
+                                    console.warn('[DB PWA] Unregister foreign-origin SW:', reg.scope);
+                                    reg.unregister();
+                                } else if (ours && !ourScope) {
+                                    console.warn('[DB PWA] Unregister our SW with mismatched scope:', reg.scope);
+                                    reg.unregister();
+                                }
+                            });
+                        }).catch(function(){});
+                    } else if (navigator.serviceWorker.getRegistration) {
+                        // Safari fallback: zkusit jen potenciální naše scope a sahat pouze na naše SW
+                        navigator.serviceWorker.getRegistration('/').then(function(reg){
+                            try {
+                                if (reg && reg.scope) {
+                                    const sameOrigin = reg.scope.indexOf(window.location.origin) === 0;
+                                    const ourScope = reg.scope === siteScope || reg.scope.indexOf(sitePath) === 0;
+                                    if (isOurReg(reg) && (!sameOrigin || !ourScope)) {
+                                        console.warn('[DB PWA] Unregister our SW (fallback /):', reg.scope);
+                                        reg.unregister();
+                                    }
+                                }
+                            } catch(_) {}
+                        }).catch(function(){});
+                        if (sitePath && sitePath !== '/') {
+                            navigator.serviceWorker.getRegistration(sitePath).then(function(reg){
+                                try {
+                                    if (reg && reg.scope) {
+                                        const sameOrigin = reg.scope.indexOf(window.location.origin) === 0;
+                                        const ourScope = reg.scope === siteScope || reg.scope.indexOf(sitePath) === 0;
+                                        if (isOurReg(reg) && (!sameOrigin || !ourScope)) {
+                                            console.warn('[DB PWA] Unregister our SW (fallback sitePath):', reg.scope);
+                                            reg.unregister();
+                                        }
+                                    }
+                                } catch(_) {}
+                            }).catch(function(){});
+                        }
+                    }
+                } catch(_) {}
+            })();
             
             // Zaregistrovat náš vlastní ServiceWorker
             // Scope je omezen na WordPress site path (ne celý origin) pro bezpečnost
