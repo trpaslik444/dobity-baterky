@@ -37,7 +37,7 @@
   bottom: 24px; /* bezpečný odstup od spodního okraje */
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10000; /* nad overlays/headerem na stagingu */
+  z-index: 410; /* těsně nad mapou, neruší ostatní UI */
   display: none;
   animation: slideInFromBottom 0.3s ease-out;
 }

@@ -2265,6 +2265,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   const RADIUS_KM = 50; // Výchozí fallback (bude nahrazen dle režimu)
   const MIN_FETCH_ZOOM = (typeof window.DB_MIN_FETCH_ZOOM !== 'undefined') ? window.DB_MIN_FETCH_ZOOM : 9; // pod tímto zoomem nerefreshujeme
   const FIXED_RADIUS_KM = (typeof window.DB_FIXED_RADIUS_KM !== 'undefined') ? window.DB_FIXED_RADIUS_KM : 50; // fixní okruh pro radius režim
+  // Vynucené trvalé zobrazení manuálního tlačítka načítání (staging-safe)
+  const ALWAYS_SHOW_MANUAL_BUTTON = true;
   // Feature flags
   window.DB_RADIUS_LIMIT = window.DB_RADIUS_LIMIT || 1000;
   window.DB_RADIUS_HYSTERESIS_KM = window.DB_RADIUS_HYSTERESIS_KM || 5; // minimální posun centra pro refetch
@@ -9669,22 +9671,27 @@ document.addEventListener('DOMContentLoaded', async function() {
     init() {
       this.createManualLoadButton();
       this.loadUserPreferences();
-      // Jednorázově navázat visibility handler (pauza/resume watcheru)
-      if (!this._visibilityHandlerBound) {
-        const self = this;
-        document.addEventListener('visibilitychange', function() {
-          if (document.visibilityState !== 'visible') {
-            if (self._watcherId) {
-              clearInterval(self._watcherId);
-              self._watcherId = null;
+      // Trvalé zobrazení tlačítka: ihned ukázat a deaktivovat automatické zobrazování/skrývání
+      this.showManualLoadButton();
+      // Nepouštět watcher při trvalém režimu
+      if (!ALWAYS_SHOW_MANUAL_BUTTON) {
+        // Jednorázově navázat visibility handler (pauza/resume watcheru)
+        if (!this._visibilityHandlerBound) {
+          const self = this;
+          document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState !== 'visible') {
+              if (self._watcherId) {
+                clearInterval(self._watcherId);
+                self._watcherId = null;
+              }
+            } else {
+              self.startOutsideAreaWatcher();
             }
-          } else {
-            self.startOutsideAreaWatcher();
-          }
-        });
-        this._visibilityHandlerBound = true;
+          });
+          this._visibilityHandlerBound = true;
+        }
+        this.startOutsideAreaWatcher();
       }
-      this.startOutsideAreaWatcher();
       // Fallback: pokud by se tlačítko na některých prostředích nezobrazilo kvůli chybějícímu počátečnímu stavu,
       // nabídnout uživateli možnost načíst ručně po krátké době.
       setTimeout(() => {
@@ -9701,6 +9708,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     startOutsideAreaWatcher() {
       // Periodicky a lehce: reagovat jen pokud se viewport od poslední kontroly změnil a tab je viditelný
+      if (ALWAYS_SHOW_MANUAL_BUTTON) return; // watchdog vypnut v trvalém režimu
       if (this._watcherId) clearInterval(this._watcherId);
       this._watcherId = setInterval(() => {
         try {
@@ -9851,18 +9859,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       const c = map.getCenter();
       const tooZoomedOut = map.getZoom() < MIN_FETCH_ZOOM;
       
-      // Kontrola, zda jsme mimo načtenou oblast – prováděj i při nízkém zoomu,
-      // aby se tlačítko mohlo zobrazit, ale bez automatického fetchování
-      const outsideArea = window.smartLoadingManager.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
-      
-      if (outsideArea) {
-        // Vždy zobrazit tlačítko pro manuální načtení (automatické načítání je vypnuto)
+      // Trvalé zobrazení: potlačit automatické skrývání/zobrazování
+      if (ALWAYS_SHOW_MANUAL_BUTTON) {
         window.smartLoadingManager.showManualLoadButton();
       } else {
-        // Jsme uvnitř načtené oblasti - NENÍ POTŘEBA měnit features
-        // features musí zůstat jako všechny načtené body (ne jen viditelný viewport)
-        // Jinak by se body ztratily při pohybu po mapě
-        window.smartLoadingManager.hideManualLoadButton();
+        // Kontrola, zda jsme mimo načtenou oblast – prováděj i při nízkém zoomu,
+        // aby se tlačítko mohlo zobrazit, ale bez automatického fetchování
+        const outsideArea = window.smartLoadingManager.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
+        if (outsideArea) {
+          window.smartLoadingManager.showManualLoadButton();
+        } else {
+          window.smartLoadingManager.hideManualLoadButton();
+        }
       }
       
       // Pokud je příliš malý zoom, tak dál nic nedělej (šetři API)
