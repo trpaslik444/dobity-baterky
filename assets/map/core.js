@@ -1,6 +1,6 @@
 // db-map.js – moderní frontend pro Dobitý Baterky
 //
-console.log('[DB Map] core.js načten');
+console.log('[DB Map] core.js načten - verze s debug logy - ' + new Date().toISOString());
 
 // ===== PŘEKLADY =====
 // Globální objekt pro překlady

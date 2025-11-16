@@ -60,12 +60,17 @@
   function loadScript(src) {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      script.src = src + versionSuffix;
+      const fullSrc = src + versionSuffix;
+      console.log('[DB Map][Loader] Načítám skript:', fullSrc);
+      script.src = fullSrc;
       script.async = false;
-      script.onload = () => resolve();
+      script.onload = () => {
+        console.log('[DB Map][Loader] Skript načten:', fullSrc);
+        resolve();
+      };
       script.onerror = (event) => {
-        console.error('[DB Map][Loader] Chyba načítání skriptu', src, event);
-        reject(new Error('Failed to load ' + src));
+        console.error('[DB Map][Loader] Chyba načítání skriptu', fullSrc, event);
+        reject(new Error('Failed to load ' + fullSrc));
       };
       document.head.appendChild(script);
     });
