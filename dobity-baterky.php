@@ -1182,14 +1182,24 @@ add_action('wp_footer', function() {
                 try {
                     const sitePath = '<?php echo esc_js(parse_url(home_url('/'), PHP_URL_PATH)); ?>';
                     const siteScope = window.location.origin + sitePath;
+                    const ourSwPathSuffix = '/db-sw.js';
+                    function isOurSw(reg) {
+                        try {
+                            const url = (reg && reg.active && reg.active.scriptURL)
+                                || (reg && reg.waiting && reg.waiting.scriptURL)
+                                || (reg && reg.installing && reg.installing.scriptURL)
+                                || null;
+                            return !!(url && url.indexOf(ourSwPathSuffix) !== -1);
+                        } catch(_) { return false; }
+                    }
                     if (typeof navigator.serviceWorker.getRegistrations === 'function') {
                         navigator.serviceWorker.getRegistrations().then(function(registrations) {
                             registrations.forEach(function(registration) {
                                 if (!registration.scope) return;
                                 const isSameOrigin = registration.scope.startsWith(window.location.origin);
                                 const isOurScope = registration.scope === siteScope || registration.scope.startsWith(siteScope);
-                                // 1) jiné originy pryč, 2) jiný scope na stejném originu taky pryč
-                                if (!isSameOrigin || !isOurScope) {
+                                // Odstranit pouze: (a) cizí origin (bezpečnost) NEBO (b) naši registraci /db-sw.js s nesprávným scope
+                                if (!isSameOrigin || (isOurSw(registration) && !isOurScope)) {
                                     console.warn('[DB PWA] Unregister cizí/nesprávný SW:', registration.scope);
                                     registration.unregister();
                                 }
@@ -1201,7 +1211,7 @@ add_action('wp_footer', function() {
                         // Fallback: bez Promise.allSettled (kvůli Safari)
                         navigator.serviceWorker.getRegistration('/').then(function(reg) {
                             try {
-                                if (reg && reg.scope) {
+                                if (reg && reg.scope && isOurSw(reg)) {
                                     const isSameOrigin = reg.scope.startsWith(window.location.origin);
                                     const isOurScope = reg.scope === siteScope || reg.scope.startsWith(siteScope);
                                     if (!isSameOrigin || !isOurScope) {
@@ -1213,7 +1223,7 @@ add_action('wp_footer', function() {
                         }).catch(function(){});
                         navigator.serviceWorker.getRegistration(sitePath).then(function(reg) {
                             try {
-                                if (reg && reg.scope) {
+                                if (reg && reg.scope && isOurSw(reg)) {
                                     const isSameOrigin = reg.scope.startsWith(window.location.origin);
                                     const isOurScope = reg.scope === siteScope || reg.scope.startsWith(siteScope);
                                     if (!isSameOrigin || !isOurScope) {
