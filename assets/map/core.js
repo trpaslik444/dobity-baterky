@@ -9671,11 +9671,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     init() {
       this.createManualLoadButton();
       this.loadUserPreferences();
-      // Trvalé zobrazení tlačítka: ihned ukázat a deaktivovat automatické zobrazování/skrývání
-      this.showManualLoadButton();
-      // Nepouštět watcher při trvalém režimu
-      if (!ALWAYS_SHOW_MANUAL_BUTTON) {
-        // Jednorázově navázat visibility handler (pauza/resume watcheru)
+      if (ALWAYS_SHOW_MANUAL_BUTTON) {
+        // Trvalé zobrazení tlačítka pouze v radius režimu
+        if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+          this.showManualLoadButton();
+        } else {
+          this.hideManualLoadButton();
+        }
+      } else {
+        // Standardní režim – řízený watcherem
         if (!this._visibilityHandlerBound) {
           const self = this;
           document.addEventListener('visibilitychange', function() {
@@ -9830,7 +9834,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Použít globální body.db-loading
       document.body.classList.add('db-loading');
-      this.hideManualLoadButton();
+      // V ALWAYS_SHOW režimu tlačítko během načítání neschovávat, jen v běžném režimu
+      if (!ALWAYS_SHOW_MANUAL_BUTTON) {
+        this.hideManualLoadButton();
+      }
       
       try {
         const center = map.getCenter();
@@ -9843,6 +9850,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         this.showManualLoadButton(); // Zobrazit tlačítko znovu při chybě
       } finally {
         document.body.classList.remove('db-loading');
+        if (ALWAYS_SHOW_MANUAL_BUTTON && typeof loadMode !== 'undefined' && loadMode === 'radius') {
+          // Udržet tlačítko viditelné i po úspěšném načtení
+          this.showManualLoadButton();
+        }
       }
     }
   }
