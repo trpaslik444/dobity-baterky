@@ -38,7 +38,7 @@
   right: 16px; /* zarovnání k pravému okraji nad legendou */
   left: auto;
   transform: none;
-  z-index: 650; /* nad dlaždicemi mapy, ale pod většinou UI (karty, panely, legendy) */
+  z-index: 1010; /* nad #db-bottom-bar (1002), ale pod ostatními UI (karty, panely) */
   display: none;
   animation: slideInFromBottom 0.3s ease-out;
 }
