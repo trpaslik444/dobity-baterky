@@ -9845,6 +9845,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     checkIfOutsideLoadedArea(center, radius) {
       if (!lastSearchCenter || !lastSearchRadiusKm) {
+        console.log('[DB Map][SmartLoading] checkIfOutsideLoadedArea: nemám lastSearchCenter nebo lastSearchRadiusKm', { lastSearchCenter, lastSearchRadiusKm });
         return false;
       }
       
@@ -9852,8 +9853,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Zobrazit tlačítko, když je uživatel více než 80% radiusu od středu
       // To znamená, že je blízko okraje načtené oblasti
       const thresholdKm = lastSearchRadiusKm * 0.8;
+      const isOutside = distFromLastCenter > thresholdKm;
       
-      return distFromLastCenter > thresholdKm;
+      console.log('[DB Map][SmartLoading] checkIfOutsideLoadedArea:', {
+        center: { lat: center.lat, lng: center.lng },
+        lastSearchCenter,
+        lastSearchRadiusKm,
+        distFromLastCenter: distFromLastCenter.toFixed(2),
+        thresholdKm: thresholdKm.toFixed(2),
+        isOutside
+      });
+      
+      return isOutside;
     }
     
     showManualLoadButton() {
