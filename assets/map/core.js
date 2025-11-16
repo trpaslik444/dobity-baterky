@@ -1,5 +1,6 @@
 // db-map.js – moderní frontend pro Dobitý Baterky
 //
+console.log('[DB Map] core.js načten');
 
 // ===== PŘEKLADY =====
 // Globální objekt pro překlady
@@ -9658,6 +9659,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // První render
   renderCards();
   // ===== SMART LOADING MANAGER =====
+  console.log('[DB Map] Definuji třídu SmartLoadingManager...');
   class SmartLoadingManager {
     constructor() {
       console.log('[DB Map][SmartLoading] Konstruktor volán');
@@ -9937,6 +9939,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // Inicializace Smart Loading Manageru
+  console.log('[DB Map] Dosáhl jsem k inicializaci SmartLoadingManager, ALWAYS_SHOW_MANUAL_BUTTON:', typeof ALWAYS_SHOW_MANUAL_BUTTON !== 'undefined' ? ALWAYS_SHOW_MANUAL_BUTTON : 'undefined');
   try {
     console.log('[DB Map] Inicializuji SmartLoadingManager...');
     window.smartLoadingManager = new SmartLoadingManager();
