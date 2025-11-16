@@ -34,10 +34,10 @@
 /* ===== SMART LOADING MANAGER STYLES ===== */
 .db-manual-load-container {
   position: absolute;
-  bottom: 24px; /* bezpečný odstup od spodního okraje */
+  bottom: 56px; /* nad spodním barem s legendou (#db-bottom-bar) */
   left: 50%;
   transform: translateX(-50%);
-  z-index: 410; /* těsně nad mapou, neruší ostatní UI */
+  z-index: 1011; /* nad #db-bottom-bar (1002), ale nízké vůči ostatnímu UI */
   display: none;
   animation: slideInFromBottom 0.3s ease-out;
 }
