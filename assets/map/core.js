@@ -796,7 +796,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Přidat event listenery pro detekci user gesture
   document.addEventListener('click', detectUserGesture, { once: true });
-  document.addEventListener('touchstart', detectUserGesture, { once: true });
+  document.addEventListener('touchstart', detectUserGesture, { once: true, passive: true });
   document.addEventListener('keydown', detectUserGesture, { once: true });
 
   // Inicializace globálních proměnných
@@ -8080,7 +8080,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     const latlng = [p.lat, p.lng];
     if (!__dbFollowEventsBound && map) {
       const disableFollow = () => { if (!__dbAutoPanning) __dbShouldFollowUser = false; };
-      map.on('dragstart zoomstart touchstart movestart mousedown wheel', disableFollow);
+      map.on('dragstart zoomstart movestart mousedown wheel', disableFollow);
+      // touchstart s passive: true pro lepší výkon
+      map.on('touchstart', disableFollow);
       map.on('moveend', () => { __dbAutoPanning = false; });
       __dbFollowEventsBound = true;
     }

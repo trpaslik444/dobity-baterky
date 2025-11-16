@@ -3786,3 +3786,20 @@ body.db-loading::after {
     opacity: 0;
   }
 }
+
+/* ===== SKRYTÍ WIDGETŮ NA MAPOVÉ STRÁNCE ===== */
+/* Skrytí Jetpack subscriptions widget tlačítka */
+body.db-map-app button[name="jetpack_subscriptions_widget"],
+.db-map-app button[name="jetpack_subscriptions_widget"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Skrytí Ko-fi donate button */
+body.db-map-app [id^="kofi-widget-overlay"],
+body.db-map-app .floatingchat-donate-button,
+.db-map-app [id^="kofi-widget-overlay"],
+.db-map-app .floatingchat-donate-button {
+  display: none !important;
+  visibility: hidden !important;
+}
