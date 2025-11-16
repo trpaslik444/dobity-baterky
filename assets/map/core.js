@@ -9660,6 +9660,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // ===== SMART LOADING MANAGER =====
   class SmartLoadingManager {
     constructor() {
+      console.log('[DB Map][SmartLoading] Konstruktor volán');
       this.manualLoadButton = null;
       this.autoLoadEnabled = false; // Vždy manuální načítání - zobrazit tlačítko
       this.outsideLoadedArea = false;
@@ -9936,8 +9937,11 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // Inicializace Smart Loading Manageru
+  console.log('[DB Map] Inicializuji SmartLoadingManager...');
   window.smartLoadingManager = new SmartLoadingManager();
+  console.log('[DB Map] SmartLoadingManager vytvořen, volám init()...');
   window.smartLoadingManager.init();
+  console.log('[DB Map] SmartLoadingManager.init() dokončeno');
   
 
   // ===== OPTIMALIZOVANÉ AUTO-FETCH V RADIUS REŽIMU =====
