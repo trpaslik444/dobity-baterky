@@ -9670,13 +9670,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     init() {
+      console.log('[DB Map][SmartLoading] init() voláno, ALWAYS_SHOW_MANUAL_BUTTON:', ALWAYS_SHOW_MANUAL_BUTTON);
       this.createManualLoadButton();
       this.loadUserPreferences();
       
       if (ALWAYS_SHOW_MANUAL_BUTTON) {
         // Trvalé zobrazení tlačítka - zobrazit hned a nepouštět watcher
         if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+          console.log('[DB Map][SmartLoading] ALWAYS_SHOW režim - zobrazuji tlačítko');
           this.showManualLoadButton();
+        } else {
+          console.log('[DB Map][SmartLoading] ALWAYS_SHOW režim, ale loadMode není radius:', typeof loadMode !== 'undefined' ? loadMode : 'undefined');
         }
         return; // Nepouštět watcher v trvalém režimu
       }
@@ -9702,13 +9706,26 @@ document.addEventListener('DOMContentLoaded', async function() {
       // zobrazit tlačítko, aby uživatel mohl manuálně načíst data
       setTimeout(() => {
         try {
-          if (typeof loadMode !== 'undefined' && loadMode === 'radius' && this.manualLoadButton) {
+          const currentLoadMode = typeof loadMode !== 'undefined' ? loadMode : 'undefined';
+          const hasData = !!(lastSearchCenter && lastSearchRadiusKm);
+          console.log('[DB Map][SmartLoading] Fallback timeout check:', {
+            loadMode: currentLoadMode,
+            hasData: hasData,
+            lastSearchCenter: lastSearchCenter,
+            lastSearchRadiusKm: lastSearchRadiusKm,
+            buttonExists: !!this.manualLoadButton
+          });
+          
+          if (currentLoadMode === 'radius' && this.manualLoadButton) {
             // Pokud ještě nebyla načtena žádná data (lastSearchCenter je null), zobrazit tlačítko
-            if (!lastSearchCenter || !lastSearchRadiusKm) {
+            if (!hasData) {
+              console.log('[DB Map][SmartLoading] Zobrazuji tlačítko (žádná data ještě nenačtena)');
               this.showManualLoadButton();
             }
           }
-        } catch(_) {}
+        } catch(e) {
+          console.error('[DB Map][SmartLoading] Chyba v fallback timeout:', e);
+        }
       }, 6000); // Po 6 sekundách zkontrolovat a případně zobrazit tlačítko
     }
     
@@ -9720,17 +9737,29 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (document.visibilityState && document.visibilityState !== 'visible') return;
           if (typeof loadMode === 'undefined' || loadMode !== 'radius') return;
           if (!window.smartLoadingManager || !map) return;
+          
+          // Pokud ještě nebyla načtena žádná data (lastSearchCenter je null), zobrazit tlačítko
+          if (!lastSearchCenter || !lastSearchRadiusKm) {
+            this.showManualLoadButton();
+            return;
+          }
+          
+          // Pokud ještě neproběhlo počáteční načítání, počkat
           if (!initialLoadCompleted) return;
+          
           if (typeof lastViewportChangeTs === 'number' && lastViewportChangeTs <= this.lastCheckTime) return;
           this.lastCheckTime = Date.now();
           const c = map.getCenter();
           const outsideArea = this.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
           if (outsideArea) this.showManualLoadButton(); else this.hideManualLoadButton();
-        } catch(_) {}
+        } catch(e) {
+          console.error('[DB Map][SmartLoading] Chyba v watcheru:', e);
+        }
       }, this.checkInterval);
     }
     
     createManualLoadButton() {
+      console.log('[DB Map][SmartLoading] Vytvářím tlačítko');
       this.manualLoadButton = document.createElement('div');
       this.manualLoadButton.id = 'db-manual-load-container';
       this.manualLoadButton.className = 'db-manual-load-container';
@@ -9750,6 +9779,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           // Odstranit případné fallback inline styly
           this.manualLoadButton.removeAttribute('style');
           mapContainer.appendChild(this.manualLoadButton);
+          console.log('[DB Map][SmartLoading] Tlačítko připojeno do .leaflet-container');
           return true;
         }
         return false;
@@ -9765,13 +9795,19 @@ document.addEventListener('DOMContentLoaded', async function() {
               // Nastavit pouze pro fallback do body – aby bylo vidět i bez CSS
               // Použít stejné hodnoty jako v CSS (.db-manual-load-container): bottom:56px, left:50%, transform:translateX(-50%), z-index:1010
               this.manualLoadButton.style.cssText = 'position:fixed;bottom:56px;left:50%;transform:translateX(-50%);right:auto;z-index:1010;display:none;';
-              if (document.body) document.body.appendChild(this.manualLoadButton);
+              if (document.body) {
+                document.body.appendChild(this.manualLoadButton);
+                console.log('[DB Map][SmartLoading] Tlačítko připojeno do body (fallback)');
+              } else {
+                console.warn('[DB Map][SmartLoading] document.body neexistuje!');
+              }
             }
           }
         }, 100);
       }
       
       this.hideManualLoadButton();
+      console.log('[DB Map][SmartLoading] Tlačítko vytvořeno, aktuální display:', this.manualLoadButton ? this.manualLoadButton.style.display : 'N/A');
     }
     
     loadUserPreferences() {
@@ -9819,19 +9855,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     showManualLoadButton() {
       if (this.manualLoadButton) {
+        console.log('[DB Map][SmartLoading] Zobrazuji tlačítko');
         this.manualLoadButton.style.display = 'block';
         this.outsideLoadedArea = true;
+      } else {
+        console.warn('[DB Map][SmartLoading] showManualLoadButton: tlačítko neexistuje!');
       }
     }
     
     hideManualLoadButton() {
       // V trvalém režimu tlačítko neschovávat
       if (ALWAYS_SHOW_MANUAL_BUTTON) {
+        console.log('[DB Map][SmartLoading] hideManualLoadButton: ignorováno (ALWAYS_SHOW režim)');
         return;
       }
       if (this.manualLoadButton) {
+        console.log('[DB Map][SmartLoading] Schovávám tlačítko');
         this.manualLoadButton.style.display = 'none';
         this.outsideLoadedArea = false;
+      } else {
+        console.warn('[DB Map][SmartLoading] hideManualLoadButton: tlačítko neexistuje!');
       }
     }
     
