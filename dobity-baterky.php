@@ -1119,6 +1119,14 @@ add_action('wp_head', function() {
  * Načte PWA helper script (musí být enqueued dříve než wp_print_footer_scripts)
  */
 add_action('wp_enqueue_scripts', function() {
+    // PWA styles (pro prompt a tlačítka)
+    wp_enqueue_style(
+        'db-pwa-styles',
+        plugins_url('assets/pwa-styles.css', DB_PLUGIN_FILE),
+        array(),
+        DB_PLUGIN_VERSION
+    );
+    
     wp_enqueue_script(
         'db-pwa-helper',
         plugins_url('assets/pwa-helper.js', DB_PLUGIN_FILE),
@@ -1247,6 +1255,7 @@ add_action('wp_footer', function() {
                 // Získat WordPress site path (např. '/' nebo '/blog' pro subdirectory instalace)
                 const sitePath = '<?php echo esc_js(parse_url(home_url('/'), PHP_URL_PATH)); ?>';
                 const siteScope = window.location.origin + sitePath;
+                const swUrl = '<?php echo esc_js($sw_url); ?>';
                 
                 // Zkontrolovat, zda už není zaregistrován
                 // Kontrola dostupnosti getRegistrations() pro Safari kompatibilitu
@@ -1261,23 +1270,44 @@ add_action('wp_footer', function() {
                             return;
                         }
                         
-                        // Registrovat s scope omezeným na WordPress site path
-                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: sitePath })
-                            .then(function(registration) {
-                                console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                        // Nejprve ověřit dostupnost souboru, aby se předešlo 404 na stagingu
+                        fetch(swUrl, { method: 'GET', cache: 'no-store' })
+                            .then(function(resp) {
+                                if (!resp.ok) {
+                                    console.warn('[DB PWA] ServiceWorker endpoint nedostupný (' + resp.status + '), registraci přeskočím.');
+                                    return;
+                                }
+                                // Registrovat s scope omezeným na WordPress site path
+                                navigator.serviceWorker.register(swUrl, { scope: sitePath })
+                                    .then(function(registration) {
+                                        console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                                    })
+                                    .catch(function(error) {
+                                        console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                                    });
                             })
-                            .catch(function(error) {
-                                console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                            .catch(function(err){
+                                console.warn('[DB PWA] Kontrola ServiceWorker endpointu selhala:', err);
                             });
                     }).catch(function(error) {
                         console.warn('[DB PWA] Chyba při kontrole ServiceWorker registrací:', error);
                         // Pokusit se zaregistrovat i při chybě
-                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: sitePath })
-                            .then(function(registration) {
-                                console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                        fetch(swUrl, { method: 'GET', cache: 'no-store' })
+                            .then(function(resp) {
+                                if (!resp.ok) {
+                                    console.warn('[DB PWA] ServiceWorker endpoint nedostupný (' + resp.status + '), registraci přeskočím.');
+                                    return;
+                                }
+                                return navigator.serviceWorker.register(swUrl, { scope: sitePath })
+                                    .then(function(registration) {
+                                        console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                                    })
+                                    .catch(function(error) {
+                                        console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                                    });
                             })
-                            .catch(function(error) {
-                                console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                            .catch(function(err){
+                                console.warn('[DB PWA] Kontrola ServiceWorker endpointu selhala:', err);
                             });
                     });
                 } else {
@@ -1288,22 +1318,42 @@ add_action('wp_footer', function() {
                             return;
                         }
                         
-                        // Registrovat s scope omezeným na WordPress site path
-                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: sitePath })
-                            .then(function(registration) {
-                                console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                        // Ověřit dostupnost a poté registrovat s omezeným scope
+                        fetch(swUrl, { method: 'GET', cache: 'no-store' })
+                            .then(function(resp) {
+                                if (!resp.ok) {
+                                    console.warn('[DB PWA] ServiceWorker endpoint nedostupný (' + resp.status + '), registraci přeskočím.');
+                                    return;
+                                }
+                                return navigator.serviceWorker.register(swUrl, { scope: sitePath })
+                                    .then(function(registration) {
+                                        console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                                    })
+                                    .catch(function(error) {
+                                        console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                                    });
                             })
-                            .catch(function(error) {
-                                console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                            .catch(function(err){
+                                console.warn('[DB PWA] Kontrola ServiceWorker endpointu selhala:', err);
                             });
                     }).catch(function(error) {
                         // Pokud getRegistration selže, zkusit registrovat přímo
-                        navigator.serviceWorker.register('<?php echo esc_js($sw_url); ?>', { scope: sitePath })
-                            .then(function(registration) {
-                                console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                        fetch(swUrl, { method: 'GET', cache: 'no-store' })
+                            .then(function(resp) {
+                                if (!resp.ok) {
+                                    console.warn('[DB PWA] ServiceWorker endpoint nedostupný (' + resp.status + '), registraci přeskočím.');
+                                    return;
+                                }
+                                return navigator.serviceWorker.register(swUrl, { scope: sitePath })
+                                    .then(function(registration) {
+                                        console.log('[DB PWA] ServiceWorker zaregistrován:', registration.scope);
+                                    })
+                                    .catch(function(error) {
+                                        console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                                    });
                             })
-                            .catch(function(error) {
-                                console.warn('[DB PWA] ServiceWorker registrace selhala:', error);
+                            .catch(function(err){
+                                console.warn('[DB PWA] Kontrola ServiceWorker endpointu selhala:', err);
                             });
                     });
                 }

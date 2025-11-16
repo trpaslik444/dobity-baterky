@@ -9667,6 +9667,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     init() {
       this.createManualLoadButton();
       this.loadUserPreferences();
+      // Fallback: pokud by se tlačítko na některých prostředích nezobrazilo kvůli chybějícímu počátečnímu stavu,
+      // nabídnout uživateli možnost načíst ručně po krátké době.
+      setTimeout(() => {
+        try {
+          if (typeof loadMode !== 'undefined' && loadMode === 'radius' && this.manualLoadButton) {
+            const isVisible = this.manualLoadButton.style.display === 'block';
+            if (!isVisible) {
+              this.showManualLoadButton();
+            }
+          }
+        } catch(_) {}
+      }, 6000);
     }
     
     createManualLoadButton() {
