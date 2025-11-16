@@ -9754,6 +9754,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           this.lastCheckTime = Date.now();
           const c = map.getCenter();
           const outsideArea = this.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
+          console.log('[DB Map][SmartLoading] Watcher check:', { outsideArea, center: { lat: c.lat, lng: c.lng } });
           if (outsideArea) this.showManualLoadButton(); else this.hideManualLoadButton();
         } catch(e) {
           console.error('[DB Map][SmartLoading] Chyba v watcheru:', e);
