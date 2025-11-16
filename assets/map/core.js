@@ -9754,8 +9754,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             // Fallback: pokud se nepodařilo připojit do mapy, připojit do body jako fixní overlay
             if (!document.getElementById('db-manual-load-container')) {
               // Nastavit pouze pro fallback do body – aby bylo vidět i bez CSS
-              // Použít stejné hodnoty jako v CSS (.db-manual-load-container): bottom:56px, right:16px, z-index:1010
-              this.manualLoadButton.style.cssText = 'position:fixed;bottom:56px;right:16px;left:auto;transform:none;z-index:1010;display:none;';
+              // Použít stejné hodnoty jako v CSS (.db-manual-load-container): bottom:56px, left:50%, transform:translateX(-50%), z-index:1010
+              this.manualLoadButton.style.cssText = 'position:fixed;bottom:56px;left:50%;transform:translateX(-50%);right:auto;z-index:1010;display:none;';
               if (document.body) document.body.appendChild(this.manualLoadButton);
             }
           }
