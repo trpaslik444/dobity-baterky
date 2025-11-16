@@ -61,11 +61,9 @@
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
       const fullSrc = src + versionSuffix;
-      console.log('[DB Map][Loader] Načítám skript:', fullSrc);
       script.src = fullSrc;
       script.async = false;
       script.onload = () => {
-        console.log('[DB Map][Loader] Skript načten:', fullSrc);
         resolve();
       };
       script.onerror = (event) => {

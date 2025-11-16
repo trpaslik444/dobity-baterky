@@ -1,6 +1,5 @@
 // db-map.js – moderní frontend pro Dobitý Baterky
 //
-console.log('[DB Map] core.js načten - verze s debug logy - ' + new Date().toISOString());
 
 // ===== PŘEKLADY =====
 // Globální objekt pro překlady
@@ -9659,10 +9658,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   // První render
   renderCards();
   // ===== SMART LOADING MANAGER =====
-  console.log('[DB Map] Definuji třídu SmartLoadingManager...');
   class SmartLoadingManager {
     constructor() {
-      console.log('[DB Map][SmartLoading] Konstruktor volán');
       this.manualLoadButton = null;
       this.autoLoadEnabled = false; // Vždy manuální načítání - zobrazit tlačítko
       this.outsideLoadedArea = false;
@@ -9673,17 +9670,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     init() {
-      console.log('[DB Map][SmartLoading] init() voláno, ALWAYS_SHOW_MANUAL_BUTTON:', ALWAYS_SHOW_MANUAL_BUTTON);
       this.createManualLoadButton();
       this.loadUserPreferences();
       
       if (ALWAYS_SHOW_MANUAL_BUTTON) {
         // Trvalé zobrazení tlačítka - zobrazit hned a nepouštět watcher
         if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
-          console.log('[DB Map][SmartLoading] ALWAYS_SHOW režim - zobrazuji tlačítko');
           this.showManualLoadButton();
-        } else {
-          console.log('[DB Map][SmartLoading] ALWAYS_SHOW režim, ale loadMode není radius:', typeof loadMode !== 'undefined' ? loadMode : 'undefined');
         }
         return; // Nepouštět watcher v trvalém režimu
       }
@@ -9711,18 +9704,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         try {
           const currentLoadMode = typeof loadMode !== 'undefined' ? loadMode : 'undefined';
           const hasData = !!(lastSearchCenter && lastSearchRadiusKm);
-          console.log('[DB Map][SmartLoading] Fallback timeout check:', {
-            loadMode: currentLoadMode,
-            hasData: hasData,
-            lastSearchCenter: lastSearchCenter,
-            lastSearchRadiusKm: lastSearchRadiusKm,
-            buttonExists: !!this.manualLoadButton
-          });
           
           if (currentLoadMode === 'radius' && this.manualLoadButton) {
             // Pokud ještě nebyla načtena žádná data (lastSearchCenter je null), zobrazit tlačítko
             if (!hasData) {
-              console.log('[DB Map][SmartLoading] Zobrazuji tlačítko (žádná data ještě nenačtena)');
               this.showManualLoadButton();
             }
           }
@@ -9754,7 +9739,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           this.lastCheckTime = Date.now();
           const c = map.getCenter();
           const outsideArea = this.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
-          console.log('[DB Map][SmartLoading] Watcher check:', { outsideArea, center: { lat: c.lat, lng: c.lng } });
           if (outsideArea) this.showManualLoadButton(); else this.hideManualLoadButton();
         } catch(e) {
           console.error('[DB Map][SmartLoading] Chyba v watcheru:', e);
@@ -9763,7 +9747,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     createManualLoadButton() {
-      console.log('[DB Map][SmartLoading] Vytvářím tlačítko');
       this.manualLoadButton = document.createElement('div');
       this.manualLoadButton.id = 'db-manual-load-container';
       this.manualLoadButton.className = 'db-manual-load-container';
@@ -9783,7 +9766,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           // Odstranit případné fallback inline styly
           this.manualLoadButton.removeAttribute('style');
           mapContainer.appendChild(this.manualLoadButton);
-          console.log('[DB Map][SmartLoading] Tlačítko připojeno do .leaflet-container');
           return true;
         }
         return false;
@@ -9801,7 +9783,6 @@ document.addEventListener('DOMContentLoaded', async function() {
               this.manualLoadButton.style.cssText = 'position:fixed;bottom:56px;left:50%;transform:translateX(-50%);right:auto;z-index:1010;display:none;';
               if (document.body) {
                 document.body.appendChild(this.manualLoadButton);
-                console.log('[DB Map][SmartLoading] Tlačítko připojeno do body (fallback)');
               } else {
                 console.warn('[DB Map][SmartLoading] document.body neexistuje!');
               }
@@ -9811,7 +9792,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       this.hideManualLoadButton();
-      console.log('[DB Map][SmartLoading] Tlačítko vytvořeno, aktuální display:', this.manualLoadButton ? this.manualLoadButton.style.display : 'N/A');
     }
     
     loadUserPreferences() {
@@ -9846,7 +9826,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     checkIfOutsideLoadedArea(center, radius) {
       if (!lastSearchCenter || !lastSearchRadiusKm) {
-        console.log('[DB Map][SmartLoading] checkIfOutsideLoadedArea: nemám lastSearchCenter nebo lastSearchRadiusKm', { lastSearchCenter, lastSearchRadiusKm });
         return false;
       }
       
@@ -9854,23 +9833,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Zobrazit tlačítko, když je uživatel více než 80% radiusu od středu
       // To znamená, že je blízko okraje načtené oblasti
       const thresholdKm = lastSearchRadiusKm * 0.8;
-      const isOutside = distFromLastCenter > thresholdKm;
       
-      console.log('[DB Map][SmartLoading] checkIfOutsideLoadedArea:', {
-        center: { lat: center.lat, lng: center.lng },
-        lastSearchCenter,
-        lastSearchRadiusKm,
-        distFromLastCenter: distFromLastCenter.toFixed(2),
-        thresholdKm: thresholdKm.toFixed(2),
-        isOutside
-      });
-      
-      return isOutside;
+      return distFromLastCenter > thresholdKm;
     }
     
     showManualLoadButton() {
       if (this.manualLoadButton) {
-        console.log('[DB Map][SmartLoading] Zobrazuji tlačítko');
         this.manualLoadButton.style.display = 'block';
         this.outsideLoadedArea = true;
       } else {
@@ -9881,11 +9849,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     hideManualLoadButton() {
       // V trvalém režimu tlačítko neschovávat
       if (ALWAYS_SHOW_MANUAL_BUTTON) {
-        console.log('[DB Map][SmartLoading] hideManualLoadButton: ignorováno (ALWAYS_SHOW režim)');
         return;
       }
       if (this.manualLoadButton) {
-        console.log('[DB Map][SmartLoading] Schovávám tlačítko');
         this.manualLoadButton.style.display = 'none';
         this.outsideLoadedArea = false;
       } else {
@@ -9951,13 +9917,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // Inicializace Smart Loading Manageru
-  console.log('[DB Map] Dosáhl jsem k inicializaci SmartLoadingManager, ALWAYS_SHOW_MANUAL_BUTTON:', typeof ALWAYS_SHOW_MANUAL_BUTTON !== 'undefined' ? ALWAYS_SHOW_MANUAL_BUTTON : 'undefined');
   try {
-    console.log('[DB Map] Inicializuji SmartLoadingManager...');
     window.smartLoadingManager = new SmartLoadingManager();
-    console.log('[DB Map] SmartLoadingManager vytvořen, volám init()...');
     window.smartLoadingManager.init();
-    console.log('[DB Map] SmartLoadingManager.init() dokončeno');
   } catch (error) {
     console.error('[DB Map] Chyba při inicializaci SmartLoadingManager:', error);
     // Fallback: zkusit vytvořit alespoň základní instanci
