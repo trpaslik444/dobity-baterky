@@ -9681,11 +9681,23 @@ document.addEventListener('DOMContentLoaded', async function() {
           </button>
         </div>
       `;
-      
-      // Přidat do mapy
-      const mapContainer = document.querySelector('.leaflet-container');
-      if (mapContainer) {
-        mapContainer.appendChild(this.manualLoadButton);
+      // Přidat do mapy (robustní: zkusit opakovaně, než Leaflet vytvoří container)
+      const attach = () => {
+        const mapContainer = document.querySelector('.leaflet-container');
+        if (mapContainer && !document.getElementById('db-manual-load-container')) {
+          mapContainer.appendChild(this.manualLoadButton);
+          return true;
+        }
+        return false;
+      };
+      if (!attach()) {
+        let tries = 0;
+        const iv = setInterval(() => {
+          tries++;
+          if (attach() || tries > 50) { // ~5s
+            clearInterval(iv);
+          }
+        }, 100);
       }
       
       this.hideManualLoadButton();
