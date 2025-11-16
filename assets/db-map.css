@@ -35,8 +35,9 @@
 .db-manual-load-container {
   position: absolute;
   bottom: 56px; /* nad spodním barem s legendou (#db-bottom-bar) */
-  left: 50%;
-  transform: translateX(-50%);
+  right: 16px; /* zarovnání k pravému okraji nad legendou */
+  left: auto;
+  transform: none;
   z-index: 1011; /* nad #db-bottom-bar (1002), ale nízké vůči ostatnímu UI */
   display: none;
   animation: slideInFromBottom 0.3s ease-out;
@@ -156,10 +157,10 @@
 /* Responsive design */
 @media (max-width: 768px) {
   .db-manual-load-container {
-    bottom: 25vh; /* Zachovat 1/4 od spodní hrany */
-    left: 50%;
-    transform: translateX(-50%);
-    right: auto;
+    bottom: 56px; /* stále nad spodním barem i na mobilu */
+    right: 12px;
+    left: auto;
+    transform: none;
   }
   
   .db-manual-load-btn {
