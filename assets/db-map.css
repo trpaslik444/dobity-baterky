@@ -38,7 +38,7 @@
   right: 16px; /* zarovnání k pravému okraji nad legendou */
   left: auto;
   transform: none;
-  z-index: 1011; /* nad #db-bottom-bar (1002), ale nízké vůči ostatnímu UI */
+  z-index: 650; /* nad dlaždicemi mapy, ale pod většinou UI (karty, panely, legendy) */
   display: none;
   animation: slideInFromBottom 0.3s ease-out;
 }
@@ -161,6 +161,7 @@
     right: 12px;
     left: auto;
     transform: none;
+    z-index: 650;
   }
   
   .db-manual-load-btn {
