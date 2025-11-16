@@ -1176,63 +1176,67 @@ add_action('wp_footer', function() {
                 return originalRegister(scriptURL, options);
             };
             
-            // Odstranit existující registrace s nesprávným originem nebo scope
-            // Kontrola dostupnosti getRegistrations() pro Safari kompatibilitu
+            // Čištění registrací: neodstraňuj jiné aplikace na stejném originu.
+            // 1) Cizí origin vždy odstranit (bezpečnost).
+            // 2) Ze stejného originu odstranit POUZE naše registrace (db-sw.js) s nesprávným scope.
             (function cleanupRegistrations() {
                 try {
                     const sitePath = '<?php echo esc_js(parse_url(home_url('/'), PHP_URL_PATH)); ?>';
                     const siteScope = window.location.origin + sitePath;
-                    const ourSwPathSuffix = '/db-sw.js';
-                    function isOurSw(reg) {
+                    const ourSwSuffix = '/db-sw.js';
+                    function isOurReg(reg) {
                         try {
                             const url = (reg && reg.active && reg.active.scriptURL)
-                                || (reg && reg.waiting && reg.waiting.scriptURL)
-                                || (reg && reg.installing && reg.installing.scriptURL)
-                                || null;
-                            return !!(url && url.indexOf(ourSwPathSuffix) !== -1);
+                                      || (reg && reg.waiting && reg.waiting.scriptURL)
+                                      || (reg && reg.installing && reg.installing.scriptURL)
+                                      || null;
+                            return !!(url && url.indexOf(ourSwSuffix) !== -1);
                         } catch(_) { return false; }
                     }
                     if (typeof navigator.serviceWorker.getRegistrations === 'function') {
                         navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                            registrations.forEach(function(registration) {
-                                if (!registration.scope) return;
-                                const isSameOrigin = registration.scope.startsWith(window.location.origin);
-                                const isOurScope = registration.scope === siteScope || registration.scope.startsWith(siteScope);
-                                // Odstranit pouze: (a) cizí origin (bezpečnost) NEBO (b) naši registraci /db-sw.js s nesprávným scope
-                                if (!isSameOrigin || (isOurSw(registration) && !isOurScope)) {
-                                    console.warn('[DB PWA] Unregister cizí/nesprávný SW:', registration.scope);
-                                    registration.unregister();
+                            registrations.forEach(function(reg) {
+                                if (!reg || !reg.scope) return;
+                                const sameOrigin = reg.scope.indexOf(window.location.origin) === 0;
+                                const ourScope = reg.scope === siteScope || reg.scope.indexOf(sitePath) === 0;
+                                const ours = isOurReg(reg);
+                                if (!sameOrigin) {
+                                    console.warn('[DB PWA] Unregister foreign-origin SW:', reg.scope);
+                                    reg.unregister();
+                                } else if (ours && !ourScope) {
+                                    console.warn('[DB PWA] Unregister our SW with mismatched scope:', reg.scope);
+                                    reg.unregister();
                                 }
                             });
-                        }).catch(function(error) {
-                            console.warn('[DB PWA] Chyba při získávání ServiceWorker registrací:', error);
-                        });
+                        }).catch(function(){});
                     } else if (navigator.serviceWorker.getRegistration) {
-                        // Fallback: bez Promise.allSettled (kvůli Safari)
-                        navigator.serviceWorker.getRegistration('/').then(function(reg) {
+                        // Safari fallback: zkusit jen potenciální naše scope a sahat pouze na naše SW
+                        navigator.serviceWorker.getRegistration('/').then(function(reg){
                             try {
-                                if (reg && reg.scope && isOurSw(reg)) {
-                                    const isSameOrigin = reg.scope.startsWith(window.location.origin);
-                                    const isOurScope = reg.scope === siteScope || reg.scope.startsWith(siteScope);
-                                    if (!isSameOrigin || !isOurScope) {
-                                        console.warn('[DB PWA] Unregister cizí/nesprávný SW (fallback /):', reg.scope);
+                                if (reg && reg.scope) {
+                                    const sameOrigin = reg.scope.indexOf(window.location.origin) === 0;
+                                    const ourScope = reg.scope === siteScope || reg.scope.indexOf(sitePath) === 0;
+                                    if (isOurReg(reg) && (!sameOrigin || !ourScope)) {
+                                        console.warn('[DB PWA] Unregister our SW (fallback /):', reg.scope);
                                         reg.unregister();
                                     }
                                 }
                             } catch(_) {}
                         }).catch(function(){});
-                        navigator.serviceWorker.getRegistration(sitePath).then(function(reg) {
-                            try {
-                                if (reg && reg.scope && isOurSw(reg)) {
-                                    const isSameOrigin = reg.scope.startsWith(window.location.origin);
-                                    const isOurScope = reg.scope === siteScope || reg.scope.startsWith(siteScope);
-                                    if (!isSameOrigin || !isOurScope) {
-                                        console.warn('[DB PWA] Unregister cizí/nesprávný SW (fallback sitePath):', reg.scope);
-                                        reg.unregister();
+                        if (sitePath && sitePath !== '/') {
+                            navigator.serviceWorker.getRegistration(sitePath).then(function(reg){
+                                try {
+                                    if (reg && reg.scope) {
+                                        const sameOrigin = reg.scope.indexOf(window.location.origin) === 0;
+                                        const ourScope = reg.scope === siteScope || reg.scope.indexOf(sitePath) === 0;
+                                        if (isOurReg(reg) && (!sameOrigin || !ourScope)) {
+                                            console.warn('[DB PWA] Unregister our SW (fallback sitePath):', reg.scope);
+                                            reg.unregister();
+                                        }
                                     }
-                                }
-                            } catch(_) {}
-                        }).catch(function(){});
+                                } catch(_) {}
+                            }).catch(function(){});
+                        }
                     }
                 } catch(_) {}
             })();
