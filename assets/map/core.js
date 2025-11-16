@@ -9688,6 +9688,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         this._visibilityHandlerBound = true;
       }
       this.startOutsideAreaWatcher();
+      
+      // Fallback: pokud po určité době ještě nebyla načtena žádná data (selhal počáteční fetch),
+      // zobrazit tlačítko, aby uživatel mohl manuálně načíst data
+      setTimeout(() => {
+        try {
+          if (typeof loadMode !== 'undefined' && loadMode === 'radius' && this.manualLoadButton) {
+            // Pokud ještě nebyla načtena žádná data (lastSearchCenter je null), zobrazit tlačítko
+            if (!lastSearchCenter || !lastSearchRadiusKm) {
+              this.showManualLoadButton();
+            }
+          }
+        } catch(_) {}
+      }, 6000); // Po 6 sekundách zkontrolovat a případně zobrazit tlačítko
     }
     
     startOutsideAreaWatcher() {
