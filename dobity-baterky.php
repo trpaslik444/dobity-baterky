@@ -1198,22 +1198,30 @@ add_action('wp_footer', function() {
                             console.warn('[DB PWA] Chyba při získávání ServiceWorker registrací:', error);
                         });
                     } else if (navigator.serviceWorker.getRegistration) {
-                        // Fallback: odregistruj root i sitePath registrace, pokud nesedí
-                        Promise.allSettled([
-                            navigator.serviceWorker.getRegistration('/'),
-                            navigator.serviceWorker.getRegistration(sitePath)
-                        ]).then(function(results) {
-                            results.forEach(function(r) {
-                                const reg = r && r.value;
+                        // Fallback: bez Promise.allSettled (kvůli Safari)
+                        navigator.serviceWorker.getRegistration('/').then(function(reg) {
+                            try {
                                 if (reg && reg.scope) {
                                     const isSameOrigin = reg.scope.startsWith(window.location.origin);
                                     const isOurScope = reg.scope === siteScope || reg.scope.startsWith(siteScope);
                                     if (!isSameOrigin || !isOurScope) {
-                                        console.warn('[DB PWA] Unregister cizí/nesprávný SW (fallback):', reg.scope);
+                                        console.warn('[DB PWA] Unregister cizí/nesprávný SW (fallback /):', reg.scope);
                                         reg.unregister();
                                     }
                                 }
-                            });
+                            } catch(_) {}
+                        }).catch(function(){});
+                        navigator.serviceWorker.getRegistration(sitePath).then(function(reg) {
+                            try {
+                                if (reg && reg.scope) {
+                                    const isSameOrigin = reg.scope.startsWith(window.location.origin);
+                                    const isOurScope = reg.scope === siteScope || reg.scope.startsWith(siteScope);
+                                    if (!isSameOrigin || !isOurScope) {
+                                        console.warn('[DB PWA] Unregister cizí/nesprávný SW (fallback sitePath):', reg.scope);
+                                        reg.unregister();
+                                    }
+                                }
+                            } catch(_) {}
                         }).catch(function(){});
                     }
                 } catch(_) {}
