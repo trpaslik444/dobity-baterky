@@ -1105,8 +1105,13 @@ add_action('wp_head', function() {
     <link rel="manifest" href="<?php echo esc_url($manifest_url); ?>">
     <meta name="theme-color" content="#049FE8">
     <meta name="apple-mobile-web-app-capable" content="yes">
+           <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="Dobitý Baterky">
+           <!-- PWA icons served from plugin (ensure PNGs exist at these paths) -->
+           <link rel="apple-touch-icon" sizes="180x180" href="<?php echo esc_url( plugins_url('assets/pwa/db-icon-180.png', DB_PLUGIN_FILE) ); ?>">
+           <link rel="icon" type="image/png" sizes="192x192" href="<?php echo esc_url( plugins_url('assets/pwa/db-icon-192.png', DB_PLUGIN_FILE) ); ?>">
+           <link rel="icon" type="image/png" sizes="512x512" href="<?php echo esc_url( plugins_url('assets/pwa/db-icon-512.png', DB_PLUGIN_FILE) ); ?>">
     <?php
 }, 1);
 
