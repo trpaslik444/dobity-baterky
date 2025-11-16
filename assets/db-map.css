@@ -34,10 +34,11 @@
 /* ===== SMART LOADING MANAGER STYLES ===== */
 .db-manual-load-container {
   position: absolute;
-  bottom: 24px; /* bezpečný odstup od spodního okraje */
-  left: 50%;
+  bottom: 56px; /* nad spodním barem s legendou (#db-bottom-bar) */
+  left: 50%; /* zarovnání na střed obrazovky */
   transform: translateX(-50%);
-  z-index: 10000; /* nad overlays/headerem na stagingu */
+  right: auto;
+  z-index: 1010; /* nad #db-bottom-bar (1002), ale pod ostatními UI (karty, panely) */
   display: none;
   animation: slideInFromBottom 0.3s ease-out;
 }
@@ -156,10 +157,11 @@
 /* Responsive design */
 @media (max-width: 768px) {
   .db-manual-load-container {
-    bottom: 25vh; /* Zachovat 1/4 od spodní hrany */
-    left: 50%;
+    bottom: 56px; /* stále nad spodním barem i na mobilu */
+    left: 50%; /* zarovnání na střed obrazovky */
     transform: translateX(-50%);
     right: auto;
+    z-index: 1010; /* nad #db-bottom-bar (1002), aby bylo klikatelné */
   }
   
   .db-manual-load-btn {

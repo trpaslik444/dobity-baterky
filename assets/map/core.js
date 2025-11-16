@@ -2265,6 +2265,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   const RADIUS_KM = 50; // Výchozí fallback (bude nahrazen dle režimu)
   const MIN_FETCH_ZOOM = (typeof window.DB_MIN_FETCH_ZOOM !== 'undefined') ? window.DB_MIN_FETCH_ZOOM : 9; // pod tímto zoomem nerefreshujeme
   const FIXED_RADIUS_KM = (typeof window.DB_FIXED_RADIUS_KM !== 'undefined') ? window.DB_FIXED_RADIUS_KM : 50; // fixní okruh pro radius režim
+  // Vynucené trvalé zobrazení manuálního tlačítka načítání (staging-safe)
+  // Nastaveno na false - tlačítko se zobrazuje jen při posunu mimo načtená místa
+  const ALWAYS_SHOW_MANUAL_BUTTON = false;
   // Feature flags
   window.DB_RADIUS_LIMIT = window.DB_RADIUS_LIMIT || 1000;
   window.DB_RADIUS_HYSTERESIS_KM = window.DB_RADIUS_HYSTERESIS_KM || 5; // minimální posun centra pro refetch
@@ -9669,7 +9672,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     init() {
       this.createManualLoadButton();
       this.loadUserPreferences();
-      // Jednorázově navázat visibility handler (pauza/resume watcheru)
+      
+      if (ALWAYS_SHOW_MANUAL_BUTTON) {
+        // Trvalé zobrazení tlačítka - zobrazit hned a nepouštět watcher
+        if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+          this.showManualLoadButton();
+        }
+        return; // Nepouštět watcher v trvalém režimu
+      }
+      
+      // Standardní režim – řízený watcherem (tlačítko se zobrazuje jen při posunu mimo načtená místa)
       if (!this._visibilityHandlerBound) {
         const self = this;
         document.addEventListener('visibilitychange', function() {
@@ -9685,18 +9697,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         this._visibilityHandlerBound = true;
       }
       this.startOutsideAreaWatcher();
-      // Fallback: pokud by se tlačítko na některých prostředích nezobrazilo kvůli chybějícímu počátečnímu stavu,
-      // nabídnout uživateli možnost načíst ručně po krátké době.
+      
+      // Fallback: pokud po určité době ještě nebyla načtena žádná data (selhal počáteční fetch),
+      // zobrazit tlačítko, aby uživatel mohl manuálně načíst data
       setTimeout(() => {
         try {
           if (typeof loadMode !== 'undefined' && loadMode === 'radius' && this.manualLoadButton) {
-            const isVisible = this.manualLoadButton.style.display === 'block';
-            if (!isVisible) {
+            // Pokud ještě nebyla načtena žádná data (lastSearchCenter je null), zobrazit tlačítko
+            if (!lastSearchCenter || !lastSearchRadiusKm) {
               this.showManualLoadButton();
             }
           }
         } catch(_) {}
-      }, 6000);
+      }, 6000); // Po 6 sekundách zkontrolovat a případně zobrazit tlačítko
     }
     
     startOutsideAreaWatcher() {
@@ -9750,7 +9763,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             // Fallback: pokud se nepodařilo připojit do mapy, připojit do body jako fixní overlay
             if (!document.getElementById('db-manual-load-container')) {
               // Nastavit pouze pro fallback do body – aby bylo vidět i bez CSS
-              this.manualLoadButton.style.cssText = 'position:fixed;bottom:25vh;left:50%;transform:translateX(-50%);z-index:10000;display:none;';
+              // Použít stejné hodnoty jako v CSS (.db-manual-load-container): bottom:56px, left:50%, transform:translateX(-50%), z-index:1010
+              this.manualLoadButton.style.cssText = 'position:fixed;bottom:56px;left:50%;transform:translateX(-50%);right:auto;z-index:1010;display:none;';
               if (document.body) document.body.appendChild(this.manualLoadButton);
             }
           }
@@ -9761,12 +9775,33 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     loadUserPreferences() {
-      const saved = localStorage.getItem('db-auto-load-enabled');
-      this.autoLoadEnabled = saved !== null ? saved === 'true' : false; // Výchozí: manuální načítání
+      // Bezpečný přístup k localStorage – na některých prostředích může být blokován (Tracking Prevention)
+      if (ALWAYS_SHOW_MANUAL_BUTTON) {
+        // V trvalém režimu nepotřebujeme načítat preference
+        this.autoLoadEnabled = false;
+        return;
+      }
+      
+      try {
+        const saved = window.localStorage ? localStorage.getItem('db-auto-load-enabled') : null;
+        this.autoLoadEnabled = saved !== null ? saved === 'true' : false; // Výchozí: manuální načítání
+      } catch (e) {
+        // Tracking Prevention / private režimy – fallback na manuální režim bez chyb v konzoli
+        console.warn('[DB Map][SmartLoading] localStorage není dostupný, používám manuální režim.', e);
+        this.autoLoadEnabled = false;
+      }
     }
     
     saveUserPreferences() {
-      localStorage.setItem('db-auto-load-enabled', this.autoLoadEnabled.toString());
+      if (ALWAYS_SHOW_MANUAL_BUTTON) return;
+      try {
+        if (window.localStorage) {
+          localStorage.setItem('db-auto-load-enabled', this.autoLoadEnabled.toString());
+        }
+      } catch (e) {
+        // Ignorovat – jen lognout, ale neblokovat UI
+        console.warn('[DB Map][SmartLoading] Nepodařilo se uložit preference do localStorage.', e);
+      }
     }
     
     checkIfOutsideLoadedArea(center, radius) {
@@ -9790,17 +9825,48 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     hideManualLoadButton() {
+      // V trvalém režimu tlačítko neschovávat
+      if (ALWAYS_SHOW_MANUAL_BUTTON) {
+        return;
+      }
       if (this.manualLoadButton) {
         this.manualLoadButton.style.display = 'none';
         this.outsideLoadedArea = false;
       }
     }
     
+    disableManualLoadButton() {
+      const btn = document.getElementById('db-load-new-area-btn');
+      if (btn) {
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        btn.style.cursor = 'not-allowed';
+      }
+    }
+    
+    enableManualLoadButton() {
+      const btn = document.getElementById('db-load-new-area-btn');
+      if (btn) {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+      }
+    }
+    
     async loadNewAreaData() {
       if (!map) return;
       
+      // Zkontrolovat, zda už není fetch v běhu (ochrana proti dvojkliku)
+      const btn = document.getElementById('db-load-new-area-btn');
+      if (btn && btn.disabled) {
+        return; // Ignorovat kliknutí během probíhajícího fetch
+      }
+      
       // Použít globální body.db-loading
       document.body.classList.add('db-loading');
+      // Disable tlačítko během fetch (zabrání dvojkliku a zrušení probíhajícího requestu)
+      this.disableManualLoadButton();
+      // Schovat tlačítko během načítání (standardní chování)
       this.hideManualLoadButton();
       
       try {
@@ -9811,9 +9877,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         lastSearchRadiusKm = FIXED_RADIUS_KM;
       } catch (error) {
         console.error('[DB Map] Error loading new area:', error);
-        this.showManualLoadButton(); // Zobrazit tlačítko znovu při chybě
+        // Při chybě zobrazit tlačítko znovu (watcher ho případně skryje, pokud jsme uvnitř oblasti)
+        this.showManualLoadButton();
       } finally {
         document.body.classList.remove('db-loading');
+        // Znovu enable tlačítko po dokončení
+        this.enableManualLoadButton();
+        // V trvalém režimu zobrazit tlačítko znovu (watcher neběží)
+        if (ALWAYS_SHOW_MANUAL_BUTTON && typeof loadMode !== 'undefined' && loadMode === 'radius') {
+          this.showManualLoadButton();
+        }
+        // V standardním režimu watcher automaticky zobrazí/skryje tlačítko podle toho, zda jsme mimo načtenou oblast
       }
     }
   }
@@ -9853,16 +9927,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Kontrola, zda jsme mimo načtenou oblast – prováděj i při nízkém zoomu,
       // aby se tlačítko mohlo zobrazit, ale bez automatického fetchování
-      const outsideArea = window.smartLoadingManager.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
-      
-      if (outsideArea) {
-        // Vždy zobrazit tlačítko pro manuální načtení (automatické načítání je vypnuto)
-        window.smartLoadingManager.showManualLoadButton();
-      } else {
-        // Jsme uvnitř načtené oblasti - NENÍ POTŘEBA měnit features
-        // features musí zůstat jako všechny načtené body (ne jen viditelný viewport)
-        // Jinak by se body ztratily při pohybu po mapě
-        window.smartLoadingManager.hideManualLoadButton();
+      // V trvalém režimu (ALWAYS_SHOW_MANUAL_BUTTON) tlačítko neschovávat
+      if (!ALWAYS_SHOW_MANUAL_BUTTON) {
+        const outsideArea = window.smartLoadingManager.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
+        if (outsideArea) {
+          window.smartLoadingManager.showManualLoadButton();
+        } else {
+          window.smartLoadingManager.hideManualLoadButton();
+        }
       }
       
       // Pokud je příliš malý zoom, tak dál nic nedělej (šetři API)
