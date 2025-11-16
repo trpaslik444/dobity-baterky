@@ -9663,11 +9663,27 @@ document.addEventListener('DOMContentLoaded', async function() {
       this.lastCheckTime = 0;
       this.checkInterval = 4000; // Lehčí kontrola každé 4 sekundy
       this._watcherId = null;
+      this._visibilityHandlerBound = false;
     }
     
     init() {
       this.createManualLoadButton();
       this.loadUserPreferences();
+      // Jednorázově navázat visibility handler (pauza/resume watcheru)
+      if (!this._visibilityHandlerBound) {
+        const self = this;
+        document.addEventListener('visibilitychange', function() {
+          if (document.visibilityState !== 'visible') {
+            if (self._watcherId) {
+              clearInterval(self._watcherId);
+              self._watcherId = null;
+            }
+          } else {
+            self.startOutsideAreaWatcher();
+          }
+        });
+        this._visibilityHandlerBound = true;
+      }
       this.startOutsideAreaWatcher();
       // Fallback: pokud by se tlačítko na některých prostředích nezobrazilo kvůli chybějícímu počátečnímu stavu,
       // nabídnout uživateli možnost načíst ručně po krátké době.
@@ -9699,17 +9715,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (outsideArea) this.showManualLoadButton(); else this.hideManualLoadButton();
         } catch(_) {}
       }, this.checkInterval);
-      // Pozastavení při skrytí záložky pro nulovou zátěž
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState !== 'visible') {
-          if (this._watcherId) {
-            clearInterval(this._watcherId);
-            this._watcherId = null;
-          }
-        } else {
-          this.startOutsideAreaWatcher();
-        }
-      });
     }
     
     createManualLoadButton() {
