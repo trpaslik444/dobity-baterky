@@ -9661,7 +9661,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       this.autoLoadEnabled = false; // Vždy manuální načítání - zobrazit tlačítko
       this.outsideLoadedArea = false;
       this.lastCheckTime = 0;
-      this.checkInterval = 2000; // Kontrola každé 2 sekundy
+      this.checkInterval = 4000; // Lehčí kontrola každé 4 sekundy
+      this._watcherId = null;
     }
     
     init() {
@@ -9683,17 +9684,32 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     startOutsideAreaWatcher() {
-      // Periodicky kontrolovat, zda se uživatel neposunul mimo načtený okruh
-      setInterval(() => {
+      // Periodicky a lehce: reagovat jen pokud se viewport od poslední kontroly změnil a tab je viditelný
+      if (this._watcherId) clearInterval(this._watcherId);
+      this._watcherId = setInterval(() => {
         try {
+          if (document.visibilityState && document.visibilityState !== 'visible') return;
           if (typeof loadMode === 'undefined' || loadMode !== 'radius') return;
           if (!window.smartLoadingManager || !map) return;
           if (!initialLoadCompleted) return;
+          if (typeof lastViewportChangeTs === 'number' && lastViewportChangeTs <= this.lastCheckTime) return;
+          this.lastCheckTime = Date.now();
           const c = map.getCenter();
           const outsideArea = this.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
           if (outsideArea) this.showManualLoadButton(); else this.hideManualLoadButton();
         } catch(_) {}
       }, this.checkInterval);
+      // Pozastavení při skrytí záložky pro nulovou zátěž
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible') {
+          if (this._watcherId) {
+            clearInterval(this._watcherId);
+            this._watcherId = null;
+          }
+        } else {
+          this.startOutsideAreaWatcher();
+        }
+      });
     }
     
     createManualLoadButton() {
@@ -9804,8 +9820,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   
 
   // ===== OPTIMALIZOVANÉ AUTO-FETCH V RADIUS REŽIMU =====
+  let lastViewportChangeTs = 0;
   const onViewportChanged = debounce(async () => {
     try {
+      lastViewportChangeTs = Date.now();
       if (loadMode !== 'radius') return;
       if (!map) return;
       if (!window.smartLoadingManager) return;
@@ -9851,6 +9869,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }, 1000); // Zvýšeno z 300ms na 1000ms pro lepší výkon
   map.on('moveend', onViewportChanged);
   map.on('zoomend', onViewportChanged);
+  map.on('move', function(){ lastViewportChangeTs = Date.now(); });
   // Vyčistit isochrony při kliknutí mimo aktivní bod (pokud nejsou zamčené)
   map.on('click', function(e) {
     if (isochronesLocked) {
