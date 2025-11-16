@@ -9667,6 +9667,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     init() {
       this.createManualLoadButton();
       this.loadUserPreferences();
+      this.startOutsideAreaWatcher();
       // Fallback: pokud by se tlačítko na některých prostředích nezobrazilo kvůli chybějícímu počátečnímu stavu,
       // nabídnout uživateli možnost načíst ručně po krátké době.
       setTimeout(() => {
@@ -9679,6 +9680,20 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         } catch(_) {}
       }, 6000);
+    }
+    
+    startOutsideAreaWatcher() {
+      // Periodicky kontrolovat, zda se uživatel neposunul mimo načtený okruh
+      setInterval(() => {
+        try {
+          if (typeof loadMode === 'undefined' || loadMode !== 'radius') return;
+          if (!window.smartLoadingManager || !map) return;
+          if (!initialLoadCompleted) return;
+          const c = map.getCenter();
+          const outsideArea = this.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
+          if (outsideArea) this.showManualLoadButton(); else this.hideManualLoadButton();
+        } catch(_) {}
+      }, this.checkInterval);
     }
     
     createManualLoadButton() {
