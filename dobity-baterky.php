@@ -1176,30 +1176,48 @@ add_action('wp_footer', function() {
                 return originalRegister(scriptURL, options);
             };
             
-            // Odstranit existující registrace s nesprávným originem
+            // Odstranit existující registrace s nesprávným originem nebo scope
             // Kontrola dostupnosti getRegistrations() pro Safari kompatibilitu
-            if (typeof navigator.serviceWorker.getRegistrations === 'function') {
-                navigator.serviceWorker.getRegistrations().then(function(registrations) {
-                    registrations.forEach(function(registration) {
-                        if (registration.scope && !registration.scope.startsWith(window.location.origin)) {
-                            console.warn('[DB PWA] Odstraňuji ServiceWorker s nesprávným originem:', registration.scope);
-                            registration.unregister();
-                        }
-                    });
-                }).catch(function(error) {
-                    console.warn('[DB PWA] Chyba při získávání ServiceWorker registrací:', error);
-                });
-            } else {
-                // Fallback pro Safari - zkusit získat registraci pro root scope
-                navigator.serviceWorker.getRegistration('/').then(function(registration) {
-                    if (registration && registration.scope && !registration.scope.startsWith(window.location.origin)) {
-                        console.warn('[DB PWA] Odstraňuji ServiceWorker s nesprávným originem:', registration.scope);
-                        registration.unregister();
+            (function cleanupRegistrations() {
+                try {
+                    const sitePath = '<?php echo esc_js(parse_url(home_url('/'), PHP_URL_PATH)); ?>';
+                    const siteScope = window.location.origin + sitePath;
+                    if (typeof navigator.serviceWorker.getRegistrations === 'function') {
+                        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+                            registrations.forEach(function(registration) {
+                                if (!registration.scope) return;
+                                const isSameOrigin = registration.scope.startsWith(window.location.origin);
+                                const isOurScope = registration.scope === siteScope || registration.scope.startsWith(siteScope);
+                                // 1) jiné originy pryč, 2) jiný scope na stejném originu taky pryč
+                                if (!isSameOrigin || !isOurScope) {
+                                    console.warn('[DB PWA] Unregister cizí/nesprávný SW:', registration.scope);
+                                    registration.unregister();
+                                }
+                            });
+                        }).catch(function(error) {
+                            console.warn('[DB PWA] Chyba při získávání ServiceWorker registrací:', error);
+                        });
+                    } else if (navigator.serviceWorker.getRegistration) {
+                        // Fallback: odregistruj root i sitePath registrace, pokud nesedí
+                        Promise.allSettled([
+                            navigator.serviceWorker.getRegistration('/'),
+                            navigator.serviceWorker.getRegistration(sitePath)
+                        ]).then(function(results) {
+                            results.forEach(function(r) {
+                                const reg = r && r.value;
+                                if (reg && reg.scope) {
+                                    const isSameOrigin = reg.scope.startsWith(window.location.origin);
+                                    const isOurScope = reg.scope === siteScope || reg.scope.startsWith(siteScope);
+                                    if (!isSameOrigin || !isOurScope) {
+                                        console.warn('[DB PWA] Unregister cizí/nesprávný SW (fallback):', reg.scope);
+                                        reg.unregister();
+                                    }
+                                }
+                            });
+                        }).catch(function(){});
                     }
-                }).catch(function(error) {
-                    // Ignorovat chyby - může to být normální, pokud není žádná registrace
-                });
-            }
+                } catch(_) {}
+            })();
             
             // Zaregistrovat náš vlastní ServiceWorker
             // Scope je omezen na WordPress site path (ne celý origin) pro bezpečnost
