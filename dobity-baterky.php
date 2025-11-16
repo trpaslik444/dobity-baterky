@@ -3,7 +3,7 @@
  * Plugin Name: Dobitý Baterky – Elektromobilní průvodce
  * Plugin URI:  https://example.com/dobity-baterky
  * Description: Interaktivní průvodce nabíjecími stanicemi s pokročilým systémem správy nearby bodů a automatizovaným zpracováním dat.
- * Version:     2.0.1
+ * Version:     2.0.6
  * Author:      Ondřej Plas
  * Text Domain: dobity-baterky
  * Domain Path: /languages
