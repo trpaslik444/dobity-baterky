@@ -9769,12 +9769,33 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     loadUserPreferences() {
-      const saved = localStorage.getItem('db-auto-load-enabled');
-      this.autoLoadEnabled = saved !== null ? saved === 'true' : false; // Výchozí: manuální načítání
+      // Bezpečný přístup k localStorage – na některých prostředích může být blokován (Tracking Prevention)
+      if (ALWAYS_SHOW_MANUAL_BUTTON) {
+        // V trvalém režimu nepotřebujeme načítat preference
+        this.autoLoadEnabled = false;
+        return;
+      }
+      
+      try {
+        const saved = window.localStorage ? localStorage.getItem('db-auto-load-enabled') : null;
+        this.autoLoadEnabled = saved !== null ? saved === 'true' : false; // Výchozí: manuální načítání
+      } catch (e) {
+        // Tracking Prevention / private režimy – fallback na manuální režim bez chyb v konzoli
+        console.warn('[DB Map][SmartLoading] localStorage není dostupný, používám manuální režim.', e);
+        this.autoLoadEnabled = false;
+      }
     }
     
     saveUserPreferences() {
-      localStorage.setItem('db-auto-load-enabled', this.autoLoadEnabled.toString());
+      if (ALWAYS_SHOW_MANUAL_BUTTON) return;
+      try {
+        if (window.localStorage) {
+          localStorage.setItem('db-auto-load-enabled', this.autoLoadEnabled.toString());
+        }
+      } catch (e) {
+        // Ignorovat – jen lognout, ale neblokovat UI
+        console.warn('[DB Map][SmartLoading] Nepodařilo se uložit preference do localStorage.', e);
+      }
     }
     
     checkIfOutsideLoadedArea(center, radius) {
