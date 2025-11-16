@@ -9747,6 +9747,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     createManualLoadButton() {
+      console.log('[DB Map][SmartLoading] Vytvářím tlačítko...');
       this.manualLoadButton = document.createElement('div');
       this.manualLoadButton.id = 'db-manual-load-container';
       this.manualLoadButton.className = 'db-manual-load-container';
@@ -9920,12 +9921,14 @@ document.addEventListener('DOMContentLoaded', async function() {
   try {
     window.smartLoadingManager = new SmartLoadingManager();
     window.smartLoadingManager.init();
+    console.log('[DB Map] SmartLoadingManager inicializován');
   } catch (error) {
     console.error('[DB Map] Chyba při inicializaci SmartLoadingManager:', error);
     // Fallback: zkusit vytvořit alespoň základní instanci
     try {
       window.smartLoadingManager = new SmartLoadingManager();
       window.smartLoadingManager.init();
+      console.log('[DB Map] SmartLoadingManager inicializován (fallback)');
     } catch (fallbackError) {
       console.error('[DB Map] Fallback inicializace také selhala:', fallbackError);
     }
