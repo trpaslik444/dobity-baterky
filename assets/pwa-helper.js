@@ -3,16 +3,45 @@
 (function(){
   // Android Chrome: beforeinstallprompt
   let deferredPrompt = null;
+  const DISMISS_KEY = 'db_pwa_install_dismissed_until';
+  const INSTALLED_KEY = 'db_pwa_installed';
+  const DISMISS_TTL_DAYS = 30;
+  
+  function nowTs() { return Date.now(); }
+  function daysToMs(d) { return d * 24 * 60 * 60 * 1000; }
+  function getDismissUntilTs() {
+    const raw = localStorage.getItem(DISMISS_KEY);
+    const ts = raw ? parseInt(raw, 10) : 0;
+    return Number.isFinite(ts) ? ts : 0;
+  }
+  function setDismissForDays(days) {
+    const until = nowTs() + daysToMs(days);
+    localStorage.setItem(DISMISS_KEY, String(until));
+  }
+  function shouldSuppressPrompt(isStandalone) {
+    if (isStandalone) return true;
+    const installed = localStorage.getItem(INSTALLED_KEY) === '1';
+    if (installed) return true;
+    const until = getDismissUntilTs();
+    return until > nowTs();
+  }
+  window.addEventListener('appinstalled', () => {
+    localStorage.setItem(INSTALLED_KEY, '1');
+    const promptEl = document.getElementById('pwa-install-prompt');
+    if (promptEl) promptEl.remove();
+    const btn = document.getElementById('pwa-install-btn');
+    if (btn) btn.remove();
+  });
+  
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
-    // TODO: ukaž vlastní UI tlačítko "Instalovat aplikaci"
-    // Po kliku:
-    // deferredPrompt.prompt();
-    // deferredPrompt.userChoice.then(() => deferredPrompt = null);
-    
-    console.log('PWA instalace dostupná - zobrazit tlačítko');
-    showInstallButton();
+    if (!shouldSuppressPrompt(isStandalone)) {
+      console.log('PWA instalace dostupná - zobrazit tlačítko/prompt');
+      showInstallPrompt();
+    } else {
+      console.log('PWA instalace potlačena (nainstalováno nebo odmítnuto nedávno)');
+    }
   });
 
   // Detekce spuštění jako standalone (bez prohlížečové chromy)
@@ -34,47 +63,66 @@
   }
 
   /**
-   * Zobrazí tlačítko pro instalaci PWA
+   * Zobrazí prompt pro instalaci PWA ve spodní třetině, uprostřed, s možností odmítnout
    */
-  function showInstallButton() {
-    // Vytvoř tlačítko pokud neexistuje
-    let installBtn = document.getElementById('pwa-install-btn');
-    if (!installBtn) {
-      installBtn = document.createElement('button');
-      installBtn.id = 'pwa-install-btn';
-      installBtn.className = 'pwa-install-button';
-      installBtn.innerHTML = '📱 Nainstalovat aplikaci';
-      installBtn.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        z-index: 10000;
-        background: #049FE8;
-        color: white;
-        border: none;
-        border-radius: 50px;
-        padding: 12px 20px;
-        font-family: 'Montserrat', sans-serif;
-        font-weight: 600;
-        font-size: 14px;
-        cursor: pointer;
-        box-shadow: 0 4px 16px rgba(4, 159, 232, 0.3);
-        transition: all 0.3s ease;
+  function showInstallPrompt() {
+    // Nepokračovat, pokud je potlačeno
+    if (shouldSuppressPrompt(isStandalone)) return;
+    
+    // Pokud existuje staré tlačítko, odstranit
+    const oldBtn = document.getElementById('pwa-install-btn');
+    if (oldBtn) oldBtn.remove();
+    
+    // Vytvořit UI prompt
+    let promptEl = document.getElementById('pwa-install-prompt');
+    if (!promptEl) {
+      promptEl = document.createElement('div');
+      promptEl.id = 'pwa-install-prompt';
+      promptEl.className = 'pwa-install-prompt';
+      promptEl.innerHTML = `
+        <h3>📱 Nainstalovat aplikaci Dobitý Baterky</h3>
+        <p>Aplikace poběží rychleji a bude dostupná z plochy.</p>
+        <div class="pwa-install-actions">
+          <button class="pwa-install-accept">Nainstalovat</button>
+          <button class="pwa-install-dismiss">Ne, díky</button>
+        </div>
       `;
+      document.body.appendChild(promptEl);
+      // Center ve spodní třetině – pomocí existujícího CSS se vykreslí uprostřed dole (left/right 20px).
+      requestAnimationFrame(() => promptEl.classList.add('show'));
       
-      installBtn.addEventListener('click', async () => {
-        if (deferredPrompt) {
-          deferredPrompt.prompt();
-          const { outcome } = await deferredPrompt.userChoice;
-          if (outcome === 'accepted') {
-            console.log('Uživatel přijal PWA instalaci');
-            installBtn.remove();
+      const acceptBtn = promptEl.querySelector('.pwa-install-accept');
+      const dismissBtn = promptEl.querySelector('.pwa-install-dismiss');
+      
+      if (acceptBtn) {
+        acceptBtn.addEventListener('click', async () => {
+          if (deferredPrompt) {
+            deferredPrompt.prompt();
+            try {
+              const { outcome } = await deferredPrompt.userChoice;
+              if (outcome === 'accepted') {
+                console.log('Uživatel přijal PWA instalaci');
+                localStorage.setItem(INSTALLED_KEY, '1');
+                promptEl.remove();
+              } else {
+                // Pokud odmítl systémový prompt, nevnucovat hned znovu
+                setDismissForDays(DISMISS_TTL_DAYS);
+                promptEl.remove();
+              }
+            } catch (_) {
+              setDismissForDays(DISMISS_TTL_DAYS);
+              promptEl.remove();
+            }
+            deferredPrompt = null;
           }
-          deferredPrompt = null;
-        }
-      });
-      
-      document.body.appendChild(installBtn);
+        });
+      }
+      if (dismissBtn) {
+        dismissBtn.addEventListener('click', () => {
+          setDismissForDays(DISMISS_TTL_DAYS);
+          promptEl.remove();
+        });
+      }
     }
   }
 
