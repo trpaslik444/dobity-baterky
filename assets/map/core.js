@@ -9937,11 +9937,22 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   // Inicializace Smart Loading Manageru
-  console.log('[DB Map] Inicializuji SmartLoadingManager...');
-  window.smartLoadingManager = new SmartLoadingManager();
-  console.log('[DB Map] SmartLoadingManager vytvořen, volám init()...');
-  window.smartLoadingManager.init();
-  console.log('[DB Map] SmartLoadingManager.init() dokončeno');
+  try {
+    console.log('[DB Map] Inicializuji SmartLoadingManager...');
+    window.smartLoadingManager = new SmartLoadingManager();
+    console.log('[DB Map] SmartLoadingManager vytvořen, volám init()...');
+    window.smartLoadingManager.init();
+    console.log('[DB Map] SmartLoadingManager.init() dokončeno');
+  } catch (error) {
+    console.error('[DB Map] Chyba při inicializaci SmartLoadingManager:', error);
+    // Fallback: zkusit vytvořit alespoň základní instanci
+    try {
+      window.smartLoadingManager = new SmartLoadingManager();
+      window.smartLoadingManager.init();
+    } catch (fallbackError) {
+      console.error('[DB Map] Fallback inicializace také selhala:', fallbackError);
+    }
+  }
   
 
   // ===== OPTIMALIZOVANÉ AUTO-FETCH V RADIUS REŽIMU =====
