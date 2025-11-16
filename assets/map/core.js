@@ -9685,6 +9685,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       this.manualLoadButton = document.createElement('div');
       this.manualLoadButton.id = 'db-manual-load-container';
       this.manualLoadButton.className = 'db-manual-load-container';
+      // Základní inline styly, aby bylo tlačítko vidět i pokud na stagingu chybí CSS
+      // Umístit do spodní třetiny a na střed
+      this.manualLoadButton.style.cssText = 'position:fixed;bottom:25vh;left:50%;transform:translateX(-50%);z-index:10000;display:none;';
       this.manualLoadButton.innerHTML = `
         <div class="db-manual-load-btn">
           <button id="db-load-new-area-btn" onclick="window.smartLoadingManager.loadNewAreaData()">
@@ -9697,6 +9700,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const attach = () => {
         const mapContainer = document.querySelector('.leaflet-container');
         if (mapContainer && !document.getElementById('db-manual-load-container')) {
+          // Při vložení do mapContaineru přepnout na absolute (relativní k mapě)
+          this.manualLoadButton.style.position = 'absolute';
           mapContainer.appendChild(this.manualLoadButton);
           return true;
         }
@@ -9708,6 +9713,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           tries++;
           if (attach() || tries > 50) { // ~5s
             clearInterval(iv);
+            // Fallback: pokud se nepodařilo připojit do mapy, připojit do body jako fixní overlay
+            if (!document.getElementById('db-manual-load-container')) {
+              this.manualLoadButton.style.position = 'fixed';
+              if (document.body) document.body.appendChild(this.manualLoadButton);
+            }
           }
         }, 100);
       }
