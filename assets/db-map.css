@@ -34,13 +34,22 @@
 /* ===== SMART LOADING MANAGER STYLES ===== */
 .db-manual-load-container {
   position: absolute;
-  bottom: 56px; /* nad spodním barem s legendou (#db-bottom-bar) */
+  bottom: calc(33vh + 140px); /* Nad PWA promptem (33vh - 10px + ~120px výška promptu + 30px mezera) */
   left: 50%; /* zarovnání na střed obrazovky */
   transform: translateX(-50%);
   right: auto;
-  z-index: 1010; /* nad #db-bottom-bar (1002), ale pod ostatními UI (karty, panely) */
+  z-index: 1005; /* nad mapou (1000) a bottom bar (1002), pod modal okny (1200+) a PWA promptem (10002) */
   display: none;
   animation: slideInFromBottom 0.3s ease-out;
+}
+
+.db-manual-load-container--fixed {
+  position: fixed;
+  bottom: calc(33vh + 140px); /* Nad PWA promptem */
+  left: 50%;
+  transform: translateX(-50%);
+  right: auto;
+  z-index: 1005;
 }
 
 .db-manual-load-btn {
@@ -55,16 +64,42 @@
 
 @media (min-height: 900px) {
   .db-manual-load-container {
-    bottom: 10vh; /* na vysokých displejích posun výš */
+    bottom: calc(33vh + 140px); /* Zachovat pozici nad PWA promptem i na vysokých displejích */
+  }
+  .db-manual-load-container--fixed {
+    bottom: calc(33vh + 140px);
+  }
+}
+
+/* Automaticky upravit pozici "load more" tlačítka, když je PWA prompt zobrazen */
+body:has(.pwa-install-prompt.show) .db-manual-load-container,
+body:has(.pwa-install-prompt.show) .db-manual-load-container--fixed {
+  bottom: calc(33vh + 140px) !important; /* Zajistit, že je nad PWA promptem */
+}
+
+/* Na menších obrazovkách upravit pozice, aby se tlačítka nepřekrývala */
+@media (max-height: 700px) {
+  .db-manual-load-container {
+    bottom: calc(33vh + 120px); /* Menší mezera na nízkých obrazovkách */
+  }
+  .db-manual-load-container--fixed {
+    bottom: calc(33vh + 120px);
+  }
+  .pwa-install-prompt {
+    bottom: calc(33vh - 20px); /* Mírně níž na nízkých obrazovkách */
+  }
+  body:has(.pwa-install-prompt.show) .db-manual-load-container,
+  body:has(.pwa-install-prompt.show) .db-manual-load-container--fixed {
+    bottom: calc(33vh + 120px) !important;
   }
 }
 
 .db-manual-load-btn button {
-  background: #049FE8; /* Modrá z brandbooku */
-  color: #FFACC4; /* Růžová z brandbooku */
+  background: #FF8DAA; /* růžová podle brandu */
+  color: #049FE8; /* modrý text */
   border: none;
-  border-radius: 8px;
-  padding: 12px 16px;
+  border-radius: 999px;
+  padding: 14px 18px;
   font-family: 'Montserrat', sans-serif;
   font-weight: 600;
   font-size: 14px;
@@ -74,17 +109,45 @@
   justify-content: center;
   width: 100%;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 8px rgba(4, 159, 232, 0.3);
+  box-shadow: 0 8px 24px rgba(255, 141, 170, 0.35);
 }
 
 .db-manual-load-btn button:hover {
-  background: #0378b8; /* Tmavší modrá při hover */
+  background: #FF6A4B; /* CTA oranžová */
+  color: #FEF9DF;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(4, 159, 232, 0.4);
+  box-shadow: 0 12px 28px rgba(255, 106, 75, 0.45);
 }
 
 .db-manual-load-btn button:active {
   transform: translateY(0);
+  background: #FF8DAA;
+  color: #049FE8;
+}
+
+#db-manual-load-container > button,
+.db-manual-load-container > button {
+  background: #FFACC4 !important;
+  color: #049FE8 !important;
+  border-radius: 999px !important;
+  padding: 14px 22px !important;
+  font-family: 'Montserrat', sans-serif !important;
+  font-weight: 600 !important;
+  border: none !important;
+  box-shadow: 0 8px 24px rgba(255, 172, 196, 0.4) !important;
+  transition: all 0.2s ease !important;
+}
+
+#db-manual-load-container > button:hover,
+.db-manual-load-container > button:hover {
+  background: #FF8DAA !important;
+  color: #049FE8 !important;
+}
+
+#db-manual-load-container > button:active,
+.db-manual-load-container > button:active {
+  background: #FFACC4 !important;
+  color: #049FE8 !important;
 }
 
 .db-manual-load-btn .icon {

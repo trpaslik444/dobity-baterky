@@ -27,10 +27,29 @@ class PluginBuilderSimple {
     private function get_version() {
         $plugin_file = $this->plugin_dir . '/dobity-baterky.php';
         $contents = file_exists($plugin_file) ? file_get_contents($plugin_file) : '';
-        if (preg_match('/Version:\s*([\d\.]+)/i', $contents, $m)) {
-            return $m[1];
+        
+        // Nejdřív zkontroluj konstantu DB_PLUGIN_VERSION (má prioritu)
+        $constant_version = null;
+        if (preg_match("/define\s*\(\s*['\"]DB_PLUGIN_VERSION['\"]\s*,\s*['\"]([^'\"]+)['\"]/", $contents, $matches)) {
+            $constant_version = $matches[1];
         }
-        return '2.0.0';
+        
+        // Pak zkontroluj verzi v hlavičce
+        $header_version = null;
+        if (preg_match('/Version:\s*([\d\.]+)/i', $contents, $m)) {
+            $header_version = $m[1];
+        }
+        
+        // Pokud se verze liší, varovat, ale NEMĚNIT soubor (může způsobit problémy při buildu)
+        if ($constant_version && $header_version && $constant_version !== $header_version) {
+            echo "⚠️  VAROVÁNÍ: Verze se liší: hlavička=$header_version, konstanta=$constant_version\n";
+            echo "   Použiji verzi z konstanty ($constant_version) pro build.\n";
+            echo "   Pro synchronizaci uprav soubor manuálně.\n";
+            return $constant_version;
+        }
+        
+        // Vrať verzi z konstanty (má prioritu) nebo z hlavičky
+        return $constant_version ?: ($header_version ?: '2.0.0');
     }
 
     private function create_build_dir() {
@@ -111,7 +130,21 @@ class PluginBuilderSimple {
                 $content = file_get_contents($path);
                 if ($content === false) continue;
                 // odstranit pro produkci pouze browser console logy (error_log ponecháme kvůli stabilní syntaxi)
-                $content = preg_replace('/\bconsole\.(log|debug|warn|error)\s*\(.*?\)\s*;?/s', '', $content);
+                // NEODSTRAŇOVAT logy s prefixem [DB Map] nebo [DB Staging] - potřebné pro debugging na stagingu
+                // Nejdřív najít všechny console.log/warn/error volání
+                $lines = explode("\n", $content);
+                $new_lines = [];
+                foreach ($lines as $line) {
+                    // Pokud řádek obsahuje [DB Map] nebo [DB Staging], ponechat ho
+                    if (preg_match('/\[DB (Map|Staging)\]/', $line)) {
+                        $new_lines[] = $line;
+                    } else {
+                        // Jinak odstranit console.log/warn/error volání
+                        $line = preg_replace('/\bconsole\.(log|debug|warn|error)\s*\([^)]*\)\s*;?/s', '', $line);
+                        $new_lines[] = $line;
+                    }
+                }
+                $content = implode("\n", $new_lines);
                 file_put_contents($path, $content);
             }
         }

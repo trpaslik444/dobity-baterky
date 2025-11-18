@@ -5,6 +5,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Načti environment proměnné
+if [ -f "$PROJECT_ROOT/.env" ]; then
+  source "$SCRIPT_DIR/load-env.sh"
+fi
+
 if ! command -v php >/dev/null 2>&1; then
   echo "ERROR: PHP není dostupné v PATH." >&2
   exit 1
