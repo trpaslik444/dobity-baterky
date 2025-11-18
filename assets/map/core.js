@@ -9701,9 +9701,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       // Zajistit, aby se tlačítko zobrazovalo i na desktopu - zobrazit hned, pokud je v radius mode
-      const isDesktop = typeof window !== 'undefined' && window.location && 
-                       !window.location.hostname.includes('wpcomstaging.com') &&
-                       !window.location.hostname.includes('localhost');
+      // Detekce desktopu podle šířky obrazovky (ne podle hostname, aby fungovalo i na produkci)
+      const isDesktop = typeof window !== 'undefined' && 
+                       (window.innerWidth > 900 || (window.dbMapShell && window.dbMapShell !== 'mobile'));
       if (isDesktop && typeof loadMode !== 'undefined' && loadMode === 'radius') {
         // Na desktopu zobrazit tlačítko hned, watcher ho pak upraví podle pozice
         setTimeout(() => {
@@ -9929,11 +9929,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (ALWAYS_SHOW_MANUAL_BUTTON || this.legacyMode) {
         return;
       }
-      // Na desktopu (ne staging) zobrazit tlačítko vždy, když je v radius mode
+      // Na desktopu zobrazit tlačítko vždy, když je v radius mode
       // aby bylo vidět i když není mimo načtenou oblast
-      const isDesktop = typeof window !== 'undefined' && window.location && 
-                       !window.location.hostname.includes('wpcomstaging.com') &&
-                       !window.location.hostname.includes('localhost');
+      // Detekce desktopu podle šířky obrazovky (ne podle hostname, aby fungovalo i na produkci)
+      const isDesktop = typeof window !== 'undefined' && 
+                       (window.innerWidth > 900 || (window.dbMapShell && window.dbMapShell !== 'mobile'));
       if (isDesktop && typeof loadMode !== 'undefined' && loadMode === 'radius') {
         // Na desktopu tlačítko neschovávat - nechat ho viditelné
         return;
