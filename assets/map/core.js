@@ -162,9 +162,11 @@ const LocationService = (() => {
     const cacheKey = 'db_last_location';
 
     function loadCache() {
+        if (typeof window === 'undefined' || !window.localStorage) return null;
         try { return JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch(_) { return null; }
     }
     function saveCache(p) {
+        if (typeof window === 'undefined' || !window.localStorage) return;
         try { localStorage.setItem(cacheKey, JSON.stringify(p)); } catch(_) {}
     }
     async function permissionState() {

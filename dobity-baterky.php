@@ -878,6 +878,41 @@ add_action('init', function() {
 
 
 // Servovat ServiceWorker z root endpointu
+// Použít jak template_redirect (pro rewrite rules), tak parse_request (pro přímý přístup)
+add_action('parse_request', function($wp) {
+    $request_uri = isset($_SERVER['REQUEST_URI']) ? parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) : '';
+    $is_sw_request = ($request_uri === '/db-sw.js' || $request_uri === '/db-sw.js/');
+    
+    if ($is_sw_request) {
+        $sw_file = DB_PLUGIN_DIR . 'assets/sw.js';
+        if (file_exists($sw_file)) {
+            // Získat WordPress site path pro Service-Worker-Allowed hlavičku
+            $site_path = parse_url(home_url('/'), PHP_URL_PATH);
+            if (!$site_path || $site_path === '/') {
+                $site_path = '/';
+            }
+            
+            // Nastavit správné hlavičky pro ServiceWorker
+            status_header(200);
+            header('Content-Type: application/javascript; charset=utf-8');
+            header('Service-Worker-Allowed: ' . $site_path); // Povolit scope pro WordPress site path
+            header('Cache-Control: public, max-age=3600'); // Cache na 1 hodinu
+            
+            // Vypnout WordPress output
+            remove_all_actions('wp_head');
+            remove_all_actions('wp_footer');
+            
+            // Servovat ServiceWorker soubor
+            readfile($sw_file);
+            exit;
+        } else {
+            // Pokud soubor neexistuje, vrátit 404
+            status_header(404);
+            exit;
+        }
+    }
+}, 1); // Vysoká priorita
+
 add_action('template_redirect', function() {
     // Kontrola přes query var i přes REQUEST_URI (pro případ, že rewrite rules ještě nejsou flushnuté)
     $request_uri = isset($_SERVER['REQUEST_URI']) ? parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) : '';
