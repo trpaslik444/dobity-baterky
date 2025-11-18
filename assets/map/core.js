@@ -2268,6 +2268,15 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Vynucené trvalé zobrazení manuálního tlačítka načítání (staging-safe)
   // Nastaveno na false - tlačítko se zobrazuje jen při posunu mimo načtená místa
   const ALWAYS_SHOW_MANUAL_BUTTON = false;
+  const DEBUG_FORCE_LEGACY =
+    (typeof window !== 'undefined' && Boolean(window.DB_FORCE_LEGACY_MANUAL_BUTTON)) ||
+    (typeof dbMapData !== 'undefined' && Boolean(dbMapData?.debug?.forceLegacyManualButton));
+  const FORCE_LEGACY_MANUAL_BUTTON = Boolean(DEBUG_FORCE_LEGACY);
+  if (typeof window !== 'undefined') {
+    window.ALWAYS_SHOW_MANUAL_BUTTON = ALWAYS_SHOW_MANUAL_BUTTON;
+    window.FORCE_LEGACY_MANUAL_BUTTON = FORCE_LEGACY_MANUAL_BUTTON;
+  }
+  console.log('[DB Map] FORCE_LEGACY_MANUAL_BUTTON:', FORCE_LEGACY_MANUAL_BUTTON, 'hostname:', typeof window !== 'undefined' && window.location ? window.location.hostname : 'N/A');
   // Feature flags
   window.DB_RADIUS_LIMIT = window.DB_RADIUS_LIMIT || 1000;
   window.DB_RADIUS_HYSTERESIS_KM = window.DB_RADIUS_HYSTERESIS_KM || 5; // minimální posun centra pro refetch
@@ -9667,10 +9676,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       this.checkInterval = 4000; // Lehčí kontrola každé 4 sekundy
       this._watcherId = null;
       this._visibilityHandlerBound = false;
+      this._ensureWatcherTimeout = null;
+      this.legacyMode = FORCE_LEGACY_MANUAL_BUTTON === true;
     }
     
     init() {
       this.createManualLoadButton();
+      if (this.legacyMode) {
+        if (this.manualLoadButton) {
+          this.manualLoadButton.style.display = 'block';
+        }
+        return;
+      }
       this.loadUserPreferences();
       
       if (ALWAYS_SHOW_MANUAL_BUTTON) {
@@ -9697,6 +9714,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         this._visibilityHandlerBound = true;
       }
       this.startOutsideAreaWatcher();
+      this.ensureWatcherActive();
       
       // Fallback: pokud po určité době ještě nebyla načtena žádná data (selhal počáteční fetch),
       // zobrazit tlačítko, aby uživatel mohl manuálně načíst data
@@ -9709,12 +9727,31 @@ document.addEventListener('DOMContentLoaded', async function() {
             // Pokud ještě nebyla načtena žádná data (lastSearchCenter je null), zobrazit tlačítko
             if (!hasData) {
               this.showManualLoadButton();
+              this.ensureWatcherActive();
             }
           }
         } catch(e) {
           console.error('[DB Map][SmartLoading] Chyba v fallback timeout:', e);
         }
       }, 6000); // Po 6 sekundách zkontrolovat a případně zobrazit tlačítko
+    }
+
+    ensureWatcherActive() {
+      if (this.legacyMode) return;
+      if (this._ensureWatcherTimeout) {
+        clearTimeout(this._ensureWatcherTimeout);
+      }
+      this._ensureWatcherTimeout = setTimeout(() => {
+        if (!this.manualLoadButton) return;
+        const isRadiusMode = typeof loadMode === 'undefined' || loadMode === 'radius';
+        if (!this._watcherId) {
+          this.startOutsideAreaWatcher();
+        }
+        const isVisible = window.getComputedStyle(this.manualLoadButton).display !== 'none';
+        if (!isVisible && isRadiusMode) {
+          this.showManualLoadButton();
+        }
+      }, 5000);
     }
     
     startOutsideAreaWatcher() {
@@ -9747,7 +9784,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     createManualLoadButton() {
-      console.log('[DB Map][SmartLoading] Vytvářím tlačítko...');
+      if (this.legacyMode) {
+      const container = document.createElement('div');
+      container.id = 'db-manual-load-container';
+      container.className = 'db-manual-load-container db-manual-load-container--fixed';
+      container.innerHTML = `
+        <div class="db-manual-load-btn">
+          <button id="db-load-new-area-btn" type="button">
+            <span class="icon">📍</span>
+            <span class="text">${t('map.load_nearby', 'Load places nearby')}</span>
+          </button>
+        </div>
+      `;
+      const button = container.querySelector('#db-load-new-area-btn');
+      if (button) {
+        button.addEventListener('click', () => {
+          if (window.smartLoadingManager && typeof window.smartLoadingManager.loadNewAreaData === 'function') {
+            window.smartLoadingManager.loadNewAreaData();
+          } else {
+            console.warn('[DB Map][SmartLoading] Legacy button: SmartLoadingManager not ready');
+          }
+        });
+      }
+      document.body.appendChild(container);
+      this.manualLoadButton = container;
+      this.showManualLoadButton();
+        return;
+      }
+
       this.manualLoadButton = document.createElement('div');
       this.manualLoadButton.id = 'db-manual-load-container';
       this.manualLoadButton.className = 'db-manual-load-container';
@@ -9763,10 +9827,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const attach = () => {
         const mapContainer = document.querySelector('.leaflet-container');
         if (mapContainer && !document.getElementById('db-manual-load-container')) {
-          // Při vložení do mapContaineru spoléhat na CSS (.db-manual-load-container)
-          // Odstranit případné fallback inline styly
-          this.manualLoadButton.removeAttribute('style');
           mapContainer.appendChild(this.manualLoadButton);
+          this.manualLoadButton.classList.remove('db-manual-load-container--fixed');
           return true;
         }
         return false;
@@ -9779,10 +9841,8 @@ document.addEventListener('DOMContentLoaded', async function() {
             clearInterval(iv);
             // Fallback: pokud se nepodařilo připojit do mapy, připojit do body jako fixní overlay
             if (!document.getElementById('db-manual-load-container')) {
-              // Nastavit pouze pro fallback do body – aby bylo vidět i bez CSS
-              // Použít stejné hodnoty jako v CSS (.db-manual-load-container): bottom:56px, left:50%, transform:translateX(-50%), z-index:1010
-              this.manualLoadButton.style.cssText = 'position:fixed;bottom:56px;left:50%;transform:translateX(-50%);right:auto;z-index:1010;display:none;';
               if (document.body) {
+                this.manualLoadButton.classList.add('db-manual-load-container--fixed');
                 document.body.appendChild(this.manualLoadButton);
               } else {
                 console.warn('[DB Map][SmartLoading] document.body neexistuje!');
@@ -9792,10 +9852,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         }, 100);
       }
       
-      this.hideManualLoadButton();
+      this.manualLoadButton.style.display = 'none';
     }
     
     loadUserPreferences() {
+      if (this.legacyMode) {
+        this.autoLoadEnabled = false;
+        return;
+      }
       // Bezpečný přístup k localStorage – na některých prostředích může být blokován (Tracking Prevention)
       if (ALWAYS_SHOW_MANUAL_BUTTON) {
         // V trvalém režimu nepotřebujeme načítat preference
@@ -9849,7 +9913,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     hideManualLoadButton() {
       // V trvalém režimu tlačítko neschovávat
-      if (ALWAYS_SHOW_MANUAL_BUTTON) {
+      if (ALWAYS_SHOW_MANUAL_BUTTON || this.legacyMode) {
         return;
       }
       if (this.manualLoadButton) {
@@ -9917,20 +9981,92 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
   
+  // Fallback funkce pro vytvoření tlačítka přímo (použito pokud SmartLoadingManager selže)
+  function createDirectLegacyButton() {
+    if (document.getElementById('db-manual-load-container')) return; // Už existuje
+    console.log('[DB Map] Vytvářím fallback tlačítko přímo...');
+    const container = document.createElement('div');
+    container.id = 'db-manual-load-container';
+    container.className = 'db-manual-load-container db-manual-load-container--fixed';
+    container.innerHTML = `
+      <div class="db-manual-load-btn">
+        <button id="db-load-new-area-btn" type="button">
+          <span class="icon">📍</span>
+          <span class="text">${t('map.load_nearby', 'Load places nearby')}</span>
+        </button>
+      </div>
+    `;
+    const button = container.querySelector('#db-load-new-area-btn');
+    if (button) {
+      button.addEventListener('click', () => {
+        console.log('[DB Map] Fallback button clicked');
+        if (window.smartLoadingManager && typeof window.smartLoadingManager.loadNewAreaData === 'function') {
+          window.smartLoadingManager.loadNewAreaData();
+        } else if (typeof loadNewAreaData === 'function') {
+          loadNewAreaData();
+        } else {
+          console.warn('[DB Map] Fallback button: SmartLoadingManager not ready');
+        }
+      });
+    }
+    document.body.appendChild(container);
+    container.style.display = 'block';
+    console.log('[DB Map] Fallback tlačítko vytvořeno a připojeno do DOM');
+  }
+  if (typeof window !== 'undefined') {
+    window.createDirectLegacyButton = createDirectLegacyButton;
+  }
+
   // Inicializace Smart Loading Manageru
   try {
+    console.log('[DB Map] Inicializuji SmartLoadingManager...');
     window.smartLoadingManager = new SmartLoadingManager();
     window.smartLoadingManager.init();
     console.log('[DB Map] SmartLoadingManager inicializován');
+    
+    // Fallback kontrola: pokud je FORCE_LEGACY_MANUAL_BUTTON true a tlačítko neexistuje po 2 sekundách, vytvořit ho přímo
+    if (FORCE_LEGACY_MANUAL_BUTTON) {
+      setTimeout(() => {
+        if (!document.getElementById('db-manual-load-container')) {
+          console.warn('[DB Map] Tlačítko neexistuje po 2s, vytvářím fallback...');
+          createDirectLegacyButton();
+        }
+      }, 2000);
+    }
   } catch (error) {
     console.error('[DB Map] Chyba při inicializaci SmartLoadingManager:', error);
     // Fallback: zkusit vytvořit alespoň základní instanci
     try {
       window.smartLoadingManager = new SmartLoadingManager();
       window.smartLoadingManager.init();
-      console.log('[DB Map] SmartLoadingManager inicializován (fallback)');
     } catch (fallbackError) {
       console.error('[DB Map] Fallback inicializace také selhala:', fallbackError);
+      // Pokud vše selže a jsme na stagingu, vytvořit tlačítko přímo
+      if (FORCE_LEGACY_MANUAL_BUTTON) {
+        console.log('[DB Map] Všechny inicializace selhaly, vytvářím tlačítko přímo...');
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          createDirectLegacyButton();
+        } else {
+          document.addEventListener('DOMContentLoaded', createDirectLegacyButton);
+        }
+      }
+    }
+  }
+  
+  // DODATEČNÁ ZÁRUKA: Pokud je FORCE_LEGACY_MANUAL_BUTTON true, vytvořit tlačítko přímo po načtení stránky
+  // Toto zajistí, že tlačítko bude vždy vytvořeno, i když SmartLoadingManager selže
+  if (FORCE_LEGACY_MANUAL_BUTTON) {
+    const ensureButton = () => {
+      if (!document.getElementById('db-manual-load-container')) {
+        console.log('[DB Map] ZÁRUKA: Vytvářím tlačítko přímo (FORCE_LEGACY_MANUAL_BUTTON=true)...');
+        createDirectLegacyButton();
+      }
+    };
+    if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      setTimeout(ensureButton, 100);
+    } else {
+      document.addEventListener('DOMContentLoaded', () => setTimeout(ensureButton, 100));
+      window.addEventListener('load', () => setTimeout(ensureButton, 100));
     }
   }
   
@@ -10495,8 +10631,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   async function getIPLocation() {
     // Seznam IP geolokace služeb s fallback
     const services = [
-      'https://ipapi.co/json/',
-      'https://ipinfo.io/json'
+      'https://ipinfo.io/json',
+      'https://ipwho.is/'
     ];
     
     for (const service of services) {
@@ -10521,19 +10657,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Normalizace dat podle služby
         let result = null;
-        if (service.includes('ipapi.co')) {
-          result = {
-            lat: data.latitude,
-            lon: data.longitude,
-            country_code: data.country_code
-          };
-        } else if (service.includes('ipinfo.io')) {
+        if (service.includes('ipinfo.io')) {
           // ipinfo.io vrací lokaci jako "lat,lng"
           const [lat, lon] = data.loc ? data.loc.split(',') : [null, null];
           result = {
             lat: parseFloat(lat),
             lon: parseFloat(lon),
             country_code: data.country
+          };
+        } else if (service.includes('ipwho.is')) {
+          result = {
+            lat: data.latitude,
+            lon: data.longitude,
+            country_code: data.country_code
           };
         }
         

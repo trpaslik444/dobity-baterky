@@ -40,13 +40,11 @@ class PluginBuilderSimple {
             $header_version = $m[1];
         }
         
-        // Pokud se verze liší, synchronizuj hlavičku s konstantou
+        // Pokud se verze liší, varovat, ale NEMĚNIT soubor (může způsobit problémy při buildu)
         if ($constant_version && $header_version && $constant_version !== $header_version) {
-            echo "⚠️  Verze se liší: hlavička=$header_version, konstanta=$constant_version\n";
-            echo "   Synchronizuji hlavičku s konstantou...\n";
-            $contents = preg_replace('/Version:\s*[\d\.]+/i', "Version:     $constant_version", $contents);
-            file_put_contents($plugin_file, $contents);
-            echo "   ✅ Verze v hlavičce aktualizována na $constant_version\n";
+            echo "⚠️  VAROVÁNÍ: Verze se liší: hlavička=$header_version, konstanta=$constant_version\n";
+            echo "   Použiji verzi z konstanty ($constant_version) pro build.\n";
+            echo "   Pro synchronizaci uprav soubor manuálně.\n";
             return $constant_version;
         }
         
@@ -132,7 +130,21 @@ class PluginBuilderSimple {
                 $content = file_get_contents($path);
                 if ($content === false) continue;
                 // odstranit pro produkci pouze browser console logy (error_log ponecháme kvůli stabilní syntaxi)
-                $content = preg_replace('/\bconsole\.(log|debug|warn|error)\s*\(.*?\)\s*;?/s', '', $content);
+                // NEODSTRAŇOVAT logy s prefixem [DB Map] nebo [DB Staging] - potřebné pro debugging na stagingu
+                // Nejdřív najít všechny console.log/warn/error volání
+                $lines = explode("\n", $content);
+                $new_lines = [];
+                foreach ($lines as $line) {
+                    // Pokud řádek obsahuje [DB Map] nebo [DB Staging], ponechat ho
+                    if (preg_match('/\[DB (Map|Staging)\]/', $line)) {
+                        $new_lines[] = $line;
+                    } else {
+                        // Jinak odstranit console.log/warn/error volání
+                        $line = preg_replace('/\bconsole\.(log|debug|warn|error)\s*\([^)]*\)\s*;?/s', '', $line);
+                        $new_lines[] = $line;
+                    }
+                }
+                $content = implode("\n", $new_lines);
                 file_put_contents($path, $content);
             }
         }
