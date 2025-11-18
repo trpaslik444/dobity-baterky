@@ -34,18 +34,18 @@
 /* ===== SMART LOADING MANAGER STYLES ===== */
 .db-manual-load-container {
   position: absolute;
-  bottom: 56px; /* nad spodním barem s legendou (#db-bottom-bar) */
+  bottom: calc(33vh + 140px); /* Nad PWA promptem (33vh - 10px + ~120px výška promptu + 30px mezera) */
   left: 50%; /* zarovnání na střed obrazovky */
   transform: translateX(-50%);
   right: auto;
-  z-index: 1005; /* nad mapou (1000) a bottom bar (1002), pod modal okny (1200+) */
+  z-index: 1005; /* nad mapou (1000) a bottom bar (1002), pod modal okny (1200+) a PWA promptem (10002) */
   display: none;
   animation: slideInFromBottom 0.3s ease-out;
 }
 
 .db-manual-load-container--fixed {
   position: fixed;
-  bottom: 56px;
+  bottom: calc(33vh + 140px); /* Nad PWA promptem */
   left: 50%;
   transform: translateX(-50%);
   right: auto;
@@ -64,7 +64,33 @@
 
 @media (min-height: 900px) {
   .db-manual-load-container {
-    bottom: 10vh; /* na vysokých displejích posun výš */
+    bottom: calc(33vh + 140px); /* Zachovat pozici nad PWA promptem i na vysokých displejích */
+  }
+  .db-manual-load-container--fixed {
+    bottom: calc(33vh + 140px);
+  }
+}
+
+/* Automaticky upravit pozici "load more" tlačítka, když je PWA prompt zobrazen */
+body:has(.pwa-install-prompt.show) .db-manual-load-container,
+body:has(.pwa-install-prompt.show) .db-manual-load-container--fixed {
+  bottom: calc(33vh + 140px) !important; /* Zajistit, že je nad PWA promptem */
+}
+
+/* Na menších obrazovkách upravit pozice, aby se tlačítka nepřekrývala */
+@media (max-height: 700px) {
+  .db-manual-load-container {
+    bottom: calc(33vh + 120px); /* Menší mezera na nízkých obrazovkách */
+  }
+  .db-manual-load-container--fixed {
+    bottom: calc(33vh + 120px);
+  }
+  .pwa-install-prompt {
+    bottom: calc(33vh - 20px); /* Mírně níž na nízkých obrazovkách */
+  }
+  body:has(.pwa-install-prompt.show) .db-manual-load-container,
+  body:has(.pwa-install-prompt.show) .db-manual-load-container--fixed {
+    bottom: calc(33vh + 120px) !important;
   }
 }
 

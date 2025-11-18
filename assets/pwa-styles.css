@@ -128,6 +128,13 @@
     font-size: 13px;
     padding: 10px 20px;
   }
+  
+  /* Na mobilních zařízeních upravit PWA prompt pro lepší zobrazení */
+  .pwa-install-prompt {
+    max-width: calc(100% - 20px);
+    width: calc(100% - 20px);
+    bottom: calc(33vh - 15px);
+  }
 }
 
 /* Fullscreen módy */
@@ -151,9 +158,12 @@
 /* PWA instalace prompt */
 .pwa-install-prompt {
   position: fixed;
-  bottom: 20px;
-  left: 20px;
-  right: 20px;
+  bottom: calc(33vh - 10px); /* Ve středu spodní třetiny obrazovky */
+  left: 50%;
+  transform: translateX(-50%);
+  right: auto;
+  max-width: 400px;
+  width: calc(100% - 40px); /* S okraji 20px z každé strany */
   background: white;
   border-radius: 16px;
   padding: 20px;
