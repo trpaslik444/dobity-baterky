@@ -9700,6 +9700,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         return; // Nepouštět watcher v trvalém režimu
       }
       
+      // Zajistit, aby se tlačítko zobrazovalo i na desktopu - zobrazit hned, pokud je v radius mode
+      const isDesktop = typeof window !== 'undefined' && window.location && 
+                       !window.location.hostname.includes('wpcomstaging.com') &&
+                       !window.location.hostname.includes('localhost');
+      if (isDesktop && typeof loadMode !== 'undefined' && loadMode === 'radius') {
+        // Na desktopu zobrazit tlačítko hned, watcher ho pak upraví podle pozice
+        setTimeout(() => {
+          this.showManualLoadButton();
+        }, 1000);
+      }
+      
       // Standardní režim – řízený watcherem (tlačítko se zobrazuje jen při posunu mimo načtená místa)
       if (!this._visibilityHandlerBound) {
         const self = this;
@@ -9916,6 +9927,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     hideManualLoadButton() {
       // V trvalém režimu tlačítko neschovávat
       if (ALWAYS_SHOW_MANUAL_BUTTON || this.legacyMode) {
+        return;
+      }
+      // Na desktopu (ne staging) zobrazit tlačítko vždy, když je v radius mode
+      // aby bylo vidět i když není mimo načtenou oblast
+      const isDesktop = typeof window !== 'undefined' && window.location && 
+                       !window.location.hostname.includes('wpcomstaging.com') &&
+                       !window.location.hostname.includes('localhost');
+      if (isDesktop && typeof loadMode !== 'undefined' && loadMode === 'radius') {
+        // Na desktopu tlačítko neschovávat - nechat ho viditelné
         return;
       }
       if (this.manualLoadButton) {
