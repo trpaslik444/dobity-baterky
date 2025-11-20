@@ -696,6 +696,7 @@ class POI_Admin {
                 $lngInput = isset($poi_data['Longitude']) ? floatval($poi_data['Longitude']) : null;
 
                 $poi_id = 0;
+                $rowAborted = false;
 
                 if (!empty($poi_data['ID']) && is_numeric($poi_data['ID'])) {
                     $candidate_id = (int)$poi_data['ID'];
@@ -743,10 +744,14 @@ class POI_Admin {
                                 error_log("[POI Import] Aktualizuji existující POI dle Title+Coords: {$cid}");
                             } else {
                                 $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
-                                continue;
+                                $rowAborted = true;
+                                break;
                             }
                             break;
                         }
+                    }
+                    if ($rowAborted) {
+                        continue;
                     }
                 }
 
@@ -802,8 +807,11 @@ class POI_Admin {
                             error_log("[POI Import] Aktualizuji existující POI dle Coords-only: {$cid}");
                         } else {
                             $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
-                            continue; // přeskočit tento CSV řádek, abychom nevytvořili duplicitní POI
+                            $rowAborted = true;
                         }
+                    }
+                    if ($rowAborted) {
+                        continue;
                     }
                 }
 
