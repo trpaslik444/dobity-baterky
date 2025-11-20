@@ -323,6 +323,16 @@ class POI_Admin {
                             Importovat CSV
                         </button>
                     </form>
+                    <div id="db-import-log-section" style="display: none; margin-top: 20px;">
+                        <h4>Průběh importu a logy:</h4>
+                        <textarea id="db-import-log" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; overflow-y: auto;"></textarea>
+                        <button type="button" id="db-copy-log-btn" class="button button-secondary" style="margin-top: 10px;">
+                            Zkopírovat logy
+                        </button>
+                        <button type="button" id="db-clear-log-btn" class="button button-secondary" style="margin-top: 10px;">
+                            Vymazat logy
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -994,10 +1004,10 @@ class POI_Admin {
         error_log("[POI Import] Import dokončen. Importováno: {$result['imported']}, Chyby: " . count($result['errors']));
 
         // Zařadit všechna importovaná/aktualizovaná POI do fronty pro nearby recompute
+        $enqueued_count = 0;
+        $affected_count = 0;
         if (!empty($result['processed_poi_ids']) && class_exists('\DB\Jobs\Nearby_Queue_Manager')) {
             $queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
-            $enqueued_count = 0;
-            $affected_count = 0;
             foreach ($result['processed_poi_ids'] as $poi_id) {
                 // POI potřebuje najít nearby charging locations
                 if ($queue_manager->enqueue($poi_id, 'charging_location', 1)) {
@@ -1020,7 +1030,10 @@ class POI_Admin {
             'updated' => $result['updated'],
             'total_rows' => $result['total_rows'],
             'skipped_rows' => $result['skipped_rows'],
-            'errors' => $result['errors']
+            'errors' => $result['errors'],
+            'processed_poi_ids' => $result['processed_poi_ids'] ?? [],
+            'enqueued_count' => $enqueued_count,
+            'affected_count' => $affected_count
         ]);
     }
 
