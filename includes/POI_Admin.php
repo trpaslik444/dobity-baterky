@@ -993,13 +993,16 @@ class POI_Admin {
         if (!empty($result['processed_poi_ids']) && class_exists('\DB\Jobs\Nearby_Queue_Manager')) {
             $queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
             $enqueued_count = 0;
+            $affected_count = 0;
             foreach ($result['processed_poi_ids'] as $poi_id) {
                 // POI potřebuje najít nearby charging locations
                 if ($queue_manager->enqueue($poi_id, 'charging_location', 1)) {
                     $enqueued_count++;
                 }
+                // Zařadit charging locations v okruhu pro aktualizaci jejich nearby POI seznamů
+                $affected_count += $queue_manager->enqueue_affected_points($poi_id, 'poi');
             }
-            error_log("[POI Import] Zařazeno {$enqueued_count} POI do fronty pro nearby recompute");
+            error_log("[POI Import] Zařazeno {$enqueued_count} POI do fronty pro nearby recompute, {$affected_count} affected charging locations");
         }
 
         wp_send_json_success([
