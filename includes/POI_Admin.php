@@ -1070,6 +1070,12 @@ class POI_Admin {
 
         // Pro první chunk nastavit flag a vymazat předchozí stav
         if ($is_first) {
+            // Kontrola, zda už neprobíhá jiný import (ochrana před souběžnými importy)
+            if (db_is_poi_import_running()) {
+                wp_send_json_error('Import již probíhá. Počkejte, až se dokončí současný import, nebo zkuste znovu za chvíli.');
+                return;
+            }
+            
             db_set_poi_import_running(true);
             // Vymazat předchozí stav (pokud existuje)
             delete_transient('db_poi_import_processed_ids');

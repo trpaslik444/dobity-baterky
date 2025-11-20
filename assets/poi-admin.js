@@ -418,6 +418,14 @@ jQuery(document).ready(function($) {
             const csvText = e.target.result;
             // Použít správný CSV parser, který respektuje quotes
             const lines = parseCSVRows(csvText);
+            
+            // Kontrola, že CSV není prázdný (musí mít alespoň hlavičku a jeden řádek dat)
+            if (lines.length < 2) {
+                addLog('❌ Chyba: CSV soubor je prázdný nebo obsahuje pouze hlavičku bez dat', 'error');
+                submitBtn.prop('disabled', false).text(originalText);
+                return;
+            }
+            
             const header = lines[0]; // První řádek je hlavička
             
             // Rozdělit na chunky (po 500 řádcích)
