@@ -158,8 +158,8 @@ class POI_Discovery_Command {
 		}
 
 		// Nastavit flag, že probíhá import (zabrání spuštění nearby recompute)
-		if (function_exists('db_set_poi_import_running')) {
-			db_set_poi_import_running(true);
+		if (function_exists('\DB\db_set_poi_import_running')) {
+			\DB\db_set_poi_import_running(true);
 		}
 		$flagSet = true;
 
@@ -183,8 +183,8 @@ class POI_Discovery_Command {
 			return;
 		} finally {
 			// Vždy vymazat flag, i když došlo k chybě
-			if ($flagSet && function_exists('db_set_poi_import_running')) {
-				db_set_poi_import_running(false);
+			if ($flagSet && function_exists('\DB\db_set_poi_import_running')) {
+				\DB\db_set_poi_import_running(false);
 			}
 		}
 
