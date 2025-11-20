@@ -1183,7 +1183,7 @@ add_action('wp_footer', function() {
     $script_added = true;
     
     // Použít vlastní endpoint pro ServiceWorker (z root, aby mohl mít scope /)
-    $sw_url = home_url('/db-sw.js');
+    $sw_url = add_query_arg('db_sw', '1', home_url('/'));
     ?>
     <script>
     (function() {

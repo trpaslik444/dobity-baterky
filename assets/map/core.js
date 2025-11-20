@@ -2267,13 +2267,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   const RADIUS_KM = 50; // Výchozí fallback (bude nahrazen dle režimu)
   const MIN_FETCH_ZOOM = (typeof window.DB_MIN_FETCH_ZOOM !== 'undefined') ? window.DB_MIN_FETCH_ZOOM : 9; // pod tímto zoomem nerefreshujeme
   const FIXED_RADIUS_KM = (typeof window.DB_FIXED_RADIUS_KM !== 'undefined') ? window.DB_FIXED_RADIUS_KM : 50; // fixní okruh pro radius režim
-  // Vynucené trvalé zobrazení manuálního tlačítka načítání (staging-safe)
-  // Nastaveno na false - tlačítko se zobrazuje jen při posunu mimo načtená místa
   const ALWAYS_SHOW_MANUAL_BUTTON = false;
-  const DEBUG_FORCE_LEGACY =
-    (typeof window !== 'undefined' && Boolean(window.DB_FORCE_LEGACY_MANUAL_BUTTON)) ||
-    (typeof dbMapData !== 'undefined' && Boolean(dbMapData?.debug?.forceLegacyManualButton));
-  const FORCE_LEGACY_MANUAL_BUTTON = Boolean(DEBUG_FORCE_LEGACY);
+  const FORCE_LEGACY_MANUAL_BUTTON = false;
   if (typeof window !== 'undefined') {
     window.ALWAYS_SHOW_MANUAL_BUTTON = ALWAYS_SHOW_MANUAL_BUTTON;
     window.FORCE_LEGACY_MANUAL_BUTTON = FORCE_LEGACY_MANUAL_BUTTON;
@@ -6994,7 +6989,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     detailModal.classList.remove('open'); 
     detailModal.innerHTML = ''; 
     // Odstranit třídu pro scroll lock
-    try { document.body.classList.remove('db-modal-open'); } catch(_) {}
+    try { 
+      document.body.classList.remove('db-modal-open'); 
+      if (window.smartLoadingManager && typeof window.smartLoadingManager.setManualButtonHidden === 'function') {
+        window.smartLoadingManager.setManualButtonHidden(false);
+      }
+    } catch(_) {}
     // Vyčistit isochrones při zavření modalu
     clearIsochrones();
   }
@@ -7019,8 +7019,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       return;
     }
-     // Přidat třídu pro scroll lock
-     try { document.body.classList.add('db-modal-open'); } catch(_) {}
+   // Přidat třídu pro scroll lock
+   try { 
+     document.body.classList.add('db-modal-open'); 
+     if (window.smartLoadingManager && typeof window.smartLoadingManager.setManualButtonHidden === 'function') {
+       window.smartLoadingManager.setManualButtonHidden(true);
+     }
+   } catch(_) {}
      // debug log removed
 
      // Pokud je to POI, pokus se před renderem obohatit (pokud chybí data)
@@ -9679,7 +9684,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       this._watcherId = null;
       this._visibilityHandlerBound = false;
       this._ensureWatcherTimeout = null;
-      this.legacyMode = FORCE_LEGACY_MANUAL_BUTTON === true;
+      this.legacyMode = false; // Legacy režim vypnut - používáme novou logiku
     }
     
     init() {
@@ -9700,15 +9705,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         return; // Nepouštět watcher v trvalém režimu
       }
       
-      // Zajistit, aby se tlačítko zobrazovalo i na desktopu - zobrazit hned, pokud je v radius mode
-      // Detekce desktopu podle šířky obrazovky (ne podle hostname, aby fungovalo i na produkci)
-      const isDesktop = typeof window !== 'undefined' && 
-                       (window.innerWidth > 900 || (window.dbMapShell && window.dbMapShell !== 'mobile'));
-      if (isDesktop && typeof loadMode !== 'undefined' && loadMode === 'radius') {
-        // Na desktopu zobrazit tlačítko hned, watcher ho pak upraví podle pozice
-        setTimeout(() => {
-          this.showManualLoadButton();
-        }, 1000);
+      // Zajistit, aby se tlačítko zobrazovalo v radius mode (na desktopu i mobilu)
+      // Zobrazit hned, pokud je v radius mode
+      if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+        // V radius mode zobrazit tlačítko hned - bez delay
+        this.showManualLoadButton();
       }
       
       // Standardní režim – řízený watcherem (tlačítko se zobrazuje jen při posunu mimo načtená místa)
@@ -9787,9 +9788,26 @@ document.addEventListener('DOMContentLoaded', async function() {
           
           if (typeof lastViewportChangeTs === 'number' && lastViewportChangeTs <= this.lastCheckTime) return;
           this.lastCheckTime = Date.now();
+          
+          // V radius mode tlačítko vždy zobrazit - neschovávat ho
+          // Watcher jen zajišťuje, že je viditelné, ale neschovává ho
+          if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+            this.showManualLoadButton();
+            return;
+          }
+          
+          // Standardní režim - zobrazovat/schovávat podle pozice
+          // POZNÁMKA: V radius mode se sem nedostaneme (return výše), takže můžeme bezpečně schovávat
           const c = map.getCenter();
           const outsideArea = this.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
-          if (outsideArea) this.showManualLoadButton(); else this.hideManualLoadButton();
+          if (outsideArea) {
+            this.showManualLoadButton();
+          } else {
+            // V radius mode se sem nedostaneme, ale pro jistotu zkontrolovat
+            if (typeof loadMode === 'undefined' || loadMode !== 'radius') {
+              this.hideManualLoadButton();
+            }
+          }
         } catch(e) {
           console.error('[DB Map][SmartLoading] Chyba v watcheru:', e);
         }
@@ -9818,8 +9836,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('[DB Map][SmartLoading] Legacy button: SmartLoadingManager not ready');
           }
         });
+        button.style.pointerEvents = 'auto';
       }
       document.body.appendChild(container);
+      this.applyManualButtonStyles('body');
+      this.logManualButtonPlacement('legacy-append-body');
       this.manualLoadButton = container;
       this.showManualLoadButton();
         return;
@@ -9839,33 +9860,58 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Přidat do mapy (robustní: zkusit opakovaně, než Leaflet vytvoří container)
       const attach = () => {
         const mapContainer = document.querySelector('.leaflet-container');
-        if (mapContainer && !document.getElementById('db-manual-load-container')) {
-          mapContainer.appendChild(this.manualLoadButton);
-          this.manualLoadButton.classList.remove('db-manual-load-container--fixed');
+        if (mapContainer && this.manualLoadButton) {
+          if (window.getComputedStyle(mapContainer).position === 'static') {
+            mapContainer.style.position = 'relative';
+          }
+          if (this.manualLoadButton.parentElement !== mapContainer) {
+            console.log('[DB Map][ManualButton] Připojuji tlačítko do .leaflet-container');
+            mapContainer.appendChild(this.manualLoadButton);
+            this.manualLoadButton.classList.remove('db-manual-load-container--fixed');
+            this.applyManualButtonStyles('map');
+            this.logManualButtonPlacement('attach-map-container');
+          }
           return true;
         }
+        console.log('[DB Map][ManualButton] attach(): .leaflet-container nedostupná, čekám…');
         return false;
       };
-      if (!attach()) {
-        let tries = 0;
-        const iv = setInterval(() => {
-          tries++;
-          if (attach() || tries > 50) { // ~5s
-            clearInterval(iv);
-            // Fallback: pokud se nepodařilo připojit do mapy, připojit do body jako fixní overlay
-            if (!document.getElementById('db-manual-load-container')) {
-              if (document.body) {
-                this.manualLoadButton.classList.add('db-manual-load-container--fixed');
-                document.body.appendChild(this.manualLoadButton);
-              } else {
-                console.warn('[DB Map][SmartLoading] document.body neexistuje!');
-              }
-            }
+      let tries = 0;
+      let fallbackAttached = document.body.contains(this.manualLoadButton);
+      const attachInterval = setInterval(() => {
+        tries++;
+        if (attach()) {
+          fallbackAttached = false;
+          if (tries > 1) {
+            console.log('[DB Map][ManualButton] Úspěšně připojeno po', tries, 'pokusech');
           }
-        }, 100);
-      }
+          clearInterval(attachInterval);
+          return;
+        }
+        if (!fallbackAttached && tries === 30) { // ~3s
+          if (document.body && !document.body.contains(this.manualLoadButton)) {
+            console.warn('[DB Map][ManualButton] Fallback do <body> – z-index snížen');
+            this.manualLoadButton.classList.add('db-manual-load-container--fixed');
+            document.body.appendChild(this.manualLoadButton);
+            this.applyManualButtonStyles('body');
+            this.logManualButtonPlacement('attach-body-fallback');
+            fallbackAttached = true;
+          }
+        }
+        if (tries > 400) {
+          console.warn('[DB Map][ManualButton] attach(): nepodařilo se najít .leaflet-container ani po 40s');
+          clearInterval(attachInterval);
+        }
+      }, 100);
       
-      this.manualLoadButton.style.display = 'none';
+      // V radius mode zobrazit tlačítko hned (na mobilu i desktopu)
+      // V ostatních režimech schovat a nechat watcher rozhodnout
+      if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+        // V radius mode zobrazit tlačítko hned - bez delay
+        this.showManualLoadButton();
+      } else {
+        this.manualLoadButton.style.display = 'none';
+      }
     }
     
     loadUserPreferences() {
@@ -9916,12 +9962,17 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     showManualLoadButton() {
-      if (this.manualLoadButton) {
-        this.manualLoadButton.style.display = 'block';
-        this.outsideLoadedArea = true;
-      } else {
+      if (!this.manualLoadButton) {
         console.warn('[DB Map][SmartLoading] showManualLoadButton: tlačítko neexistuje!');
+        return;
       }
+      const inLeaflet = typeof this.manualLoadButton.closest === 'function' ? this.manualLoadButton.closest('.leaflet-container') : null;
+      const mode = inLeaflet ? 'map' : 'body';
+      this.applyManualButtonStyles(mode);
+      console.log('[DB Map][ManualButton] show() mode:', mode, 'parent:', this.manualLoadButton.parentElement ? this.manualLoadButton.parentElement.tagName + '#' + (this.manualLoadButton.parentElement.id || '') : 'null');
+      this.manualLoadButton.style.display = 'block';
+      this.outsideLoadedArea = true;
+      this.logManualButtonPlacement('show');
     }
     
     hideManualLoadButton() {
@@ -9929,20 +9980,86 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (ALWAYS_SHOW_MANUAL_BUTTON || this.legacyMode) {
         return;
       }
-      // Na desktopu zobrazit tlačítko vždy, když je v radius mode
+      // V radius mode zobrazit tlačítko vždy (na desktopu i mobilu)
       // aby bylo vidět i když není mimo načtenou oblast
-      // Detekce desktopu podle šířky obrazovky (ne podle hostname, aby fungovalo i na produkci)
-      const isDesktop = typeof window !== 'undefined' && 
-                       (window.innerWidth > 900 || (window.dbMapShell && window.dbMapShell !== 'mobile'));
-      if (isDesktop && typeof loadMode !== 'undefined' && loadMode === 'radius') {
-        // Na desktopu tlačítko neschovávat - nechat ho viditelné
+      if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+        // V radius mode tlačítko neschovávat - nechat ho viditelné
         return;
       }
       if (this.manualLoadButton) {
         this.manualLoadButton.style.display = 'none';
         this.outsideLoadedArea = false;
+        this.logManualButtonPlacement('hide');
       } else {
         console.warn('[DB Map][SmartLoading] hideManualLoadButton: tlačítko neexistuje!');
+      }
+    }
+    
+    setManualButtonHidden(hidden) {
+      if (!this.manualLoadButton) return;
+      this.manualLoadButton.classList.toggle('db-manual-load-hidden', hidden === true);
+      if (!hidden) {
+        const inLeaflet = typeof this.manualLoadButton.closest === 'function' ? this.manualLoadButton.closest('.leaflet-container') : null;
+        const mode = inLeaflet ? 'map' : 'body';
+        this.applyManualButtonStyles(mode);
+      }
+    }
+
+    applyManualButtonStyles(mode) {
+      if (!this.manualLoadButton) return;
+      try {
+        const el = this.manualLoadButton;
+        const isSmallScreen = window.innerHeight <= 700;
+        const targetBottom = isSmallScreen ? 40 : 80;
+        el.style.position = mode === 'body' ? 'fixed' : 'absolute';
+        el.style.top = 'auto';
+        el.style.bottom = targetBottom + 'px';
+        el.style.left = '50%';
+        el.style.right = 'auto';
+        el.style.transform = 'translateX(-50%)';
+        el.style.zIndex = mode === 'body' ? '680' : '690';
+        el.style.pointerEvents = 'auto';
+        el.style.display = 'inline-flex';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'center';
+        el.style.width = 'fit-content';
+        el.style.maxWidth = 'calc(100% - 40px)';
+        el.style.whiteSpace = 'nowrap';
+      } catch (e) {
+        console.warn('[DB Map][ManualButton] applyManualButtonStyles failed:', e);
+      }
+    }
+
+    logManualButtonPlacement(context) {
+      if (!this.manualLoadButton || typeof console === 'undefined' || !console.log) return;
+      try {
+        const parentEl = this.manualLoadButton.parentElement;
+        const parentInfo = parentEl ? {
+          tag: parentEl.tagName,
+          id: parentEl.id || null,
+          className: parentEl.className || null
+        } : null;
+        const buttonRect = this.manualLoadButton.getBoundingClientRect();
+        const mapContainer = document.querySelector('.leaflet-container');
+        const mapRect = mapContainer ? mapContainer.getBoundingClientRect() : null;
+
+        console.log('[DB Map][ManualButton][' + context + ']', {
+          parent: parentInfo,
+          buttonRect: {
+            top: Math.round(buttonRect.top),
+            left: Math.round(buttonRect.left),
+            width: Math.round(buttonRect.width),
+            height: Math.round(buttonRect.height)
+          },
+          mapRect: mapRect ? {
+            top: Math.round(mapRect.top),
+            left: Math.round(mapRect.left),
+            width: Math.round(mapRect.width),
+            height: Math.round(mapRect.height)
+          } : null
+        });
+      } catch (e) {
+        console.warn('[DB Map][ManualButton] logManualButtonPlacement failed:', e);
       }
     }
     
@@ -9978,7 +10095,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Disable tlačítko během fetch (zabrání dvojkliku a zrušení probíhajícího requestu)
       this.disableManualLoadButton();
       // Schovat tlačítko během načítání (standardní chování)
-      this.hideManualLoadButton();
+      // V radius mode tlačítko neschovávat - jen ho deaktivovat
+      if (typeof loadMode === 'undefined' || loadMode !== 'radius') {
+        this.hideManualLoadButton();
+      }
       
       try {
         const center = map.getCenter();
@@ -10046,15 +10166,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.smartLoadingManager.init();
     console.log('[DB Map] SmartLoadingManager inicializován');
     
-    // Fallback kontrola: pokud je FORCE_LEGACY_MANUAL_BUTTON true a tlačítko neexistuje po 2 sekundách, vytvořit ho přímo
-    if (FORCE_LEGACY_MANUAL_BUTTON) {
-      setTimeout(() => {
-        if (!document.getElementById('db-manual-load-container')) {
-          console.warn('[DB Map] Tlačítko neexistuje po 2s, vytvářím fallback...');
-          createDirectLegacyButton();
-        }
-      }, 2000);
-    }
   } catch (error) {
     console.error('[DB Map] Chyba při inicializaci SmartLoadingManager:', error);
     // Fallback: zkusit vytvořit alespoň základní instanci
@@ -10063,32 +10174,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       window.smartLoadingManager.init();
     } catch (fallbackError) {
       console.error('[DB Map] Fallback inicializace také selhala:', fallbackError);
-      // Pokud vše selže a jsme na stagingu, vytvořit tlačítko přímo
-      if (FORCE_LEGACY_MANUAL_BUTTON) {
-        console.log('[DB Map] Všechny inicializace selhaly, vytvářím tlačítko přímo...');
-        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-          createDirectLegacyButton();
-        } else {
-          document.addEventListener('DOMContentLoaded', createDirectLegacyButton);
-        }
-      }
-    }
-  }
-  
-  // DODATEČNÁ ZÁRUKA: Pokud je FORCE_LEGACY_MANUAL_BUTTON true, vytvořit tlačítko přímo po načtení stránky
-  // Toto zajistí, že tlačítko bude vždy vytvořeno, i když SmartLoadingManager selže
-  if (FORCE_LEGACY_MANUAL_BUTTON) {
-    const ensureButton = () => {
-      if (!document.getElementById('db-manual-load-container')) {
-        console.log('[DB Map] ZÁRUKA: Vytvářím tlačítko přímo (FORCE_LEGACY_MANUAL_BUTTON=true)...');
-        createDirectLegacyButton();
-      }
-    };
-    if (document.readyState === 'complete' || document.readyState === 'interactive') {
-      setTimeout(ensureButton, 100);
-    } else {
-      document.addEventListener('DOMContentLoaded', () => setTimeout(ensureButton, 100));
-      window.addEventListener('load', () => setTimeout(ensureButton, 100));
     }
   }
   
@@ -10123,14 +10208,17 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Kontrola, zda jsme mimo načtenou oblast – prováděj i při nízkém zoomu,
       // aby se tlačítko mohlo zobrazit, ale bez automatického fetchování
-      // V trvalém režimu (ALWAYS_SHOW_MANUAL_BUTTON) tlačítko neschovávat
-      if (!ALWAYS_SHOW_MANUAL_BUTTON) {
+      // V trvalém režimu (ALWAYS_SHOW_MANUAL_BUTTON) nebo radius mode tlačítko neschovávat
+      if (!ALWAYS_SHOW_MANUAL_BUTTON && (!loadMode || loadMode !== 'radius')) {
         const outsideArea = window.smartLoadingManager.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
         if (outsideArea) {
           window.smartLoadingManager.showManualLoadButton();
         } else {
           window.smartLoadingManager.hideManualLoadButton();
         }
+      } else if (loadMode === 'radius') {
+        // V radius mode vždy zobrazit tlačítko
+        window.smartLoadingManager.showManualLoadButton();
       }
       
       // Pokud je příliš malý zoom, tak dál nic nedělej (šetři API)

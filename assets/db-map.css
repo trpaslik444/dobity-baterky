@@ -32,24 +32,40 @@
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Patrick+Hand&display=swap');
 
 /* ===== SMART LOADING MANAGER STYLES ===== */
-.db-manual-load-container {
-  position: absolute;
-  bottom: calc(33vh + 140px); /* Nad PWA promptem (33vh - 10px + ~120px výška promptu + 30px mezera) */
-  left: 50%; /* zarovnání na střed obrazovky */
-  transform: translateX(-50%);
-  right: auto;
-  z-index: 1000; /* nad mapou (1000), pod bottom bar (1002), modal okny (1200+) a PWA promptem (10002) */
-  display: none;
-  animation: slideInFromBottom 0.3s ease-out;
+.leaflet-container {
+  position: relative;
 }
-
+.db-manual-load-container,
 .db-manual-load-container--fixed {
-  position: fixed;
-  bottom: calc(33vh + 140px); /* Nad PWA promptem */
+  position: absolute;
+  bottom: 60px;
   left: 50%;
   transform: translateX(-50%);
-  right: auto;
-  z-index: 1000; /* nad mapou (1000), pod bottom bar (1002), modal okny (1200+) a PWA promptem (10002) */
+  z-index: 690; /* pod mobilním sheetem (700) i kartami, nad mapou */
+  display: none;
+  animation: slideInFromBottom 0.3s ease-out;
+  pointer-events: auto;
+  width: fit-content;
+  max-width: calc(100% - 40px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+ .db-manual-load-container.db-manual-load-hidden,
+ .db-manual-load-container--fixed.db-manual-load-hidden {
+   opacity: 0;
+   pointer-events: none;
+   transform: translate(-50%, 16px);
+ }
+ 
+body.db-modal-open .db-manual-load-container,
+body.db-modal-open .db-manual-load-container--fixed {
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 16px);
 }
 
 .db-manual-load-btn {
@@ -59,95 +75,99 @@
   box-shadow: none;
   border: none;
   backdrop-filter: none;
-  width: 120px; /* Pevná šířka v pixelech */
+  width: auto;
+  min-width: 200px;
+  display: inline-flex;
+  justify-content: center;
 }
 
 @media (min-height: 900px) {
-  .db-manual-load-container {
-    bottom: calc(33vh + 140px); /* Zachovat pozici nad PWA promptem i na vysokých displejích */
-  }
+  .db-manual-load-container,
   .db-manual-load-container--fixed {
-    bottom: calc(33vh + 140px);
+    bottom: 80px;
   }
 }
 
 /* Automaticky upravit pozici "load more" tlačítka, když je PWA prompt zobrazen */
 body:has(.pwa-install-prompt.show) .db-manual-load-container,
 body:has(.pwa-install-prompt.show) .db-manual-load-container--fixed {
-  bottom: calc(33vh + 140px) !important; /* Zajistit, že je nad PWA promptem */
+  bottom: calc(33vh + 120px) !important; /* Zajistit, že je nad PWA promptem */
 }
 
 /* Na menších obrazovkách upravit pozice, aby se tlačítka nepřekrývala */
 @media (max-height: 700px) {
-  .db-manual-load-container {
-    bottom: calc(33vh + 120px); /* Menší mezera na nízkých obrazovkách */
-  }
+  .db-manual-load-container,
   .db-manual-load-container--fixed {
-    bottom: calc(33vh + 120px);
+    bottom: 40px;
   }
   .pwa-install-prompt {
-    bottom: calc(33vh - 20px); /* Mírně níž na nízkých obrazovkách */
+    bottom: calc(33vh - 20px);
   }
   body:has(.pwa-install-prompt.show) .db-manual-load-container,
   body:has(.pwa-install-prompt.show) .db-manual-load-container--fixed {
-    bottom: calc(33vh + 120px) !important;
+    bottom: calc(33vh + 80px) !important;
   }
 }
 
 .db-manual-load-btn button {
-  background: #FF8DAA; /* růžová podle brandu */
-  color: #049FE8; /* modrý text */
+  background: var(--db-cta-bg, #F29ABB);
+  color: var(--db-cta-text, #FDF4D6);
   border: none;
   border-radius: 999px;
-  padding: 14px 18px;
+  padding: 16px 28px;
   font-family: 'Montserrat', sans-serif;
   font-weight: 600;
   font-size: 14px;
+  line-height: 1.2;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
-  transition: all 0.2s ease;
-  box-shadow: 0 8px 24px rgba(255, 141, 170, 0.35);
+  text-align: center;
+  white-space: nowrap;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
+  pointer-events: auto;
 }
 
 .db-manual-load-btn button:hover {
-  background: #FF6A4B; /* CTA oranžová */
-  color: #FEF9DF;
-  transform: translateY(-2px);
-  box-shadow: 0 12px 28px rgba(255, 106, 75, 0.45);
+  opacity: 0.95;
+  transform: translateY(0);
 }
 
 .db-manual-load-btn button:active {
+  opacity: 0.9;
   transform: translateY(0);
-  background: #FF8DAA;
-  color: #049FE8;
+  background: var(--db-cta-bg, #F29ABB);
+  color: var(--db-cta-text, #FDF4D6);
 }
 
 #db-manual-load-container > button,
 .db-manual-load-container > button {
-  background: #FFACC4 !important;
-  color: #049FE8 !important;
+  background: var(--db-cta-bg, #F29ABB) !important;
+  color: var(--db-cta-text, #FDF4D6) !important;
   border-radius: 999px !important;
-  padding: 14px 22px !important;
+  padding: 16px 28px !important;
   font-family: 'Montserrat', sans-serif !important;
   font-weight: 600 !important;
   border: none !important;
-  box-shadow: 0 8px 24px rgba(255, 172, 196, 0.4) !important;
-  transition: all 0.2s ease !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08) !important;
+  transition: opacity 0.2s ease !important;
 }
 
 #db-manual-load-container > button:hover,
 .db-manual-load-container > button:hover {
-  background: #FF8DAA !important;
-  color: #049FE8 !important;
+  opacity: 0.95 !important;
+  background: var(--db-cta-bg, #F29ABB) !important;
+  color: var(--db-cta-text, #FDF4D6) !important;
 }
 
 #db-manual-load-container > button:active,
 .db-manual-load-container > button:active {
-  background: #FFACC4 !important;
-  color: #049FE8 !important;
+  opacity: 0.9 !important;
+  background: var(--db-cta-bg, #F29ABB) !important;
+  color: var(--db-cta-text, #FDF4D6) !important;
 }
 
 .db-manual-load-btn .icon {
