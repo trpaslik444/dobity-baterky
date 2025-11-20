@@ -582,7 +582,20 @@ jQuery(document).ready(function($) {
                 }
                 addLog(`${errorMsg}`, 'error');
                 submitBtn.prop('disabled', false).text(originalText);
-                resetForm();
+                // Bezpečné resetování formu
+                try {
+                    resetForm();
+                } catch (e) {
+                    // Pokud resetForm() není dostupná, zkusit přímo
+                    if (form && typeof form.reset === 'function') {
+                        form.reset();
+                    } else if (form) {
+                        const formEl = form[0] || form;
+                        if (formEl && typeof formEl.reset === 'function') {
+                            formEl.reset();
+                        }
+                    }
+                }
             }
         });
     }
