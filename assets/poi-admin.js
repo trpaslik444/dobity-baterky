@@ -355,7 +355,18 @@ jQuery(document).ready(function($) {
             const fileInput = $(e.target).find('input[type="file"][name="poi_csv"]')[0];
             if (fileInput && fileInput.files && fileInput.files[0]) {
                 const f = fileInput.files[0];
-                addLog(`Soubor: ${f.name}, velikost: ${(f.size / 1024).toFixed(2)} KB, typ: ${f.type}`, 'info');
+                const fileSizeMB = (f.size / 1024 / 1024).toFixed(2);
+                addLog(`Soubor: ${f.name}, velikost: ${fileSizeMB} MB (${(f.size / 1024).toFixed(2)} KB), typ: ${f.type}`, 'info');
+                
+                // Varování pro velké soubory
+                if (f.size > 1024 * 1024) { // Více než 1 MB
+                    addLog('⚠️ POZOR: Soubor je větší než 1 MB. Import může trvat dlouho a může dojít k timeoutu.', 'warning');
+                    addLog('💡 Pro velké soubory doporučujeme použít CLI import: wp db-poi import-csv <cesta_k_souboru>', 'info');
+                    if (!confirm('Soubor je větší než 1 MB. Import může trvat dlouho a může dojít k timeoutu.\n\nPro velké soubory doporučujeme použít CLI import.\n\nChcete pokračovat s AJAX importem?')) {
+                        submitBtn.prop('disabled', false).text(originalText);
+                        return;
+                    }
+                }
             } else {
                 addLog('Chyba: Nenašel jsem soubor ve vstupu', 'error');
                 return;
@@ -408,16 +419,30 @@ jQuery(document).ready(function($) {
             },
             error: function(xhr, status, error) {
                 let errorMsg = 'Chyba při importu CSV';
-                if (status === 'timeout') {
-                    errorMsg = 'Timeout: Import trval příliš dlouho (možná se stále zpracovává na serveru)';
+                if (status === 'timeout' || xhr.status === 504) {
+                    errorMsg = '❌ Gateway Timeout (504): Import trval příliš dlouho a server ho přerušil.';
+                    addLog(errorMsg, 'error');
+                    addLog('', 'info');
+                    addLog('💡 ŘEŠENÍ:', 'warning');
+                    addLog('1. Pro velké soubory použijte CLI import:', 'info');
+                    addLog('   wp db-poi import-csv /cesta/k/souboru.csv', 'info');
+                    addLog('', 'info');
+                    addLog('2. Nebo zkuste rozdělit CSV soubor na menší části (např. po 1000 řádcích)', 'info');
+                    addLog('', 'info');
+                    addLog('3. Zkontrolujte PHP logy na serveru pro více informací', 'info');
+                    addLog('   (Možná se import stále zpracovává na pozadí)', 'info');
+                } else if (xhr.status === 0) {
+                    errorMsg = '❌ Přerušení spojení: Možná došlo k timeoutu nebo přerušení spojení.';
+                    addLog(errorMsg, 'error');
+                    addLog('Zkontrolujte logy na serveru pro více informací.', 'warning');
                 } else if (xhr.responseJSON && xhr.responseJSON.data) {
                     errorMsg = xhr.responseJSON.data;
+                    addLog(`❌ ${errorMsg}`, 'error');
                 } else if (error) {
                     errorMsg = error;
-                }
-                addLog(`❌ ${errorMsg}`, 'error');
-                if (xhr.status === 0) {
-                    addLog('Poznámka: Možná došlo k timeoutu nebo přerušení spojení. Zkontrolujte logy na serveru.', 'warning');
+                    addLog(`❌ ${errorMsg}`, 'error');
+                } else {
+                    addLog(`❌ ${errorMsg} (HTTP ${xhr.status})`, 'error');
                 }
             },
             complete: function() {
