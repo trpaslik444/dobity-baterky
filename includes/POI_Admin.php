@@ -1101,6 +1101,11 @@ class POI_Admin {
         // Vytvořit dočasný soubor s chunk daty
         $temp_file = tmpfile();
         if (!$temp_file) {
+            // Vymazat flag a transienty při chybě
+            db_set_poi_import_running(false);
+            delete_transient('db_poi_import_processed_ids');
+            delete_transient('db_poi_import_total_stats');
+            delete_transient('db_poi_import_header');
             wp_send_json_error('Nelze vytvořit dočasný soubor');
         }
 
