@@ -100,6 +100,7 @@ class POI_Admin {
         add_action('wp_ajax_db_bulk_delete_poi', [$this, 'handle_bulk_delete']);
         add_action('wp_ajax_db_export_poi_csv', [$this, 'handle_export_csv']);
         add_action('wp_ajax_db_import_poi_csv', [$this, 'handle_import_csv']);
+        add_action('wp_ajax_db_import_poi_csv_chunk', [$this, 'handle_import_csv_chunk']);
         add_action('wp_ajax_db_update_poi_type_icon', [$this, 'handle_update_type_icon']);
         add_action('wp_ajax_db_update_all_poi_icons', [$this, 'handle_update_all_icons']);
     }
@@ -325,6 +326,16 @@ class POI_Admin {
                     </form>
                     <div id="db-import-log-section" style="display: none; margin-top: 20px;">
                         <h4>Průběh importu a logy:</h4>
+                        <div id="db-import-progress-container" style="margin-bottom: 15px; display: none;">
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                <span id="db-import-progress-text">Zpracovává se...</span>
+                                <span id="db-import-progress-percent">0%</span>
+                            </div>
+                            <div style="width: 100%; height: 25px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; overflow: hidden;">
+                                <div id="db-import-progress-bar" style="width: 0%; height: 100%; background: #0073aa; transition: width 0.3s ease;"></div>
+                            </div>
+                            <div id="db-import-time-estimate" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
+                        </div>
                         <textarea id="db-import-log" readonly style="width: 100%; height: 400px; font-family: monospace; font-size: 12px; padding: 10px; background: #f5f5f5; border: 1px solid #ddd; overflow-y: auto;"></textarea>
                         <button type="button" id="db-copy-log-btn" class="button button-secondary" style="margin-top: 10px;">
                             Zkopírovat logy
@@ -1035,6 +1046,167 @@ class POI_Admin {
             'enqueued_count' => $enqueued_count,
             'affected_count' => $affected_count
         ]);
+    }
+
+    /**
+     * Zpracovat jeden chunk CSV importu
+     */
+    public function handle_import_csv_chunk(): void {
+        check_ajax_referer('db_poi_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Nedostatečná oprávnění');
+        }
+
+        $chunk_data = isset($_POST['chunk_data']) ? wp_unslash($_POST['chunk_data']) : '';
+        $is_first = isset($_POST['is_first']) && $_POST['is_first'] === '1';
+        $is_last = isset($_POST['is_last']) && $_POST['is_last'] === '1';
+        $chunk_index = isset($_POST['chunk_index']) ? (int)$_POST['chunk_index'] : 0;
+        $total_chunks = isset($_POST['total_chunks']) ? (int)$_POST['total_chunks'] : 1;
+
+        if (empty($chunk_data)) {
+            wp_send_json_error('Chunk data je prázdné');
+        }
+
+        // Pro první chunk nastavit flag a vymazat předchozí stav
+        if ($is_first) {
+            // Kontrola, zda už neprobíhá jiný import (ochrana před souběžnými importy)
+            if (db_is_poi_import_running()) {
+                wp_send_json_error('Import již probíhá. Počkejte, až se dokončí současný import, nebo zkuste znovu za chvíli.');
+                return;
+            }
+            
+            db_set_poi_import_running(true);
+            // Vymazat předchozí stav (pokud existuje)
+            delete_transient('db_poi_import_processed_ids');
+            delete_transient('db_poi_import_total_stats');
+            delete_transient('db_poi_import_header');
+        } else {
+            // Pro další chunky obnovit flag (aby nevypršel během dlouhého importu)
+            db_set_poi_import_running(true);
+        }
+
+        // Zpracovat hlavičku
+        if ($is_first) {
+            // Pro první chunk uložit hlavičku
+            $lines = explode("\n", $chunk_data);
+            if (!empty($lines[0])) {
+                $header = $lines[0];
+                set_transient('db_poi_import_header', $header, 1800); // 30 minut TTL
+            }
+        } else {
+            // Pro další chunky načíst hlavičku a přidat ji
+            $header = get_transient('db_poi_import_header');
+            if (!$header) {
+                // Pokud hlavička chybí (vypršela nebo byla smazána), import nemůže pokračovat
+                db_set_poi_import_running(false);
+                delete_transient('db_poi_import_processed_ids');
+                delete_transient('db_poi_import_total_stats');
+                delete_transient('db_poi_import_header');
+                wp_send_json_error('Hlavička CSV souboru není dostupná. Import byl přerušen. Zkuste import znovu od začátku.');
+                return;
+            }
+            $chunk_data = $header . "\n" . $chunk_data;
+            // Obnovit TTL hlavičky (aby nevypršela během dlouhého importu)
+            set_transient('db_poi_import_header', $header, 1800);
+        }
+
+        // Vytvořit dočasný soubor s chunk daty
+        $temp_file = tmpfile();
+        if (!$temp_file) {
+            // Vymazat flag a transienty při chybě
+            db_set_poi_import_running(false);
+            delete_transient('db_poi_import_processed_ids');
+            delete_transient('db_poi_import_total_stats');
+            delete_transient('db_poi_import_header');
+            wp_send_json_error('Nelze vytvořit dočasný soubor');
+        }
+
+        // Zapsat chunk data do dočasného souboru
+        fwrite($temp_file, $chunk_data);
+        rewind($temp_file);
+
+        try {
+            // Zpracovat chunk
+            $result = $this->import_from_stream($temp_file, [
+                'log_every' => 1000, // Méně logování pro chunky
+            ]);
+
+            // Načíst a aktualizovat celkové statistiky
+            $total_stats = get_transient('db_poi_import_total_stats');
+            if (!$total_stats) {
+                $total_stats = [
+                    'imported' => 0,
+                    'updated' => 0,
+                    'total_rows' => 0,
+                    'skipped_rows' => 0,
+                    'errors' => [],
+                ];
+            }
+
+            $total_stats['imported'] += $result['imported'];
+            $total_stats['updated'] += $result['updated'];
+            $total_stats['total_rows'] += $result['total_rows'];
+            $total_stats['skipped_rows'] += $result['skipped_rows'];
+            $total_stats['errors'] = array_merge($total_stats['errors'], $result['errors']);
+
+            // Uložit processed_poi_ids
+            $processed_ids = get_transient('db_poi_import_processed_ids');
+            if (!is_array($processed_ids)) {
+                $processed_ids = [];
+            }
+            $processed_ids = array_merge($processed_ids, $result['processed_poi_ids'] ?? []);
+            set_transient('db_poi_import_processed_ids', $processed_ids, 600); // 10 minut
+            set_transient('db_poi_import_total_stats', $total_stats, 600);
+
+            // Pro poslední chunk zařadit do fronty a vymazat flag
+            if ($is_last) {
+                $enqueued_count = 0;
+                $affected_count = 0;
+                if (!empty($processed_ids) && class_exists('\DB\Jobs\Nearby_Queue_Manager')) {
+                    $queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
+                    foreach (array_unique($processed_ids) as $poi_id) {
+                        if ($queue_manager->enqueue($poi_id, 'charging_location', 1)) {
+                            $enqueued_count++;
+                        }
+                        $affected_count += $queue_manager->enqueue_affected_points($poi_id, 'poi');
+                    }
+                }
+                // Vymazat flag a transienty
+                db_set_poi_import_running(false);
+                delete_transient('db_poi_import_processed_ids');
+                delete_transient('db_poi_import_total_stats');
+                delete_transient('db_poi_import_header');
+
+                wp_send_json_success([
+                    'chunk_index' => $chunk_index,
+                    'total_chunks' => $total_chunks,
+                    'is_last' => true,
+                    'chunk_result' => $result,
+                    'total_stats' => $total_stats,
+                    'enqueued_count' => $enqueued_count,
+                    'affected_count' => $affected_count,
+                ]);
+            } else {
+                wp_send_json_success([
+                    'chunk_index' => $chunk_index,
+                    'total_chunks' => $total_chunks,
+                    'is_last' => false,
+                    'chunk_result' => $result,
+                    'total_stats' => $total_stats,
+                    'progress' => round(($chunk_index + 1) / $total_chunks * 100, 1),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // Vymazat flag při jakékoli chybě (ne jen první/poslední chunk)
+            db_set_poi_import_running(false);
+            delete_transient('db_poi_import_processed_ids');
+            delete_transient('db_poi_import_total_stats');
+            delete_transient('db_poi_import_header');
+            wp_send_json_error('Chyba při zpracování chunku: ' . $e->getMessage());
+        } finally {
+            fclose($temp_file);
+        }
     }
 
     private function get_upload_error_message(int $error_code): string {
