@@ -179,10 +179,14 @@ class POI_Discovery_Command {
 			]);
 		} catch (\Throwable $e) {
 			fclose($handle);
+			// Vymazat flag před \WP_CLI::error(), protože \WP_CLI::error() ukončí vykonávání
+			if ($flagSet && function_exists('\DB\db_set_poi_import_running')) {
+				\DB\db_set_poi_import_running(false);
+			}
 			\WP_CLI::error($e->getMessage());
 			return;
 		} finally {
-			// Vždy vymazat flag, i když došlo k chybě
+			// Vždy vymazat flag, i když došlo k chybě (pro případ, že by se výjimka zachytila jinak)
 			if ($flagSet && function_exists('\DB\db_set_poi_import_running')) {
 				\DB\db_set_poi_import_running(false);
 			}

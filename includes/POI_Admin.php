@@ -976,10 +976,14 @@ class POI_Admin {
             $result = $this->import_from_stream($handle);
         } catch (\Throwable $e) {
             fclose($handle);
+            // Vymazat flag před wp_send_json_error(), protože wp_send_json_error() ukončí vykonávání
+            if ($flagSet) {
+                db_set_poi_import_running(false);
+            }
             wp_send_json_error($e->getMessage());
             return;
         } finally {
-            // Vždy vymazat flag, i když došlo k chybě
+            // Vždy vymazat flag, i když došlo k chybě (pro případ, že by se výjimka zachytila jinak)
             if ($flagSet) {
                 db_set_poi_import_running(false);
             }
