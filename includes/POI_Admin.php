@@ -1173,13 +1173,11 @@ class POI_Admin {
                 ]);
             }
         } catch (\Throwable $e) {
-            // Vymazat flag při chybě
-            if ($is_first || $is_last) {
-                db_set_poi_import_running(false);
-                delete_transient('db_poi_import_processed_ids');
-                delete_transient('db_poi_import_total_stats');
-                delete_transient('db_poi_import_header');
-            }
+            // Vymazat flag při jakékoli chybě (ne jen první/poslední chunk)
+            db_set_poi_import_running(false);
+            delete_transient('db_poi_import_processed_ids');
+            delete_transient('db_poi_import_total_stats');
+            delete_transient('db_poi_import_header');
             wp_send_json_error('Chyba při zpracování chunku: ' . $e->getMessage());
         } finally {
             fclose($temp_file);

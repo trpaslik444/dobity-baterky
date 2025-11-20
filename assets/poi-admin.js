@@ -341,6 +341,52 @@ jQuery(document).ready(function($) {
         form.remove();
     }
 
+    // Parsovat CSV řádky s respektováním quotes a embedded newlines
+    function parseCSVRows(csvText) {
+        const rows = [];
+        let currentRow = '';
+        let inQuotes = false;
+        let i = 0;
+        
+        while (i < csvText.length) {
+            const char = csvText[i];
+            const nextChar = i + 1 < csvText.length ? csvText[i + 1] : '';
+            
+            if (char === '"') {
+                if (inQuotes && nextChar === '"') {
+                    // Escaped quote ("")
+                    currentRow += '"';
+                    i += 2;
+                } else {
+                    // Toggle quote state
+                    inQuotes = !inQuotes;
+                    currentRow += char;
+                    i++;
+                }
+            } else if (char === '\n' && !inQuotes) {
+                // End of row (only if not in quotes)
+                rows.push(currentRow);
+                currentRow = '';
+                i++;
+            } else if (char === '\r' && nextChar === '\n' && !inQuotes) {
+                // Windows line ending
+                rows.push(currentRow);
+                currentRow = '';
+                i += 2;
+            } else {
+                currentRow += char;
+                i++;
+            }
+        }
+        
+        // Přidat poslední řádek (pokud není prázdný)
+        if (currentRow.length > 0 || csvText.endsWith('\n')) {
+            rows.push(currentRow);
+        }
+        
+        return rows;
+    }
+
     // Import CSV s chunked processing
     function handleImportCsv(e) {
         e.preventDefault();
@@ -370,7 +416,8 @@ jQuery(document).ready(function($) {
         const reader = new FileReader();
         reader.onload = function(e) {
             const csvText = e.target.result;
-            const lines = csvText.split('\n');
+            // Použít správný CSV parser, který respektuje quotes
+            const lines = parseCSVRows(csvText);
             const header = lines[0]; // První řádek je hlavička
             
             // Rozdělit na chunky (po 500 řádcích)
