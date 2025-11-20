@@ -341,117 +341,199 @@ jQuery(document).ready(function($) {
         form.remove();
     }
 
-    // Import CSV
+    // Import CSV s chunked processing
     function handleImportCsv(e) {
         e.preventDefault();
 
         // Vymazat předchozí logy
         $('#db-import-log').val('');
         $('#db-import-log-section').show();
+        $('#db-import-progress-container').hide();
         addLog('Začíná import CSV souboru...', 'info');
 
-        const formData = new FormData(e.target);
-        try {
-            const fileInput = $(e.target).find('input[type="file"][name="poi_csv"]')[0];
-            if (fileInput && fileInput.files && fileInput.files[0]) {
-                const f = fileInput.files[0];
-                const fileSizeMB = (f.size / 1024 / 1024).toFixed(2);
-                addLog(`Soubor: ${f.name}, velikost: ${fileSizeMB} MB (${(f.size / 1024).toFixed(2)} KB), typ: ${f.type}`, 'info');
-                
-                // Varování pro velké soubory
-                if (f.size > 1024 * 1024) { // Více než 1 MB
-                    addLog('⚠️ POZOR: Soubor je větší než 1 MB. Import může trvat dlouho a může dojít k timeoutu.', 'warning');
-                    addLog('💡 Pro velké soubory doporučujeme použít CLI import: wp db-poi import-csv <cesta_k_souboru>', 'info');
-                    if (!confirm('Soubor je větší než 1 MB. Import může trvat dlouho a může dojít k timeoutu.\n\nPro velké soubory doporučujeme použít CLI import.\n\nChcete pokračovat s AJAX importem?')) {
-                        submitBtn.prop('disabled', false).text(originalText);
-                        return;
-                    }
-                }
-            } else {
-                addLog('Chyba: Nenašel jsem soubor ve vstupu', 'error');
-                return;
-            }
-        } catch (ex) {
-            addLog(`Chyba při čtení souboru: ${ex.message}`, 'error');
-            return;
-        }
-        formData.append('action', 'db_import_poi_csv');
-        formData.append('nonce', dbPoiAdmin.nonce);
-
-        // Zobrazit loading
         const submitBtn = $(e.target).find('button[type="submit"]');
         const originalText = submitBtn.text();
-        submitBtn.prop('disabled', true).text('Importuji...');
-        addLog('Odesílám požadavek na server...', 'info');
+        submitBtn.prop('disabled', true).text('Připravuji...');
+
+        const fileInput = $(e.target).find('input[type="file"][name="poi_csv"]')[0];
+        if (!fileInput || !fileInput.files || !fileInput.files[0]) {
+            addLog('Chyba: Nenašel jsem soubor ve vstupu', 'error');
+            submitBtn.prop('disabled', false).text(originalText);
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+        addLog(`Soubor: ${file.name}, velikost: ${fileSizeMB} MB`, 'info');
+
+        // Načíst soubor jako text
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const csvText = e.target.result;
+            const lines = csvText.split('\n');
+            const header = lines[0]; // První řádek je hlavička
+            
+            // Rozdělit na chunky (po 500 řádcích)
+            const CHUNK_SIZE = 500;
+            const chunks = [];
+            let currentChunk = [header]; // První chunk obsahuje hlavičku
+            
+            for (let i = 1; i < lines.length; i++) {
+                currentChunk.push(lines[i]);
+                if (currentChunk.length > CHUNK_SIZE) {
+                    chunks.push(currentChunk.join('\n'));
+                    currentChunk = []; // Další chunky bez hlavičky
+                }
+            }
+            
+            // Přidat poslední chunk
+            if (currentChunk.length > 0) {
+                chunks.push(currentChunk.join('\n'));
+            }
+
+            const totalChunks = chunks.length;
+            addLog(`Soubor rozdělen na ${totalChunks} balíčků (po ${CHUNK_SIZE} řádcích)`, 'info');
+            addLog(`Celkem řádků: ${lines.length - 1}`, 'info');
+
+            // Zobrazit progress bar
+            $('#db-import-progress-container').show();
+            updateProgress(0, totalChunks, 0);
+
+            // Spustit chunked import
+            processChunks(chunks, 0, totalChunks, submitBtn, originalText, e.target);
+        };
+
+        reader.onerror = function() {
+            addLog('❌ Chyba při čtení souboru', 'error');
+            submitBtn.prop('disabled', false).text(originalText);
+        };
+
+        reader.readAsText(file);
+    }
+
+    // Zpracovat chunky postupně
+    function processChunks(chunks, currentIndex, totalChunks, submitBtn, originalText, form) {
+        if (currentIndex >= chunks.length) {
+            // Hotovo
+            submitBtn.prop('disabled', false).text(originalText);
+            form.reset();
+            return;
+        }
+
+        const chunk = chunks[currentIndex];
+        const isFirst = currentIndex === 0;
+        const isLast = currentIndex === chunks.length - 1;
+
+        submitBtn.text(`Importuji balíček ${currentIndex + 1}/${totalChunks}...`);
+
+        const startTime = Date.now();
+        updateProgress(currentIndex, totalChunks, 0);
 
         $.ajax({
             url: dbPoiAdmin.ajaxUrl,
             type: 'POST',
-            data: formData,
-            processData: false,
-            contentType: false,
-            timeout: 600000, // 10 minut timeout
+            data: {
+                action: 'db_import_poi_csv_chunk',
+                nonce: dbPoiAdmin.nonce,
+                chunk_data: chunk,
+                chunk_index: currentIndex,
+                total_chunks: totalChunks,
+                is_first: isFirst ? '1' : '0',
+                is_last: isLast ? '1' : '0'
+            },
+            timeout: 120000, // 2 minuty na chunk
             success: function(response) {
                 if (response.success) {
-                    addLog('✅ Import úspěšně dokončen!', 'success');
-                    addLog(`Importováno: ${response.data.imported || 0} nových POI`, 'success');
-                    addLog(`Aktualizováno: ${response.data.updated || 0} existujících POI`, 'success');
-                    addLog(`Celkem řádků: ${response.data.total_rows || 0}`, 'info');
-                    addLog(`Přeskočeno prázdných: ${response.data.skipped_rows || 0}`, 'info');
-                    
-                    if (response.data.processed_poi_ids && response.data.processed_poi_ids.length > 0) {
-                        addLog(`Zařazeno ${response.data.processed_poi_ids.length} POI do fronty pro nearby recompute`, 'info');
+                    const elapsed = (Date.now() - startTime) / 1000;
+                    const chunkResult = response.data.chunk_result;
+                    const totalStats = response.data.total_stats;
+
+                    // Aktualizovat progress
+                    const progress = response.data.progress || ((currentIndex + 1) / totalChunks * 100);
+                    updateProgress(currentIndex + 1, totalChunks, elapsed);
+
+                    // Logovat výsledek chunku
+                    addLog(`✅ Balíček ${currentIndex + 1}/${totalChunks} dokončen (${elapsed.toFixed(1)}s)`, 'success');
+                    addLog(`   - Nové: ${chunkResult.imported || 0}, Aktualizované: ${chunkResult.updated || 0}, Řádky: ${chunkResult.total_rows || 0}`, 'info');
+
+                    if (isLast) {
+                        // Finální výsledek
+                        addLog('', 'info');
+                        addLog('🎉 Import úspěšně dokončen!', 'success');
+                        addLog(`Celkem importováno: ${totalStats.imported || 0} nových POI`, 'success');
+                        addLog(`Celkem aktualizováno: ${totalStats.updated || 0} existujících POI`, 'success');
+                        addLog(`Celkem řádků: ${totalStats.total_rows || 0}`, 'info');
+                        addLog(`Přeskočeno prázdných: ${totalStats.skipped_rows || 0}`, 'info');
+                        
+                        if (response.data.enqueued_count > 0) {
+                            addLog(`Zařazeno ${response.data.enqueued_count} POI do fronty pro nearby recompute`, 'info');
+                            addLog(`Aktualizováno ${response.data.affected_count} charging locations v okolí`, 'info');
+                        }
+                        
+                        if (totalStats.errors && totalStats.errors.length > 0) {
+                            addLog(`\n⚠️ Nalezeno ${totalStats.errors.length} chyb:`, 'warning');
+                            totalStats.errors.slice(0, 20).forEach(function(error, index) {
+                                addLog(`  ${index + 1}. ${error}`, 'error');
+                            });
+                            if (totalStats.errors.length > 20) {
+                                addLog(`  ... a dalších ${totalStats.errors.length - 20} chyb`, 'error');
+                            }
+                        }
+
+                        updateProgress(totalChunks, totalChunks, 0);
+                        submitBtn.prop('disabled', false).text(originalText);
+                        form.reset();
+                        loadPoiByFilters();
+                    } else {
+                        // Pokračovat s dalším chunkem
+                        setTimeout(function() {
+                            processChunks(chunks, currentIndex + 1, totalChunks, submitBtn, originalText, form);
+                        }, 100); // Malá pauza mezi chunky
                     }
-                    
-                    if (response.data.errors && response.data.errors.length > 0) {
-                        addLog(`\n⚠️ Nalezeno ${response.data.errors.length} chyb:`, 'warning');
-                        response.data.errors.forEach(function(error, index) {
-                            addLog(`  ${index + 1}. ${error}`, 'error');
-                        });
-                    }
-                    
-                    addLog('\n' + response.data.message, 'success');
-                    // Znovu načíst POI
-                    loadPoiByFilters();
                 } else {
-                    addLog(`❌ Chyba: ${response.data}`, 'error');
+                    addLog(`❌ Chyba v balíčku ${currentIndex + 1}: ${response.data}`, 'error');
+                    submitBtn.prop('disabled', false).text(originalText);
+                    form.reset();
                 }
             },
             error: function(xhr, status, error) {
-                let errorMsg = 'Chyba při importu CSV';
+                let errorMsg = `Chyba při zpracování balíčku ${currentIndex + 1}`;
                 if (status === 'timeout' || xhr.status === 504) {
-                    errorMsg = '❌ Gateway Timeout (504): Import trval příliš dlouho a server ho přerušil.';
-                    addLog(errorMsg, 'error');
-                    addLog('', 'info');
-                    addLog('💡 ŘEŠENÍ:', 'warning');
-                    addLog('1. Pro velké soubory použijte CLI import:', 'info');
-                    addLog('   wp db-poi import-csv /cesta/k/souboru.csv', 'info');
-                    addLog('', 'info');
-                    addLog('2. Nebo zkuste rozdělit CSV soubor na menší části (např. po 1000 řádcích)', 'info');
-                    addLog('', 'info');
-                    addLog('3. Zkontrolujte PHP logy na serveru pro více informací', 'info');
-                    addLog('   (Možná se import stále zpracovává na pozadí)', 'info');
-                } else if (xhr.status === 0) {
-                    errorMsg = '❌ Přerušení spojení: Možná došlo k timeoutu nebo přerušení spojení.';
-                    addLog(errorMsg, 'error');
-                    addLog('Zkontrolujte logy na serveru pro více informací.', 'warning');
+                    errorMsg = `❌ Timeout při zpracování balíčku ${currentIndex + 1}`;
                 } else if (xhr.responseJSON && xhr.responseJSON.data) {
                     errorMsg = xhr.responseJSON.data;
-                    addLog(`❌ ${errorMsg}`, 'error');
-                } else if (error) {
-                    errorMsg = error;
-                    addLog(`❌ ${errorMsg}`, 'error');
-                } else {
-                    addLog(`❌ ${errorMsg} (HTTP ${xhr.status})`, 'error');
                 }
-            },
-            complete: function() {
+                addLog(`${errorMsg}`, 'error');
                 submitBtn.prop('disabled', false).text(originalText);
-                // Vyčistit formulář
-                e.target.reset();
-                addLog('Import dokončen.', 'info');
+                form.reset();
             }
         });
+    }
+
+    // Aktualizovat progress bar
+    function updateProgress(current, total, elapsedTime) {
+        const percent = Math.round((current / total) * 100);
+        $('#db-import-progress-bar').css('width', percent + '%');
+        $('#db-import-progress-percent').text(percent + '%');
+        $('#db-import-progress-text').text(`Zpracováno ${current} z ${total} balíčků`);
+
+        // Odhad zbývajícího času
+        if (current > 0 && elapsedTime > 0) {
+            const avgTimePerChunk = elapsedTime / current;
+            const remainingChunks = total - current;
+            const estimatedSeconds = Math.round(avgTimePerChunk * remainingChunks);
+            const minutes = Math.floor(estimatedSeconds / 60);
+            const seconds = estimatedSeconds % 60;
+            let timeText = '';
+            if (minutes > 0) {
+                timeText = `Přibližně ${minutes} min ${seconds} s`;
+            } else {
+                timeText = `Přibližně ${seconds} s`;
+            }
+            $('#db-import-time-estimate').text(`Zbývá: ${timeText}`);
+        } else {
+            $('#db-import-time-estimate').text('');
+        }
     }
 
     // Aktualizace ikony typu
