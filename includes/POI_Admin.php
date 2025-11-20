@@ -64,6 +64,24 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * Helper funkce pro kontrolu, zda právě probíhá import POI z CSV
+ */
+function db_is_poi_import_running(): bool {
+    return (bool)get_transient('db_poi_import_running');
+}
+
+/**
+ * Nastavit flag, že právě probíhá import POI z CSV
+ */
+function db_set_poi_import_running(bool $running): void {
+    if ($running) {
+        set_transient('db_poi_import_running', true, 300); // 5 minut timeout
+    } else {
+        delete_transient('db_poi_import_running');
+    }
+}
+
 class POI_Admin {
     private static $instance = null;
 
@@ -651,6 +669,7 @@ class POI_Admin {
         $row_count = 0;
         $raw_rows = 0;
         $skipped_empty = 0;
+        $processed_poi_ids = []; // ID všech POI, které byly vytvořeny nebo aktualizovány
 
         global $wpdb;
 
@@ -885,6 +904,11 @@ class POI_Admin {
                 }
 
                 error_log("[POI Import] POI {$poi_id} úspěšně importován/aktualizován");
+                
+                // Přidat ID do seznamu pro pozdější nearby recompute
+                if ($poi_id > 0 && !$rowAborted) {
+                    $processed_poi_ids[] = $poi_id;
+                }
             } catch (\Exception $e) {
                 $errors[] = "Řádek {$row_count}: Exception: " . $e->getMessage();
                 error_log("[POI Import] Exception v řádku {$row_count}: " . $e->getMessage());
@@ -914,6 +938,7 @@ class POI_Admin {
             'errors' => $errors,
             'total_rows' => $row_count,
             'skipped_rows' => $skipped_empty,
+            'processed_poi_ids' => array_unique($processed_poi_ids), // Unikátní ID všech zpracovaných POI
         ];
     }
 
@@ -943,16 +968,46 @@ class POI_Admin {
             wp_send_json_error('Nelze otevřít CSV soubor');
         }
 
+        // Nastavit flag, že probíhá import (zabrání spuštění nearby recompute)
+        db_set_poi_import_running(true);
+        $flagSet = true;
+
         try {
             $result = $this->import_from_stream($handle);
         } catch (\Throwable $e) {
             fclose($handle);
+            // Vymazat flag před wp_send_json_error(), protože wp_send_json_error() ukončí vykonávání
+            if ($flagSet) {
+                db_set_poi_import_running(false);
+            }
             wp_send_json_error($e->getMessage());
+            return;
+        } finally {
+            // Vždy vymazat flag, i když došlo k chybě (pro případ, že by se výjimka zachytila jinak)
+            if ($flagSet) {
+                db_set_poi_import_running(false);
+            }
         }
 
         fclose($handle);
 
         error_log("[POI Import] Import dokončen. Importováno: {$result['imported']}, Chyby: " . count($result['errors']));
+
+        // Zařadit všechna importovaná/aktualizovaná POI do fronty pro nearby recompute
+        if (!empty($result['processed_poi_ids']) && class_exists('\DB\Jobs\Nearby_Queue_Manager')) {
+            $queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
+            $enqueued_count = 0;
+            $affected_count = 0;
+            foreach ($result['processed_poi_ids'] as $poi_id) {
+                // POI potřebuje najít nearby charging locations
+                if ($queue_manager->enqueue($poi_id, 'charging_location', 1)) {
+                    $enqueued_count++;
+                }
+                // Zařadit charging locations v okruhu pro aktualizaci jejich nearby POI seznamů
+                $affected_count += $queue_manager->enqueue_affected_points($poi_id, 'poi');
+            }
+            error_log("[POI Import] Zařazeno {$enqueued_count} POI do fronty pro nearby recompute, {$affected_count} affected charging locations");
+        }
 
         wp_send_json_success([
             'message' => sprintf(

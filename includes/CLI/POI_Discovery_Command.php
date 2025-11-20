@@ -157,6 +157,12 @@ class POI_Discovery_Command {
 			return;
 		}
 
+		// Nastavit flag, že probíhá import (zabrání spuštění nearby recompute)
+		if (function_exists('\DB\db_set_poi_import_running')) {
+			\DB\db_set_poi_import_running(true);
+		}
+		$flagSet = true;
+
 		try {
 			$result = $admin->import_from_stream($handle, [
 				'log_every' => $logEvery,
@@ -173,11 +179,36 @@ class POI_Discovery_Command {
 			]);
 		} catch (\Throwable $e) {
 			fclose($handle);
+			// Vymazat flag před \WP_CLI::error(), protože \WP_CLI::error() ukončí vykonávání
+			if ($flagSet && function_exists('\DB\db_set_poi_import_running')) {
+				\DB\db_set_poi_import_running(false);
+			}
 			\WP_CLI::error($e->getMessage());
 			return;
+		} finally {
+			// Vždy vymazat flag, i když došlo k chybě (pro případ, že by se výjimka zachytila jinak)
+			if ($flagSet && function_exists('\DB\db_set_poi_import_running')) {
+				\DB\db_set_poi_import_running(false);
+			}
 		}
 
 		fclose($handle);
+
+		// Zařadit všechna importovaná/aktualizovaná POI do fronty pro nearby recompute
+		if (!empty($result['processed_poi_ids']) && class_exists('\DB\Jobs\Nearby_Queue_Manager')) {
+			$queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
+			$enqueued_count = 0;
+			$affected_count = 0;
+			foreach ($result['processed_poi_ids'] as $poi_id) {
+				// POI potřebuje najít nearby charging locations
+				if ($queue_manager->enqueue($poi_id, 'charging_location', 1)) {
+					$enqueued_count++;
+				}
+				// Zařadit charging locations v okruhu pro aktualizaci jejich nearby POI seznamů
+				$affected_count += $queue_manager->enqueue_affected_points($poi_id, 'poi');
+			}
+			\WP_CLI::log(sprintf('Zařazeno %d POI do fronty pro nearby recompute, %d affected charging locations', $enqueued_count, $affected_count));
+		}
 
 		if (!empty($result['errors'])) {
 			\WP_CLI::warning(sprintf('Import dokončen s %d hlášenými problémy.', count($result['errors'])));
