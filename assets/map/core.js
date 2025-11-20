@@ -8382,15 +8382,31 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   function getDbLogoHtml(size) {
     const logoSize = Math.max(10, Math.round(size * 0.78));
-    const iconFile = logoSize >= 256 ? 'db-icon-512.png' : (logoSize >= 192 ? 'db-icon-192.png' : 'db-icon-180.png');
     const dbData = (typeof dbMapData !== 'undefined' && dbMapData) ? dbMapData : (typeof window !== 'undefined' && window.dbMapData ? window.dbMapData : {});
-    const base = dbData && dbData.pluginUrl ? dbData.pluginUrl : '';
-    const normalizedBase = base ? base.replace(/\/+$/, '') + '/' : '';
-    let assetUrl = normalizedBase + 'assets/pwa/' + iconFile;
-    if (typeof window !== 'undefined' && window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-      assetUrl = assetUrl.replace(/^http:\/\//, 'https://');
+    let base = dbData && dbData.pluginUrl ? dbData.pluginUrl : '';
+    if (!base && typeof window !== 'undefined' && window.location) {
+      base = window.location.origin + '/wp-content/plugins/dobity-baterky/';
     }
-    const logoImg = '<img src="' + assetUrl + '" alt="Dobitý Baterky" width="' + logoSize + '" height="' + logoSize + '" style="display:block;width:100%;height:100%;object-fit:contain;" loading="lazy" decoding="async">';
+    if (base && !base.endsWith('/')) {
+      base += '/';
+    }
+    const normalizedBase = base ? base.replace(/\/+$/, '/') : '';
+    const assetsBase = normalizedBase + 'assets/pwa/';
+    const normalizeUrl = (url) => {
+      if (!url) return '';
+      if (typeof window !== 'undefined' && window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return url.replace(/^http:\/\//, 'https://');
+      }
+      return url;
+    };
+    const src1x = normalizeUrl(assetsBase + 'db-icon-180.png');
+    const src2x = normalizeUrl(assetsBase + 'db-icon-192.png');
+    const src3x = normalizeUrl(assetsBase + 'db-icon-512.png');
+    const defaultSrc = logoSize >= 256 ? src3x : (logoSize >= 192 ? src2x : src1x);
+    const srcsetAttr = [src1x ? `${src1x} 1x` : '', src2x ? `${src2x} 2x` : '', src3x ? `${src3x} 3x` : '']
+      .filter(Boolean)
+      .join(', ');
+    const logoImg = '<img src="' + defaultSrc + '"' + (srcsetAttr ? ' srcset="' + srcsetAttr + '"' : '') + ' alt="Dobitý Baterky" width="' + logoSize + '" height="' + logoSize + '" style="display:block;width:100%;height:100%;object-fit:contain;">';
     return '<div style="width:' + size + 'px;height:' + size + 'px;border-radius:4px;background:#ffffff;border:2px solid #FF6A4B;display:flex;align-items:center;justify-content:center;pointer-events:none;">'
          +   '<div style="width:' + logoSize + 'px;height:' + logoSize + 'px;display:flex;align-items:center;justify-content:center;">'
          +     logoImg
@@ -10186,6 +10202,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       window.smartLoadingManager.init();
     } catch (fallbackError) {
       console.error('[DB Map] Fallback inicializace také selhala:', fallbackError);
+      try {
+        if (typeof createDirectLegacyButton === 'function') {
+          createDirectLegacyButton();
+        }
+      } catch (legacyErr) {
+        console.error('[DB Map] Nepodařilo se vytvořit legacy tlačítko:', legacyErr);
+      }
     }
   }
   
