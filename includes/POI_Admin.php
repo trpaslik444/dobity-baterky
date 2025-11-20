@@ -64,6 +64,24 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+/**
+ * Helper funkce pro kontrolu, zda právě probíhá import POI z CSV
+ */
+function db_is_poi_import_running(): bool {
+    return (bool)get_transient('db_poi_import_running');
+}
+
+/**
+ * Nastavit flag, že právě probíhá import POI z CSV
+ */
+function db_set_poi_import_running(bool $running): void {
+    if ($running) {
+        set_transient('db_poi_import_running', true, 300); // 5 minut timeout
+    } else {
+        delete_transient('db_poi_import_running');
+    }
+}
+
 class POI_Admin {
     private static $instance = null;
 
@@ -943,11 +961,21 @@ class POI_Admin {
             wp_send_json_error('Nelze otevřít CSV soubor');
         }
 
+        // Nastavit flag, že probíhá import (zabrání spuštění nearby recompute)
+        db_set_poi_import_running(true);
+        $flagSet = true;
+
         try {
             $result = $this->import_from_stream($handle);
         } catch (\Throwable $e) {
             fclose($handle);
             wp_send_json_error($e->getMessage());
+            return;
+        } finally {
+            // Vždy vymazat flag, i když došlo k chybě
+            if ($flagSet) {
+                db_set_poi_import_running(false);
+            }
         }
 
         fclose($handle);
