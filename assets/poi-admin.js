@@ -402,11 +402,15 @@ jQuery(document).ready(function($) {
         $('#db-import-progress-container').hide();
         addLog('Začíná import CSV souboru...', 'info');
 
-        const submitBtn = $(e.target).find('button[type="submit"]');
+        // Získat form element (e.currentTarget je form, na který je handler připojen)
+        const formElement = e.currentTarget || $(e.target).closest('form')[0] || $('#db-import-form')[0];
+        const $form = $(formElement);
+        
+        const submitBtn = $form.find('button[type="submit"]');
         const originalText = submitBtn.text();
         submitBtn.prop('disabled', true).text('Připravuji...');
 
-        const fileInput = $(e.target).find('input[type="file"][name="poi_csv"]')[0];
+        const fileInput = $form.find('input[type="file"][name="poi_csv"]')[0];
         if (!fileInput || !fileInput.files || !fileInput.files[0]) {
             addLog('Chyba: Nenašel jsem soubor ve vstupu', 'error');
             submitBtn.prop('disabled', false).text(originalText);
@@ -460,7 +464,7 @@ jQuery(document).ready(function($) {
             updateProgress(0, totalChunks, 0);
 
             // Spustit chunked import
-            processChunks(chunks, 0, totalChunks, submitBtn, originalText, e.target);
+            processChunks(chunks, 0, totalChunks, submitBtn, originalText, formElement);
         };
 
         reader.onerror = function() {
@@ -473,10 +477,22 @@ jQuery(document).ready(function($) {
 
     // Zpracovat chunky postupně
     function processChunks(chunks, currentIndex, totalChunks, submitBtn, originalText, form) {
+        // Pomocná funkce pro reset formu
+        function resetForm() {
+            if (form && typeof form.reset === 'function') {
+                form.reset();
+            } else if (form) {
+                const formEl = form[0] || form;
+                if (formEl && typeof formEl.reset === 'function') {
+                    formEl.reset();
+                }
+            }
+        }
+        
         if (currentIndex >= chunks.length) {
             // Hotovo
             submitBtn.prop('disabled', false).text(originalText);
-            form.reset();
+            resetForm();
             return;
         }
 
@@ -542,7 +558,7 @@ jQuery(document).ready(function($) {
 
                         updateProgress(totalChunks, totalChunks, 0);
                         submitBtn.prop('disabled', false).text(originalText);
-                        form.reset();
+                        resetForm();
                         loadPoiByFilters();
                     } else {
                         // Pokračovat s dalším chunkem
@@ -553,7 +569,7 @@ jQuery(document).ready(function($) {
                 } else {
                     addLog(`❌ Chyba v balíčku ${currentIndex + 1}: ${response.data}`, 'error');
                     submitBtn.prop('disabled', false).text(originalText);
-                    form.reset();
+                    resetForm();
                 }
             },
             error: function(xhr, status, error) {
@@ -565,7 +581,7 @@ jQuery(document).ready(function($) {
                 }
                 addLog(`${errorMsg}`, 'error');
                 submitBtn.prop('disabled', false).text(originalText);
-                form.reset();
+                resetForm();
             }
         });
     }
