@@ -669,6 +669,7 @@ class POI_Admin {
         $row_count = 0;
         $raw_rows = 0;
         $skipped_empty = 0;
+        $processed_poi_ids = []; // ID všech POI, které byly vytvořeny nebo aktualizovány
 
         global $wpdb;
 
@@ -903,6 +904,11 @@ class POI_Admin {
                 }
 
                 error_log("[POI Import] POI {$poi_id} úspěšně importován/aktualizován");
+                
+                // Přidat ID do seznamu pro pozdější nearby recompute
+                if ($poi_id > 0 && !$rowAborted) {
+                    $processed_poi_ids[] = $poi_id;
+                }
             } catch (\Exception $e) {
                 $errors[] = "Řádek {$row_count}: Exception: " . $e->getMessage();
                 error_log("[POI Import] Exception v řádku {$row_count}: " . $e->getMessage());
@@ -932,6 +938,7 @@ class POI_Admin {
             'errors' => $errors,
             'total_rows' => $row_count,
             'skipped_rows' => $skipped_empty,
+            'processed_poi_ids' => array_unique($processed_poi_ids), // Unikátní ID všech zpracovaných POI
         ];
     }
 
@@ -981,6 +988,19 @@ class POI_Admin {
         fclose($handle);
 
         error_log("[POI Import] Import dokončen. Importováno: {$result['imported']}, Chyby: " . count($result['errors']));
+
+        // Zařadit všechna importovaná/aktualizovaná POI do fronty pro nearby recompute
+        if (!empty($result['processed_poi_ids']) && class_exists('\DB\Jobs\Nearby_Queue_Manager')) {
+            $queue_manager = \DB\Jobs\Nearby_Queue_Manager::get_instance();
+            $enqueued_count = 0;
+            foreach ($result['processed_poi_ids'] as $poi_id) {
+                // POI potřebuje najít nearby charging locations
+                if ($queue_manager->enqueue($poi_id, 'charging_location', 1)) {
+                    $enqueued_count++;
+                }
+            }
+            error_log("[POI Import] Zařazeno {$enqueued_count} POI do fronty pro nearby recompute");
+        }
 
         wp_send_json_success([
             'message' => sprintf(
