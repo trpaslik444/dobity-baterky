@@ -369,10 +369,15 @@ jQuery(document).ready(function($) {
                 currentRow = '';
                 i++;
             } else if (char === '\r' && nextChar === '\n' && !inQuotes) {
-                // Windows line ending
+                // Windows line ending (\r\n)
                 rows.push(currentRow);
                 currentRow = '';
                 i += 2;
+            } else if (char === '\r' && !inQuotes) {
+                // CR-only line ending (Mac classic)
+                rows.push(currentRow);
+                currentRow = '';
+                i++;
             } else {
                 currentRow += char;
                 i++;

@@ -1097,11 +1097,18 @@ class POI_Admin {
         } else {
             // Pro další chunky načíst hlavičku a přidat ji
             $header = get_transient('db_poi_import_header');
-            if ($header) {
-                $chunk_data = $header . "\n" . $chunk_data;
-                // Obnovit TTL hlavičky (aby nevypršela během dlouhého importu)
-                set_transient('db_poi_import_header', $header, 1800);
+            if (!$header) {
+                // Pokud hlavička chybí (vypršela nebo byla smazána), import nemůže pokračovat
+                db_set_poi_import_running(false);
+                delete_transient('db_poi_import_processed_ids');
+                delete_transient('db_poi_import_total_stats');
+                delete_transient('db_poi_import_header');
+                wp_send_json_error('Hlavička CSV souboru není dostupná. Import byl přerušen. Zkuste import znovu od začátku.');
+                return;
             }
+            $chunk_data = $header . "\n" . $chunk_data;
+            // Obnovit TTL hlavičky (aby nevypršela během dlouhého importu)
+            set_transient('db_poi_import_header', $header, 1800);
         }
 
         // Vytvořit dočasný soubor s chunk daty
