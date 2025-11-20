@@ -677,6 +677,10 @@ class Nearby_Queue_Manager {
      * Zpracovat uložení/aktualizaci bodu
      */
     public function handle_post_save($post_id, $post, $update) {
+        if (function_exists('\\DB\\db_is_poi_import_running') && \DB\db_is_poi_import_running()) {
+            return;
+        }
+
         // Zkontrolovat, zda je to relevantní post type
         if (!in_array($post->post_type, array('charging_location', 'poi', 'rv_spot'))) {
             return;

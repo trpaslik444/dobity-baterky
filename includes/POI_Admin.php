@@ -60,6 +60,14 @@ function db_normalize_poi_type_from_csv(array $poi_data, string $fallback = 'kav
     return $normalized;
 }
 
+function db_set_poi_import_running(bool $state): void {
+    $GLOBALS['db_poi_import_running'] = $state;
+}
+
+function db_is_poi_import_running(): bool {
+    return !empty($GLOBALS['db_poi_import_running']);
+}
+
 if (!defined('ABSPATH')) {
     exit;
 }
@@ -591,112 +599,119 @@ class POI_Admin {
             @set_time_limit(0);
         }
 
+        $flagSet = false;
+        if (!db_is_poi_import_running()) {
+            db_set_poi_import_running(true);
+            $flagSet = true;
+        }
+
         $logCallback = $context['log_callback'] ?? null;
         $logEvery = isset($context['log_every']) ? max(1, (int)$context['log_every']) : 500;
         $maxRows = isset($context['max_rows']) ? max(0, (int)$context['max_rows']) : 0;
 
-        $headers = $this->read_csv_headers($handle);
-        if (empty($headers)) {
-            throw new \RuntimeException('CSV soubor je prázdný nebo neobsahuje hlavičku.');
-        }
-
-        $normalize = function(string $s): string {
-            $s = trim(mb_strtolower($s));
-            $trans = @iconv('UTF-8', 'ASCII//TRANSLIT', $s);
-            if ($trans !== false && $trans !== null) {
-                $s = strtolower(preg_replace('/[^a-z0-9_\- ]+/','',$trans));
-            }
-            $s = str_replace(['\t'], ' ', $s);
-            $s = preg_replace('/\s+/', ' ', $s);
-            return trim($s);
-        };
-
-        $synonymToInternal = [
-            'nazev' => 'Název',
-            'name' => 'Název',
-            'cafe name' => 'Název',
-            'title' => 'Název',
-            'popis' => 'Popis',
-            'description' => 'Popis',
-            'address' => 'Popis',
-            'typ' => 'Typ',
-            'type' => 'Typ',
-            'latitude' => 'Latitude',
-            'lat' => 'Latitude',
-            'y' => 'Latitude',
-            'longitude' => 'Longitude',
-            'lng' => 'Longitude',
-            'lon' => 'Longitude',
-            'x' => 'Longitude',
-            'ikona' => 'Ikona',
-            'icon' => 'Ikona',
-            'barva' => 'Barva',
-            'color' => 'Barva',
-            'id' => 'ID',
-        ];
-
-        $columnIndexToInternal = [];
-        foreach ($headers as $idx => $rawHeader) {
-            $key = $normalize((string)$rawHeader);
-            if (isset($synonymToInternal[$key])) {
-                $columnIndexToInternal[$idx] = $synonymToInternal[$key];
-            } else {
-                $columnIndexToInternal[$idx] = (string)$rawHeader;
-            }
-        }
-
-        $imported = 0;
-        $updated = 0;
-        $errors = [];
-        $row_count = 0;
-        $raw_rows = 0;
-        $skipped_empty = 0;
-
-        global $wpdb;
-
-        while (($data = fgetcsv($handle)) !== false) {
-            $raw_rows++;
-
-            if ($this->is_csv_row_empty($data)) {
-                $skipped_empty++;
-                continue;
+        try {
+            $headers = $this->read_csv_headers($handle);
+            if (empty($headers)) {
+                throw new \RuntimeException('CSV soubor je prázdný nebo neobsahuje hlavičku.');
             }
 
-            $row_count++;
-            error_log("[POI Import] Řádek {$row_count}: " . print_r($data, true));
-
-            if (count($data) < 2) {
-                $errors[] = "Řádek {$row_count}: Nedostatečný počet sloupců (" . count($data) . ")";
-                continue;
-            }
-
-            try {
-                $poi_data = [];
-                foreach ($data as $i => $val) {
-                    $key = $columnIndexToInternal[$i] ?? ($headers[$i] ?? (string)$i);
-                    $poi_data[$key] = $val;
+            $normalize = function(string $s): string {
+                $s = trim(mb_strtolower($s));
+                $trans = @iconv('UTF-8', 'ASCII//TRANSLIT', $s);
+                if ($trans !== false && $trans !== null) {
+                    $s = strtolower(preg_replace('/[^a-z0-9_\- ]+/','',$trans));
                 }
-                error_log("[POI Import] Zpracovávám data: " . print_r($poi_data, true));
-                if (isset($poi_data['Typ'])) {
-                    error_log('[POI Import][DEBUG] Typ vstup: ' . print_r($poi_data['Typ'], true));
-                }
-                if (isset($poi_data['Název'])) {
-                    error_log('[POI Import][DEBUG] Název vstup: ' . print_r($poi_data['Název'], true));
-                }
+                $s = str_replace(['\t'], ' ', $s);
+                $s = preg_replace('/\s+/', ' ', $s);
+                return trim($s);
+            };
 
-                $post_title = sanitize_text_field($poi_data['Název'] ?? '');
-                $post_content = sanitize_textarea_field($poi_data['Popis'] ?? '');
+            $synonymToInternal = [
+                'nazev' => 'Název',
+                'name' => 'Název',
+                'cafe name' => 'Název',
+                'title' => 'Název',
+                'popis' => 'Popis',
+                'description' => 'Popis',
+                'address' => 'Popis',
+                'typ' => 'Typ',
+                'type' => 'Typ',
+                'latitude' => 'Latitude',
+                'lat' => 'Latitude',
+                'y' => 'Latitude',
+                'longitude' => 'Longitude',
+                'lng' => 'Longitude',
+                'lon' => 'Longitude',
+                'x' => 'Longitude',
+                'ikona' => 'Ikona',
+                'icon' => 'Ikona',
+                'barva' => 'Barva',
+                'color' => 'Barva',
+                'id' => 'ID',
+            ];
 
-                if (empty($post_title)) {
-                    $errors[] = "Řádek {$row_count}: Prázdný název POI";
+            $columnIndexToInternal = [];
+            foreach ($headers as $idx => $rawHeader) {
+                $key = $normalize((string)$rawHeader);
+                if (isset($synonymToInternal[$key])) {
+                    $columnIndexToInternal[$idx] = $synonymToInternal[$key];
+                } else {
+                    $columnIndexToInternal[$idx] = (string)$rawHeader;
+                }
+            }
+
+            $imported = 0;
+            $updated = 0;
+            $errors = [];
+            $row_count = 0;
+            $raw_rows = 0;
+            $skipped_empty = 0;
+
+            global $wpdb;
+
+            while (($data = fgetcsv($handle)) !== false) {
+                $raw_rows++;
+
+                if ($this->is_csv_row_empty($data)) {
+                    $skipped_empty++;
                     continue;
                 }
 
-                $latInput = isset($poi_data['Latitude']) ? floatval($poi_data['Latitude']) : null;
-                $lngInput = isset($poi_data['Longitude']) ? floatval($poi_data['Longitude']) : null;
+                $row_count++;
+                error_log("[POI Import] Řádek {$row_count}: " . print_r($data, true));
 
-                $poi_id = 0;
-                $rowAborted = false;
+                if (count($data) < 2) {
+                    $errors[] = "Řádek {$row_count}: Nedostatečný počet sloupců (" . count($data) . ")";
+                    continue;
+                }
+
+                try {
+                    $poi_data = [];
+                    foreach ($data as $i => $val) {
+                        $key = $columnIndexToInternal[$i] ?? ($headers[$i] ?? (string)$i);
+                        $poi_data[$key] = $val;
+                    }
+                    error_log("[POI Import] Zpracovávám data: " . print_r($poi_data, true));
+                    if (isset($poi_data['Typ'])) {
+                        error_log('[POI Import][DEBUG] Typ vstup: ' . print_r($poi_data['Typ'], true));
+                    }
+                    if (isset($poi_data['Název'])) {
+                        error_log('[POI Import][DEBUG] Název vstup: ' . print_r($poi_data['Název'], true));
+                    }
+
+                    $post_title = sanitize_text_field($poi_data['Název'] ?? '');
+                    $post_content = sanitize_textarea_field($poi_data['Popis'] ?? '');
+
+                    if (empty($post_title)) {
+                        $errors[] = "Řádek {$row_count}: Prázdný název POI";
+                        continue;
+                    }
+
+                    $latInput = isset($poi_data['Latitude']) ? floatval($poi_data['Latitude']) : null;
+                    $lngInput = isset($poi_data['Longitude']) ? floatval($poi_data['Longitude']) : null;
+
+                    $poi_id = 0;
+                    $rowAborted = false;
 
                 if (!empty($poi_data['ID']) && is_numeric($poi_data['ID'])) {
                     $candidate_id = (int)$poi_data['ID'];
@@ -884,37 +899,42 @@ class POI_Admin {
                     }
                 }
 
-                error_log("[POI Import] POI {$poi_id} úspěšně importován/aktualizován");
-            } catch (\Exception $e) {
-                $errors[] = "Řádek {$row_count}: Exception: " . $e->getMessage();
-                error_log("[POI Import] Exception v řádku {$row_count}: " . $e->getMessage());
-            } catch (\Error $e) {
-                $errors[] = "Řádek {$row_count}: Fatal Error: " . $e->getMessage();
-                error_log("[POI Import] Fatal Error v řádku {$row_count}: " . $e->getMessage());
+                    error_log("[POI Import] POI {$poi_id} úspěšně importován/aktualizován");
+                } catch (\Exception $e) {
+                    $errors[] = "Řádek {$row_count}: Exception: " . $e->getMessage();
+                    error_log("[POI Import] Exception v řádku {$row_count}: " . $e->getMessage());
+                } catch (\Error $e) {
+                    $errors[] = "Řádek {$row_count}: Fatal Error: " . $e->getMessage();
+                    error_log("[POI Import] Fatal Error v řádku {$row_count}: " . $e->getMessage());
+                }
+
+                if ($logCallback && is_callable($logCallback) && ($row_count % $logEvery === 0)) {
+                    call_user_func($logCallback, [
+                        'row' => $row_count,
+                        'imported' => $imported,
+                        'updated' => $updated,
+                        'errors' => count($errors),
+                        'skipped' => $skipped_empty,
+                    ]);
+                }
+
+                if ($maxRows > 0 && $row_count >= $maxRows) {
+                    break;
+                }
             }
 
-            if ($logCallback && is_callable($logCallback) && ($row_count % $logEvery === 0)) {
-                call_user_func($logCallback, [
-                    'row' => $row_count,
-                    'imported' => $imported,
-                    'updated' => $updated,
-                    'errors' => count($errors),
-                    'skipped' => $skipped_empty,
-                ]);
-            }
-
-            if ($maxRows > 0 && $row_count >= $maxRows) {
-                break;
+            return [
+                'imported' => $imported,
+                'updated' => $updated,
+                'errors' => $errors,
+                'total_rows' => $row_count,
+                'skipped_rows' => $skipped_empty,
+            ];
+        } finally {
+            if ($flagSet) {
+                db_set_poi_import_running(false);
             }
         }
-
-        return [
-            'imported' => $imported,
-            'updated' => $updated,
-            'errors' => $errors,
-            'total_rows' => $row_count,
-            'skipped_rows' => $skipped_empty,
-        ];
     }
 
     public function handle_import_csv(): void {
