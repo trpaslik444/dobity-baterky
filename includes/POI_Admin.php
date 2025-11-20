@@ -1068,26 +1068,33 @@ class POI_Admin {
             wp_send_json_error('Chunk data je prázdné');
         }
 
-        // Pro první chunk nastavit flag
+        // Pro první chunk nastavit flag a vymazat předchozí stav
         if ($is_first) {
             db_set_poi_import_running(true);
             // Vymazat předchozí stav (pokud existuje)
             delete_transient('db_poi_import_processed_ids');
             delete_transient('db_poi_import_total_stats');
             delete_transient('db_poi_import_header');
+        } else {
+            // Pro další chunky obnovit flag (aby nevypršel během dlouhého importu)
+            db_set_poi_import_running(true);
         }
 
-        // Pro další chunky přidat hlavičku
-        if (!$is_first) {
-            $header = get_transient('db_poi_import_header');
-            if ($header) {
-                $chunk_data = $header . "\n" . $chunk_data;
-            }
-        } else {
+        // Zpracovat hlavičku
+        if ($is_first) {
             // Pro první chunk uložit hlavičku
             $lines = explode("\n", $chunk_data);
             if (!empty($lines[0])) {
-                set_transient('db_poi_import_header', $lines[0], 600);
+                $header = $lines[0];
+                set_transient('db_poi_import_header', $header, 1800); // 30 minut TTL
+            }
+        } else {
+            // Pro další chunky načíst hlavičku a přidat ji
+            $header = get_transient('db_poi_import_header');
+            if ($header) {
+                $chunk_data = $header . "\n" . $chunk_data;
+                // Obnovit TTL hlavičky (aby nevypršela během dlouhého importu)
+                set_transient('db_poi_import_header', $header, 1800);
             }
         }
 
