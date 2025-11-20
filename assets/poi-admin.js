@@ -519,10 +519,10 @@ jQuery(document).ready(function($) {
             },
             timeout: 120000, // 2 minuty na chunk
             success: function(response) {
-                if (response.success) {
+                if (response.success && response.data) {
                     const elapsed = (Date.now() - startTime) / 1000;
-                    const chunkResult = response.data.chunk_result;
-                    const totalStats = response.data.total_stats;
+                    const chunkResult = response.data.chunk_result || {};
+                    const totalStats = response.data.total_stats || {};
 
                     // Aktualizovat progress
                     const progress = response.data.progress || ((currentIndex + 1) / totalChunks * 100);
@@ -567,7 +567,8 @@ jQuery(document).ready(function($) {
                         }, 100); // Malá pauza mezi chunky
                     }
                 } else {
-                    addLog(`❌ Chyba v balíčku ${currentIndex + 1}: ${response.data}`, 'error');
+                    const errorMsg = response.data || 'Neznámá chyba';
+                    addLog(`❌ Chyba v balíčku ${currentIndex + 1}: ${errorMsg}`, 'error');
                     submitBtn.prop('disabled', false).text(originalText);
                     resetForm();
                 }
