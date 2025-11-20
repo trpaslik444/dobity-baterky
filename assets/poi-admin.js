@@ -31,9 +31,36 @@ jQuery(document).ready(function($) {
         $('#export-csv-btn').on('click', handleExportCsv);
         $('#db-import-form').on('submit', handleImportCsv);
         
+        // Logování - kopírování a mazání
+        $('#db-copy-log-btn').on('click', function() {
+            const logTextarea = $('#db-import-log')[0];
+            logTextarea.select();
+            document.execCommand('copy');
+            alert('Logy zkopírovány do schránky');
+        });
+        
+        $('#db-clear-log-btn').on('click', function() {
+            if (confirm('Opravdu chcete vymazat logy?')) {
+                $('#db-import-log').val('');
+            }
+        });
+        
         // Aktualizace ikon
         $('.update-type-icon').on('click', updateTypeIcon);
         $('#update-all-icons-btn').on('click', updateAllIcons);
+    }
+    
+    // Helper funkce pro logování
+    function addLog(message, type = 'info') {
+        const logSection = $('#db-import-log-section');
+        const logTextarea = $('#db-import-log');
+        const timestamp = new Date().toLocaleTimeString('cs-CZ');
+        const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+        const logLine = `[${timestamp}] ${prefix} ${message}\n`;
+        logTextarea.val(logTextarea.val() + logLine);
+        logSection.show();
+        // Auto-scroll na konec
+        logTextarea[0].scrollTop = logTextarea[0].scrollHeight;
     }
 
     function setupAjaxDefaults() {
@@ -318,19 +345,24 @@ jQuery(document).ready(function($) {
     function handleImportCsv(e) {
         e.preventDefault();
 
+        // Vymazat předchozí logy
+        $('#db-import-log').val('');
+        $('#db-import-log-section').show();
+        addLog('Začíná import CSV souboru...', 'info');
+
         const formData = new FormData(e.target);
         try {
             const fileInput = $(e.target).find('input[type="file"][name="poi_csv"]')[0];
             if (fileInput && fileInput.files && fileInput.files[0]) {
                 const f = fileInput.files[0];
-                console.group('[DB POI] Import CSV – klientská diagnostika');
-                console.log('Soubor:', { name: f.name, size: f.size, type: f.type });
-                console.groupEnd();
+                addLog(`Soubor: ${f.name}, velikost: ${(f.size / 1024).toFixed(2)} KB, typ: ${f.type}`, 'info');
             } else {
-                console.warn('[DB POI] Import CSV: nenašel jsem soubor ve vstupu');
+                addLog('Chyba: Nenašel jsem soubor ve vstupu', 'error');
+                return;
             }
         } catch (ex) {
-            console.warn('[DB POI] Import CSV: chyba při čtení souboru pro log', ex);
+            addLog(`Chyba při čtení souboru: ${ex.message}`, 'error');
+            return;
         }
         formData.append('action', 'db_import_poi_csv');
         formData.append('nonce', dbPoiAdmin.nonce);
@@ -339,6 +371,7 @@ jQuery(document).ready(function($) {
         const submitBtn = $(e.target).find('button[type="submit"]');
         const originalText = submitBtn.text();
         submitBtn.prop('disabled', true).text('Importuji...');
+        addLog('Odesílám požadavek na server...', 'info');
 
         $.ajax({
             url: dbPoiAdmin.ajaxUrl,
@@ -346,33 +379,52 @@ jQuery(document).ready(function($) {
             data: formData,
             processData: false,
             contentType: false,
+            timeout: 600000, // 10 minut timeout
             success: function(response) {
-                console.group('[DB POI] Import CSV – odpověď');
-                console.log('Raw response:', response);
                 if (response.success) {
-                    let message = response.data.message;
-                    console.log('Imported:', response.data.imported, 'Total rows:', response.data.total_rows);
-                    if (response.data.errors && response.data.errors.length > 0) {
-                        message += '\n\nChyby:\n' + response.data.errors.join('\n');
-                        console.warn('Chyby při importu:', response.data.errors);
+                    addLog('✅ Import úspěšně dokončen!', 'success');
+                    addLog(`Importováno: ${response.data.imported || 0} nových POI`, 'success');
+                    addLog(`Aktualizováno: ${response.data.updated || 0} existujících POI`, 'success');
+                    addLog(`Celkem řádků: ${response.data.total_rows || 0}`, 'info');
+                    addLog(`Přeskočeno prázdných: ${response.data.skipped_rows || 0}`, 'info');
+                    
+                    if (response.data.processed_poi_ids && response.data.processed_poi_ids.length > 0) {
+                        addLog(`Zařazeno ${response.data.processed_poi_ids.length} POI do fronty pro nearby recompute`, 'info');
                     }
-                    console.groupEnd();
-                    alert(message);
+                    
+                    if (response.data.errors && response.data.errors.length > 0) {
+                        addLog(`\n⚠️ Nalezeno ${response.data.errors.length} chyb:`, 'warning');
+                        response.data.errors.forEach(function(error, index) {
+                            addLog(`  ${index + 1}. ${error}`, 'error');
+                        });
+                    }
+                    
+                    addLog('\n' + response.data.message, 'success');
                     // Znovu načíst POI
                     loadPoiByFilters();
                 } else {
-                    console.groupEnd();
-                    alert('Chyba: ' + response.data);
+                    addLog(`❌ Chyba: ${response.data}`, 'error');
                 }
             },
-            error: function() {
-                console.error('[DB POI] Import CSV – AJAX chyba');
-                alert('Chyba při importu CSV');
+            error: function(xhr, status, error) {
+                let errorMsg = 'Chyba při importu CSV';
+                if (status === 'timeout') {
+                    errorMsg = 'Timeout: Import trval příliš dlouho (možná se stále zpracovává na serveru)';
+                } else if (xhr.responseJSON && xhr.responseJSON.data) {
+                    errorMsg = xhr.responseJSON.data;
+                } else if (error) {
+                    errorMsg = error;
+                }
+                addLog(`❌ ${errorMsg}`, 'error');
+                if (xhr.status === 0) {
+                    addLog('Poznámka: Možná došlo k timeoutu nebo přerušení spojení. Zkontrolujte logy na serveru.', 'warning');
+                }
             },
             complete: function() {
                 submitBtn.prop('disabled', false).text(originalText);
                 // Vyčistit formulář
                 e.target.reset();
+                addLog('Import dokončen.', 'info');
             }
         });
     }
