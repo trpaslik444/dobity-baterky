@@ -52,3 +52,9 @@ Tento dokument popisuje, jak v pluginu Dobitý baterky pracovat s novými integr
 - Pokud TripAdvisor vrátí sociální odkazy, uloží se do meta `_poi_social_links` a zobrazí se v detailu.
 - Google Places aktuálně sociální odkazy neposkytuje, pole se nechává prázdné.
 
+## 8. Import POI z CSV přes WP-CLI
+
+- Importér v administraci i CLI používá upsert strategii (ID → název+souřadnice → samotné souřadnice) a nikdy nemaže existující záznamy.
+- Pro velké dávky použijte příkaz `wp db-poi import-csv /absolutni/cesta/k/all_pois_unique-1.csv --log-every=1000`, který využívá stejnou logiku jako administrace, ale běží mimo HTTP timeouty.
+- Soubor by měl mít hlavičku v prvním neprázdném řádku; importer automaticky přeskočí prázdné řádky a zachová typy POI dle mapování v `db_normalize_poi_type_from_csv`.
+
