@@ -991,7 +991,7 @@ class POI_Admin {
 
         // Zařadit všechna importovaná/aktualizovaná POI do fronty pro nearby recompute
         if (!empty($result['processed_poi_ids']) && class_exists('\DB\Jobs\Nearby_Queue_Manager')) {
-            $queue_manager = \DB\Jobs\Nearby_Queue_Manager::get_instance();
+            $queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
             $enqueued_count = 0;
             foreach ($result['processed_poi_ids'] as $poi_id) {
                 // POI potřebuje najít nearby charging locations
