@@ -769,7 +769,7 @@ class POI_Admin {
                             error_log("[POI Import] Aktualizuji existující POI dle Title-only: {$cid}");
                         } else {
                             $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
-                            continue 2; // přeskočit celý řádek, aby se nevytvářely duplicitní POI
+                            continue; // přeskočit celý řádek, aby se nevytvářely duplicitní POI
                         }
                     }
                 }
