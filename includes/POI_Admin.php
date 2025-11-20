@@ -560,44 +560,48 @@ class POI_Admin {
         exit;
     }
 
-    public function handle_import_csv(): void {
-        check_ajax_referer('db_poi_admin_nonce', 'nonce');
+    private function read_csv_headers($handle): array {
+        while (($row = fgetcsv($handle)) !== false) {
+            if ($this->is_csv_row_empty($row)) {
+                continue;
+            }
+            if (isset($row[0])) {
+                $row[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string)$row[0]);
+            }
+            return $row;
+        }
+        return [];
+    }
 
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error('Nedostatečná oprávnění');
+    private function is_csv_row_empty(array $row): bool {
+        foreach ($row as $value) {
+            if (trim((string)$value) !== '') {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public function import_from_stream($handle, array $context = []): array {
+        if (!is_resource($handle)) {
+            throw new \InvalidArgumentException('Neplatný zdroj CSV.');
         }
 
-        if (!isset($_FILES['poi_csv'])) {
-            wp_send_json_error('Nebyl nahrán žádný soubor');
+        if (function_exists('set_time_limit')) {
+            @set_time_limit(0);
         }
 
-        $file = $_FILES['poi_csv'];
-        
-        if ($file['error'] !== UPLOAD_ERR_OK) {
-            wp_send_json_error('Chyba při nahrávání souboru: ' . $this->get_upload_error_message($file['error']));
-        }
+        $logCallback = $context['log_callback'] ?? null;
+        $logEvery = isset($context['log_every']) ? max(1, (int)$context['log_every']) : 500;
+        $maxRows = isset($context['max_rows']) ? max(0, (int)$context['max_rows']) : 0;
 
-        // Debug info
-        error_log('[POI Import] Soubor nahrán: ' . $file['name'] . ', velikost: ' . $file['size'] . ' bytes');
-        error_log('[POI Import] MIME typ: ' . $file['type']);
-
-        $handle = fopen($file['tmp_name'], 'r');
-        if (!$handle) {
-            wp_send_json_error('Nelze otevřít CSV soubor');
-        }
-
-        $headers = fgetcsv($handle);
-        error_log('[POI Import] CSV hlavičky: ' . print_r($headers, true));
-        
+        $headers = $this->read_csv_headers($handle);
         if (empty($headers)) {
-            fclose($handle);
-            wp_send_json_error('CSV soubor je prázdný nebo neplatný');
+            throw new \RuntimeException('CSV soubor je prázdný nebo neobsahuje hlavičku.');
         }
 
-        // Připravit flexibilní mapování hlaviček
         $normalize = function(string $s): string {
             $s = trim(mb_strtolower($s));
-            // odstranění diakritiky (pokud dostupné)
             $trans = @iconv('UTF-8', 'ASCII//TRANSLIT', $s);
             if ($trans !== false && $trans !== null) {
                 $s = strtolower(preg_replace('/[^a-z0-9_\- ]+/','',$trans));
@@ -607,21 +611,16 @@ class POI_Admin {
             return trim($s);
         };
 
-        // Map synonym → interní klíč
         $synonymToInternal = [
-            // Název
             'nazev' => 'Název',
             'name' => 'Název',
             'cafe name' => 'Název',
             'title' => 'Název',
-            // Popis
             'popis' => 'Popis',
             'description' => 'Popis',
             'address' => 'Popis',
-            // Typ
             'typ' => 'Typ',
             'type' => 'Typ',
-            // Latitude/Longitude
             'latitude' => 'Latitude',
             'lat' => 'Latitude',
             'y' => 'Latitude',
@@ -629,23 +628,19 @@ class POI_Admin {
             'lng' => 'Longitude',
             'lon' => 'Longitude',
             'x' => 'Longitude',
-            // Ikona / Barva
             'ikona' => 'Ikona',
             'icon' => 'Ikona',
             'barva' => 'Barva',
             'color' => 'Barva',
-            // ID
             'id' => 'ID',
         ];
 
-        // Vytvořit mapu indexu sloupce -> interní klíč
         $columnIndexToInternal = [];
         foreach ($headers as $idx => $rawHeader) {
             $key = $normalize((string)$rawHeader);
             if (isset($synonymToInternal[$key])) {
                 $columnIndexToInternal[$idx] = $synonymToInternal[$key];
             } else {
-                // Pokud neznámé, ponecháme původní hlavičku (pro případ původního CSV s českými názvy)
                 $columnIndexToInternal[$idx] = (string)$rawHeader;
             }
         }
@@ -654,18 +649,28 @@ class POI_Admin {
         $updated = 0;
         $errors = [];
         $row_count = 0;
+        $raw_rows = 0;
+        $skipped_empty = 0;
+
+        global $wpdb;
 
         while (($data = fgetcsv($handle)) !== false) {
+            $raw_rows++;
+
+            if ($this->is_csv_row_empty($data)) {
+                $skipped_empty++;
+                continue;
+            }
+
             $row_count++;
             error_log("[POI Import] Řádek {$row_count}: " . print_r($data, true));
-            
+
             if (count($data) < 2) {
                 $errors[] = "Řádek {$row_count}: Nedostatečný počet sloupců (" . count($data) . ")";
                 continue;
             }
 
             try {
-                // Sloučit data s interními klíči
                 $poi_data = [];
                 foreach ($data as $i => $val) {
                     $key = $columnIndexToInternal[$i] ?? ($headers[$i] ?? (string)$i);
@@ -678,7 +683,7 @@ class POI_Admin {
                 if (isset($poi_data['Název'])) {
                     error_log('[POI Import][DEBUG] Název vstup: ' . print_r($poi_data['Název'], true));
                 }
-                
+
                 $post_title = sanitize_text_field($poi_data['Název'] ?? '');
                 $post_content = sanitize_textarea_field($poi_data['Popis'] ?? '');
 
@@ -687,14 +692,11 @@ class POI_Admin {
                     continue;
                 }
 
-                // Připrava koordinát pro matching
                 $latInput = isset($poi_data['Latitude']) ? floatval($poi_data['Latitude']) : null;
                 $lngInput = isset($poi_data['Longitude']) ? floatval($poi_data['Longitude']) : null;
 
-                // Upsert strategie: 1) ID, 2) Title+Coords (tolerance), 3) vytvořit nový
                 $poi_id = 0;
 
-                // 1) Update podle ID, pokud je v CSV
                 if (!empty($poi_data['ID']) && is_numeric($poi_data['ID'])) {
                     $candidate_id = (int)$poi_data['ID'];
                     $candidate_post = get_post($candidate_id);
@@ -716,11 +718,8 @@ class POI_Admin {
                     }
                 }
 
-                // 2) Pokud nebylo nalezeno dle ID, zkus match Title+Coords (tolerance 1e-5)
                 if (!$poi_id && $latInput !== null && $lngInput !== null) {
-                    $tolerance = 1e-5; // ~1 m
-                    global $wpdb;
-                    // Najdeme kandidáty se stejným názvem
+                    $tolerance = 1e-5;
                     $candidates = $wpdb->get_col($wpdb->prepare(
                         "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'poi' AND post_status = 'publish' AND post_title = %s",
                         $post_title
@@ -732,7 +731,6 @@ class POI_Admin {
                         $clat = floatval($clat);
                         $clng = floatval($clng);
                         if (abs($clat - $latInput) <= $tolerance && abs($clng - $lngInput) <= $tolerance) {
-                            // Update existujícího
                             $update_post = [
                                 'ID' => (int)$cid,
                                 'post_title' => $post_title,
@@ -745,16 +743,14 @@ class POI_Admin {
                                 error_log("[POI Import] Aktualizuji existující POI dle Title+Coords: {$cid}");
                             } else {
                                 $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
-                                continue 2; // další CSV řádek
+                                continue;
                             }
                             break;
                         }
                     }
                 }
 
-                // 2b) Pokud stále nic, zkus Title-only pokud je výskyt jednoznačný (řeší dříve importované bez koordinát)
                 if (!$poi_id) {
-                    global $wpdb;
                     $candidates = $wpdb->get_col($wpdb->prepare(
                         "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'poi' AND post_status = 'publish' AND post_title = %s",
                         $post_title
@@ -778,11 +774,8 @@ class POI_Admin {
                     }
                 }
 
-                // 2c) Pokud máme koordináty a Title nebyl jednoznačný, zkus čistě podle blízkých koordinát (unikátní v okolí)
                 if (!$poi_id && $latInput !== null && $lngInput !== null) {
-                    $tolerance = 1e-5; // ~1 m
-                    global $wpdb;
-                    // Získat posledních 1000 POI (rychlý odhad) a filtrovat v PHP (
+                    $tolerance = 1e-5;
                     $ids = $wpdb->get_col("SELECT ID FROM {$wpdb->posts} WHERE post_type = 'poi' AND post_status = 'publish' ORDER BY ID DESC LIMIT 1000");
                     $within = [];
                     foreach ($ids as $cid) {
@@ -814,7 +807,6 @@ class POI_Admin {
                     }
                 }
 
-                // 3) Vytvořit nový, pokud se nenašel existující
                 if (!$poi_id) {
                     $post_data = [
                         'post_title' => $post_title,
@@ -824,26 +816,25 @@ class POI_Admin {
                     ];
                     error_log("[POI Import] Vytvářím POI: " . $post_title);
                     $poi_id = wp_insert_post($post_data);
-                if (is_wp_error($poi_id)) {
-                    $errors[] = "Řádek {$row_count}: Chyba při vytváření POI: " . $poi_id->get_error_message();
-                    continue;
-                }
-                error_log("[POI Import] POI vytvořen s ID: {$poi_id}");
+                    if (is_wp_error($poi_id)) {
+                        $errors[] = "Řádek {$row_count}: Chyba při vytváření POI: " . $poi_id->get_error_message();
+                        continue;
+                    }
+                    error_log("[POI Import] POI vytvořen s ID: {$poi_id}");
                     $imported++;
                 }
 
-                // Typ POI z CSV => vždy název termu (nikdy term_id), číselné hodnoty ignorovat
                 try {
-                    $type_name = db_normalize_poi_type_from_csv($poi_data, 'kavárna'); // fallback = kavárna
+                    $type_name = db_normalize_poi_type_from_csv($poi_data, 'kavárna');
                     if ($type_name !== '') {
                         if (is_numeric($type_name)) {
                             $type_name = 'kavárna';
                         }
                         $term = term_exists($type_name, 'poi_type');
-                    if (!$term) {
+                        if (!$term) {
                             $term = wp_insert_term($type_name, 'poi_type');
-                    }
-                    if (!is_wp_error($term)) {
+                        }
+                        if (!is_wp_error($term)) {
                             $term_id = is_array($term) ? ($term['term_id'] ?? 0) : (int)$term;
                             if ($term_id) {
                                 wp_set_object_terms($poi_id, (int)$term_id, 'poi_type', false);
@@ -856,7 +847,6 @@ class POI_Admin {
                     }
                 }
 
-                // Koordináty
                 if ($latInput !== null) {
                     $lat = $latInput;
                     if ($lat >= -90 && $lat <= 90) {
@@ -874,13 +864,11 @@ class POI_Admin {
                     }
                 }
 
-                // Ikona a barva
                 if (!empty($poi_data['Ikona'])) {
                     update_post_meta($poi_id, '_poi_icon', sanitize_text_field($poi_data['Ikona']));
                 }
                 if (!empty($poi_data['Barva'])) {
                     $color = $poi_data['Barva'];
-                    // Vlastní validace hex barvy
                     if (preg_match('/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/', $color)) {
                         update_post_meta($poi_id, '_poi_color', $color);
                     } else {
@@ -889,25 +877,87 @@ class POI_Admin {
                 }
 
                 error_log("[POI Import] POI {$poi_id} úspěšně importován/aktualizován");
-                
-            } catch (Exception $e) {
+            } catch (\Exception $e) {
                 $errors[] = "Řádek {$row_count}: Exception: " . $e->getMessage();
                 error_log("[POI Import] Exception v řádku {$row_count}: " . $e->getMessage());
-            } catch (Error $e) {
+            } catch (\Error $e) {
                 $errors[] = "Řádek {$row_count}: Fatal Error: " . $e->getMessage();
                 error_log("[POI Import] Fatal Error v řádku {$row_count}: " . $e->getMessage());
             }
+
+            if ($logCallback && is_callable($logCallback) && ($row_count % $logEvery === 0)) {
+                call_user_func($logCallback, [
+                    'row' => $row_count,
+                    'imported' => $imported,
+                    'updated' => $updated,
+                    'errors' => count($errors),
+                    'skipped' => $skipped_empty,
+                ]);
+            }
+
+            if ($maxRows > 0 && $row_count >= $maxRows) {
+                break;
+            }
+        }
+
+        return [
+            'imported' => $imported,
+            'updated' => $updated,
+            'errors' => $errors,
+            'total_rows' => $row_count,
+            'skipped_rows' => $skipped_empty,
+        ];
+    }
+
+    public function handle_import_csv(): void {
+        check_ajax_referer('db_poi_admin_nonce', 'nonce');
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Nedostatečná oprávnění');
+        }
+
+        if (!isset($_FILES['poi_csv'])) {
+            wp_send_json_error('Nebyl nahrán žádný soubor');
+        }
+
+        $file = $_FILES['poi_csv'];
+        
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            wp_send_json_error('Chyba při nahrávání souboru: ' . $this->get_upload_error_message($file['error']));
+        }
+
+        // Debug info
+        error_log('[POI Import] Soubor nahrán: ' . $file['name'] . ', velikost: ' . $file['size'] . ' bytes');
+        error_log('[POI Import] MIME typ: ' . $file['type']);
+
+        $handle = fopen($file['tmp_name'], 'r');
+        if (!$handle) {
+            wp_send_json_error('Nelze otevřít CSV soubor');
+        }
+
+        try {
+            $result = $this->import_from_stream($handle);
+        } catch (\Throwable $e) {
+            fclose($handle);
+            wp_send_json_error($e->getMessage());
         }
 
         fclose($handle);
 
-        error_log("[POI Import] Import dokončen. Importováno: {$imported}, Chyby: " . count($errors));
+        error_log("[POI Import] Import dokončen. Importováno: {$result['imported']}, Chyby: " . count($result['errors']));
 
         wp_send_json_success([
-            'message' => "Úspěšně importováno {$imported} POI z {$row_count} řádků",
-            'imported' => $imported,
-            'total_rows' => $row_count,
-            'errors' => $errors
+            'message' => sprintf(
+                'Úspěšně importováno %d POI (řádky: %d, aktualizováno: %d)',
+                $result['imported'],
+                $result['total_rows'],
+                $result['updated']
+            ),
+            'imported' => $result['imported'],
+            'updated' => $result['updated'],
+            'total_rows' => $result['total_rows'],
+            'skipped_rows' => $result['skipped_rows'],
+            'errors' => $result['errors']
         ]);
     }
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace DB\CLI;
 
 use DB\POI_Discovery;
+use DB\POI_Admin;
 
 if (!defined('ABSPATH')) { exit; }
 if (!defined('WP_CLI')) { return; }
@@ -107,6 +108,94 @@ class POI_Discovery_Command {
 		foreach ((array)$ids as $pid) { if ($qm->enqueue((int)$pid, 0)) $added++; else $skipped++; }
 		\WP_CLI::log(json_encode(array('enqueued' => $added, 'skipped' => $skipped), JSON_UNESCAPED_UNICODE));
 		\WP_CLI::success('Done');
+	}
+
+	/**
+	 * Importuje POI z CSV souboru pomocí stejné logiky jako admin rozhraní.
+	 *
+	 * ## OPTIONS
+	 *
+	 * <file>
+	 * : Absolutní nebo relativní cesta k CSV souboru.
+	 *
+	 * [--log-every=<n>]
+	 * : Po kolika záznamech zalogovat průběh (default 500).
+	 *
+	 * ## EXAMPLES
+	 * wp db-poi import-csv /var/www/html/wp-content/uploads/all_pois_unique-1.csv --log-every=1000
+	 */
+	public function import_csv($args, $assoc): void {
+		$file = $args[0] ?? '';
+		if (!$file) {
+			\WP_CLI::error('Zadejte cestu k CSV souboru.');
+			return;
+		}
+
+		$resolved = realpath($file);
+		$path = $resolved !== false ? $resolved : $file;
+		if (!is_readable($path)) {
+			$alt = trailingslashit(ABSPATH) . ltrim($file, '/');
+			if (is_readable($alt)) {
+				$path = $alt;
+			} else {
+				\WP_CLI::error('Soubor nelze načíst: ' . $file);
+				return;
+			}
+		}
+
+		$logEvery = isset($assoc['log-every']) ? max(1, (int)$assoc['log-every']) : 500;
+
+		if (!class_exists(POI_Admin::class)) {
+			\WP_CLI::error('POI admin služba není dostupná.');
+			return;
+		}
+
+		$admin = POI_Admin::get_instance();
+		$handle = fopen($path, 'r');
+		if (!$handle) {
+			\WP_CLI::error('Nepodařilo se otevřít soubor: ' . $path);
+			return;
+		}
+
+		try {
+			$result = $admin->import_from_stream($handle, [
+				'log_every' => $logEvery,
+				'log_callback' => function(array $stats) {
+					\WP_CLI::log(sprintf(
+						'Řádek %d | nové: %d | aktualizované: %d | chyby: %d | prázdné: %d',
+						$stats['row'],
+						$stats['imported'],
+						$stats['updated'],
+						$stats['errors'],
+						$stats['skipped']
+					));
+				},
+			]);
+		} catch (\Throwable $e) {
+			fclose($handle);
+			\WP_CLI::error($e->getMessage());
+			return;
+		}
+
+		fclose($handle);
+
+		if (!empty($result['errors'])) {
+			\WP_CLI::warning(sprintf('Import dokončen s %d hlášenými problémy.', count($result['errors'])));
+			foreach (array_slice($result['errors'], 0, 20) as $err) {
+				\WP_CLI::log(' - ' . $err);
+			}
+			if (count($result['errors']) > 20) {
+				\WP_CLI::log(sprintf('... a dalších %d chyb', count($result['errors']) - 20));
+			}
+		}
+
+		\WP_CLI::success(sprintf(
+			'Hotovo. Nové: %d | aktualizované: %d | zpracované řádky: %d | přeskočené prázdné: %d',
+			$result['imported'],
+			$result['updated'],
+			$result['total_rows'],
+			$result['skipped_rows']
+		));
 	}
 }
 
