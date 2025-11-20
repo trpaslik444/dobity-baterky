@@ -354,8 +354,8 @@ jQuery(document).ready(function($) {
             
             if (char === '"') {
                 if (inQuotes && nextChar === '"') {
-                    // Escaped quote ("")
-                    currentRow += '"';
+                    // Escaped quote ("") - zachovat jako "" (neupravovat obsah CSV)
+                    currentRow += '""';
                     i += 2;
                 } else {
                     // Toggle quote state
