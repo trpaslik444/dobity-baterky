@@ -1058,7 +1058,7 @@ class POI_Admin {
             wp_send_json_error('Nedostatečná oprávnění');
         }
 
-        $chunk_data = isset($_POST['chunk_data']) ? $_POST['chunk_data'] : '';
+        $chunk_data = isset($_POST['chunk_data']) ? wp_unslash($_POST['chunk_data']) : '';
         $is_first = isset($_POST['is_first']) && $_POST['is_first'] === '1';
         $is_last = isset($_POST['is_last']) && $_POST['is_last'] === '1';
         $chunk_index = isset($_POST['chunk_index']) ? (int)$_POST['chunk_index'] : 0;
