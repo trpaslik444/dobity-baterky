@@ -802,7 +802,7 @@ class POI_Admin {
                             error_log("[POI Import] Aktualizuji existující POI dle Coords-only: {$cid}");
                         } else {
                             $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
-                            continue 2; // přeskočit tento CSV řádek, abychom nevytvořili duplicitní POI
+                            continue; // přeskočit tento CSV řádek, abychom nevytvořili duplicitní POI
                         }
                     }
                 }
