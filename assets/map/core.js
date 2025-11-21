@@ -7995,9 +7995,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Přidat autocomplete pro desktop
+    // Zvýšit debounce na 400ms pro desktop, aby se snížilo množství požadavků
     const handleDesktopAutocompleteInput = debounce((value) => {
       showDesktopAutocomplete(value, searchInput);
-    }, 250);
+    }, 400);
 
     searchInput.addEventListener('input', function() {
       const query = this.value.trim();
@@ -9994,6 +9995,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         console.warn('[DB Map][SmartLoading] showManualLoadButton: tlačítko neexistuje!');
         return;
       }
+      // Kontrola, zda už není tlačítko zobrazené - zabránit nekonečné smyčce
+      const currentDisplay = window.getComputedStyle(this.manualLoadButton).display;
+      if (currentDisplay !== 'none' && this.outsideLoadedArea) {
+        // Tlačítko už je zobrazené a stav je správný - neprovádět zbytečné operace
+        return;
+      }
       const inLeaflet = typeof this.manualLoadButton.closest === 'function' ? this.manualLoadButton.closest('.leaflet-container') : null;
       const mode = inLeaflet ? 'map' : 'body';
       this.applyManualButtonStyles(mode);
@@ -10574,7 +10581,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         <div style="display: flex; gap: 8px; align-items: center;">
         <input type="text"
                placeholder="Hledám víc než jen cíl cesty.."
-                 style="flex: 1; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; outline: none;"
+                 style="flex: 1; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; outline: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent;"
                id="db-mobile-search-field-input">
           <button type="button" 
                   style="padding: 0.75rem; background: #049FE8; color: #fff; border: none; border-radius: 8px; cursor: pointer; white-space: nowrap;"
@@ -10595,9 +10602,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Event listener pro input
       const searchInput = searchField.querySelector('#db-mobile-search-field-input');
+      // Pro mobilní zařízení použít kratší debounce (300ms) pro lepší UX
       const handleAutocompleteInput = debounce((value) => {
         showMobileAutocomplete(value, searchInput);
-      }, 250);
+      }, 300);
 
       searchInput.addEventListener('input', function() {
         const query = this.value.trim();
@@ -10638,14 +10646,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
       }
       
-      // Event listener pro kliknutí mimo pole - skrýt pole
-      document.addEventListener('click', function(e) {
+      // Event listener pro kliknutí/touch mimo pole - skrýt pole
+      // Použít jak click, tak touchstart pro lepší kompatibilitu s Androidem
+      const handleOutsideClick = function(e) {
         if (!searchField.contains(e.target) && !e.target.closest('#db-search-toggle')) {
           if (!searchField.classList.contains('hidden')) {
             closeMobileSearchField();
           }
         }
-      });
+      };
+      document.addEventListener('click', handleOutsideClick);
+      document.addEventListener('touchstart', handleOutsideClick, { passive: true });
       
       return searchField;
     } else {
@@ -10675,9 +10686,16 @@ document.addEventListener('DOMContentLoaded', async function() {
               // Focus na input
               const searchInput = searchField.querySelector('#db-mobile-search-field-input');
               if (searchInput) {
-                // Nespouštět auto-focus na mobilech kvůli iOS zoomu
-                const isMobile2 = /Mobi|Android/i.test(navigator.userAgent);
-                if (!isMobile2) {
+                // Pro Android použít touch event pro focus, pro iOS nechat bez focus kvůli zoomu
+                const isAndroid = /Android/i.test(navigator.userAgent);
+                const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                if (isAndroid) {
+                  // Na Androidu použít touchstart pro focus, aby fungovalo kliknutí
+                  searchInput.addEventListener('touchstart', function() {
+                    this.focus();
+                  }, { once: true, passive: true });
+                } else if (!isIOS) {
+                  // Na desktopu použít normální focus
                   setTimeout(() => searchInput.focus(), 100);
                 }
               }
@@ -11296,7 +11314,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (error.name === 'AbortError') {
         return;
       }
-      console.error('Chyba při načítání desktop autocomplete:', error);
+      // Pokud je to CORS chyba, zobrazit pouze interní výsledky
+      if (error.message && (error.message.includes('CORS') || error.message.includes('Failed to fetch'))) {
+        console.warn('CORS chyba při načítání externích výsledků, zobrazuji pouze interní:', error);
+        // Zkusit zobrazit alespoň interní výsledky, pokud jsou
+        try {
+          const internal = await getInternalSearchResults(trimmed, signal);
+          if (!signal.aborted && internal && internal.length > 0) {
+            renderDesktopAutocomplete({
+              internal,
+              external: []
+            }, inputElement);
+          }
+        } catch (internalError) {
+          console.error('Chyba při načítání interních výsledků:', internalError);
+        }
+      } else {
+        console.error('Chyba při načítání desktop autocomplete:', error);
+      }
       if (desktopSearchController && desktopSearchController.signal === signal) {
         desktopSearchController = null;
       }
@@ -11725,7 +11760,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (error.name === 'AbortError') {
         return;
       }
-      console.error('Chyba při načítání autocomplete:', error);
+      // Pokud je to CORS chyba, zobrazit pouze interní výsledky
+      if (error.message && (error.message.includes('CORS') || error.message.includes('Failed to fetch'))) {
+        console.warn('CORS chyba při načítání externích výsledků, zobrazuji pouze interní:', error);
+        // Zkusit zobrazit alespoň interní výsledky, pokud jsou
+        try {
+          const internal = await getInternalSearchResults(trimmed, signal);
+          if (!signal.aborted && internal && internal.length > 0) {
+            renderMobileAutocomplete({
+              internal,
+              external: []
+            }, inputElement);
+          }
+        } catch (internalError) {
+          console.error('Chyba při načítání interních výsledků:', internalError);
+        }
+      } else {
+        console.error('Chyba při načítání autocomplete:', error);
+      }
       if (mobileSearchController && mobileSearchController.signal === signal) {
         mobileSearchController = null;
       }
