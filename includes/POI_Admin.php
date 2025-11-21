@@ -1093,25 +1093,28 @@ class POI_Admin {
         // Zpracovat hlavičku
         if ($is_first) {
             // Pro první chunk uložit hlavičku
+            // Odstranit případné úvodní prázdné řádky
+            $chunk_data = ltrim($chunk_data, "\r\n");
             $lines = explode("\n", $chunk_data);
-            if (!empty($lines[0])) {
-                $header = trim($lines[0]);
-                if (!empty($header)) {
-                    set_transient('db_poi_import_header', $header, 1800); // 30 minut TTL
-                } else {
-                    db_set_poi_import_running(false);
-                    delete_transient('db_poi_import_processed_ids');
-                    delete_transient('db_poi_import_total_stats');
-                    delete_transient('db_poi_import_header');
-                    wp_send_json_error('Hlavička CSV souboru je prázdná.');
-                    return;
+            
+            // Najít první neprázdný řádek jako hlavičku
+            $header = null;
+            foreach ($lines as $line) {
+                $trimmed = trim($line);
+                if (!empty($trimmed)) {
+                    $header = $trimmed;
+                    break;
                 }
+            }
+            
+            if ($header && !empty($header)) {
+                set_transient('db_poi_import_header', $header, 1800); // 30 minut TTL
             } else {
                 db_set_poi_import_running(false);
                 delete_transient('db_poi_import_processed_ids');
                 delete_transient('db_poi_import_total_stats');
                 delete_transient('db_poi_import_header');
-                wp_send_json_error('Hlavička CSV souboru nebyla nalezena v prvním chunku.');
+                wp_send_json_error('Hlavička CSV souboru nebyla nalezena v prvním chunku. Chunk data: ' . substr($chunk_data, 0, 200));
                 return;
             }
         } else {
