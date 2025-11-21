@@ -58,6 +58,17 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
+  // Externí API požadavky (např. Nominatim, OpenRouteService) - přeskočit Service Worker, aby nebyly blokovány CORS
+  // Tato kontrola musí být na začátku, před ostatními kontroly
+  const isExternalAPI = url.hostname === 'nominatim.openstreetmap.org' || 
+                        url.hostname === 'api.openrouteservice.org' ||
+                        url.hostname.endsWith('.openstreetmap.org') ||
+                        url.hostname.includes('openrouteservice.org');
+  if (isExternalAPI) {
+    // Nechat projít bez Service Worker interference - browser zpracuje CORS normálně
+    return;
+  }
+
   const isMapPage = url.pathname.startsWith('/mapa');
   const isWPApi   = url.pathname.startsWith('/wp-json/');
   const isAjax    = url.pathname.startsWith('/wp-admin/admin-ajax.php');
@@ -128,13 +139,36 @@ self.addEventListener('fetch', (event) => {
   // Ostatní (CSS/JS/fonty): stale-while-revalidate
   event.respondWith(
     (async () => {
-      const cache = await caches.open(RUNTIME_CACHE);
-      const cached = await cache.match(request);
-      const network = fetch(request).then((resp) => {
-        cache.put(request, resp.clone());
-        return resp;
-      }).catch(() => null);
-      return cached || network || new Response('', { status: 504 });
+      try {
+        const cache = await caches.open(RUNTIME_CACHE);
+        const cached = await cache.match(request);
+        if (cached) {
+          // Vrátit cached verzi a aktualizovat na pozadí
+          fetch(request).then((resp) => {
+            if (resp && resp.ok) {
+              cache.put(request, resp.clone());
+            }
+          }).catch(() => {
+            // Ignorovat chyby při aktualizaci cache
+          });
+          return cached;
+        }
+        // Pokud není v cache, zkusit network
+        const networkResp = await fetch(request);
+        if (networkResp && networkResp.ok) {
+          cache.put(request, networkResp.clone());
+        }
+        return networkResp;
+      } catch (e) {
+        // Pokud network selže, zkusit ještě jednou cache
+        const cache = await caches.open(RUNTIME_CACHE);
+        const cached = await cache.match(request);
+        if (cached) {
+          return cached;
+        }
+        // Fallback: prázdná response s 504
+        return new Response('', { status: 504, statusText: 'Gateway Timeout' });
+      }
     })()
   );
 });
