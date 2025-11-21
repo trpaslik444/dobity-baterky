@@ -25,6 +25,23 @@ if [ -z "${PROD_PASS:-}" ]; then
   exit 1
 fi
 
+# Zobrazit informace o deployi
+echo ""
+echo "📋 Informace o deployi:"
+echo "   Branch: $(git rev-parse --abbrev-ref HEAD)"
+echo "   Commit: $(git rev-parse --short HEAD)"
+echo "   Build: $BUILD_DIR"
+echo "   Backup: bude vytvořen automaticky s timestampem"
+echo ""
+echo "⚠️  POZOR: Toto nasadí na PRODUKCI (dobitybaterky.cz)!"
+echo ""
+read -p "Pokračovat s nasazením na produkci? (ano/ne): " confirm
+if [ "$confirm" != "ano" ]; then
+  echo "❌ Deploy zrušen."
+  exit 0
+fi
+
+echo ""
 echo "🚀 Nasazuji na produkci..."
 "$SCRIPT_DIR/deploy-production.expect" "$BUILD_DIR"
 
