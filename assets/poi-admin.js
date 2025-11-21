@@ -437,8 +437,8 @@ jQuery(document).ready(function($) {
             
             const header = lines[0]; // První řádek je hlavička
             
-            // Rozdělit na chunky (po 500 řádcích)
-            const CHUNK_SIZE = 500;
+            // Rozdělit na chunky (po 250 řádcích pro lepší výkon a menší timeout)
+            const CHUNK_SIZE = 250;
             const chunks = [];
             let currentChunk = [header]; // První chunk obsahuje hlavičku
             
@@ -517,7 +517,7 @@ jQuery(document).ready(function($) {
                 is_first: isFirst ? '1' : '0',
                 is_last: isLast ? '1' : '0'
             },
-            timeout: 120000, // 2 minuty na chunk
+            timeout: 180000, // 3 minuty na chunk (zvýšeno kvůli velkým souborům)
             success: function(response) {
                 if (response.success && response.data) {
                     const elapsed = (Date.now() - startTime) / 1000;
