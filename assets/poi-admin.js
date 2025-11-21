@@ -437,9 +437,9 @@ jQuery(document).ready(function($) {
             
             const header = lines[0]; // První řádek je hlavička
             
-            // Rozdělit na chunky (po 100 řádcích pro lepší výkon a menší timeout)
+            // Rozdělit na chunky (po 50 řádcích pro lepší výkon a menší timeout)
             // Menší chunky jsou nutné kvůli serverovým timeoutům
-            const CHUNK_SIZE = 100;
+            const CHUNK_SIZE = 50;
             const chunks = [];
             let currentChunk = [header]; // První chunk obsahuje hlavičku
             
@@ -584,6 +584,15 @@ jQuery(document).ready(function($) {
                 let errorMsg = `Chyba při zpracování balíčku ${currentIndex + 1}`;
                 if (status === 'timeout' || xhr.status === 504) {
                     errorMsg = `❌ Timeout při zpracování balíčku ${currentIndex + 1}`;
+                    addLog(`${errorMsg}`, 'error');
+                    addLog(`Zkouším znovu za 2 sekundy...`, 'warning');
+                    
+                    // Retry mechanismus pro timeouty - zkusit znovu po 2 sekundách
+                    setTimeout(function() {
+                        addLog(`Opakuji balíček ${currentIndex + 1}...`, 'info');
+                        processChunks(chunks, currentIndex, totalChunks, submitBtn, originalText, form);
+                    }, 2000);
+                    return; // Neukončit import, ale zkusit znovu
                 } else if (xhr.responseJSON && xhr.responseJSON.data) {
                     errorMsg = xhr.responseJSON.data;
                 }
