@@ -96,12 +96,12 @@
       
       if (acceptBtn) {
         acceptBtn.addEventListener('click', async () => {
-          if (deferredPrompt) {
-            deferredPrompt.prompt();
+        if (deferredPrompt) {
+          deferredPrompt.prompt();
             try {
-              const { outcome } = await deferredPrompt.userChoice;
-              if (outcome === 'accepted') {
-                console.log('Uživatel přijal PWA instalaci');
+          const { outcome } = await deferredPrompt.userChoice;
+          if (outcome === 'accepted') {
+            console.log('Uživatel přijal PWA instalaci');
                 localStorage.setItem(INSTALLED_KEY, '1');
                 promptEl.remove();
               } else {
@@ -112,10 +112,10 @@
             } catch (_) {
               setDismissForDays(DISMISS_TTL_DAYS);
               promptEl.remove();
-            }
-            deferredPrompt = null;
           }
-        });
+          deferredPrompt = null;
+        }
+      });
       }
       if (dismissBtn) {
         dismissBtn.addEventListener('click', () => {
