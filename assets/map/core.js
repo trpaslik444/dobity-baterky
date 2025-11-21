@@ -4733,37 +4733,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     return '';
   }
 
-  function openMobileSheet(feature) {
-    if (window.innerWidth > 900) return;
-
-    const p = feature.properties || {};
-    const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
-    const lat = coords ? coords[1] : null;
-    const lng = coords ? coords[0] : null;
-    const favoriteButtonHtml = getFavoriteStarButtonHtml(p, 'sheet');
-    const favoriteChipHtml = getFavoriteChipHtml(p, 'sheet');
-
-  // Získat barvu čtverečku podle typu místa (stejně jako piny na mapě)
-  const getSquareColor = (props) => {
-    if (props.post_type === 'charging_location') {
-      // Pro nabíječky použít stejnou logiku jako piny
-      const mode = getChargerMode(props);
-      const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
-      const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
-      if (mode === 'hybrid') {
-        return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
-      }
-      return mode === 'dc' ? dcColor : acColor;
-    } else if (props.post_type === 'rv_spot') {
-      return '#FCE67D'; // Žlutá pro RV místa
-    } else if (props.post_type === 'poi') {
-      // Pozadí u POI dědí centrální barvu pinu
-      return props.icon_color || '#FCE67D';
-    }
-    return '#049FE8'; // Modrá jako fallback
-  };
-  // Získat originální ikonu pro typ bodu
-  const getTypeIcon = (props) => {
+  // Získat originální ikonu pro typ bodu - globální funkce pro použití v renderCards
+  function getTypeIcon(props) {
     if (props.svg_content && props.svg_content.trim() !== '') {
       // Pro POI použít SVG obsah
       return props.svg_content;
@@ -4795,6 +4766,36 @@ document.addEventListener('DOMContentLoaded', async function() {
       </svg>`;
     }
     return '📍';
+  }
+
+  function openMobileSheet(feature) {
+    if (window.innerWidth > 900) return;
+
+    const p = feature.properties || {};
+    const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
+    const lat = coords ? coords[1] : null;
+    const lng = coords ? coords[0] : null;
+    const favoriteButtonHtml = getFavoriteStarButtonHtml(p, 'sheet');
+    const favoriteChipHtml = getFavoriteChipHtml(p, 'sheet');
+
+  // Získat barvu čtverečku podle typu místa (stejně jako piny na mapě)
+  const getSquareColor = (props) => {
+    if (props.post_type === 'charging_location') {
+      // Pro nabíječky použít stejnou logiku jako piny
+      const mode = getChargerMode(props);
+      const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+      const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
+      if (mode === 'hybrid') {
+        return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
+      }
+      return mode === 'dc' ? dcColor : acColor;
+    } else if (props.post_type === 'rv_spot') {
+      return '#FCE67D'; // Žlutá pro RV místa
+    } else if (props.post_type === 'poi') {
+      // Pozadí u POI dědí centrální barvu pinu
+      return props.icon_color || '#FCE67D';
+    }
+    return '#049FE8'; // Modrá jako fallback
   };
     // Nový obsah s kompaktním designem
     const finalHTML = `
@@ -9997,8 +9998,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       // Kontrola, zda už není tlačítko zobrazené - zabránit nekonečné smyčce
       const currentDisplay = window.getComputedStyle(this.manualLoadButton).display;
-      if (currentDisplay !== 'none' && this.outsideLoadedArea) {
-        // Tlačítko už je zobrazené a stav je správný - neprovádět zbytečné operace
+      if (currentDisplay !== 'none' && currentDisplay !== 'hidden') {
+        // Tlačítko už je zobrazené - neprovádět zbytečné operace a logování
         return;
       }
       const inLeaflet = typeof this.manualLoadButton.closest === 'function' ? this.manualLoadButton.closest('.leaflet-container') : null;
@@ -11280,11 +11281,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     const normalized = trimmed.toLowerCase();
     const cachedInternal = internalSearchCache.get(normalized);
     const cachedExternal = externalSearchCache.get(normalized);
-    if (cachedInternal || cachedExternal) {
+    
+    // Zobrazit cache pouze pokud už máme kompletní data (oba typy výsledků)
+    // Jinak počkat na načtení dat, aby se nezobrazovaly duplicitní listy
+    const hasCompleteCache = cachedInternal && cachedExternal;
+    
+    if (hasCompleteCache) {
       renderDesktopAutocomplete({
         internal: cachedInternal || [],
         external: (cachedExternal && cachedExternal.results) || []
       }, inputElement);
+      // Pokud máme kompletní cache, nemusíme načítat znovu
+      return;
     }
 
     if (desktopSearchController) {
