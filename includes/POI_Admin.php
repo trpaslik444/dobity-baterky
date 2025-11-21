@@ -703,7 +703,6 @@ class POI_Admin {
             }
 
             $row_count++;
-            error_log("[POI Import] Řádek {$row_count}: " . print_r($data, true));
 
             if (count($data) < 2) {
                 $errors[] = "Řádek {$row_count}: Nedostatečný počet sloupců (" . count($data) . ")";
@@ -715,13 +714,6 @@ class POI_Admin {
                 foreach ($data as $i => $val) {
                     $key = $columnIndexToInternal[$i] ?? ($headers[$i] ?? (string)$i);
                     $poi_data[$key] = $val;
-                }
-                error_log("[POI Import] Zpracovávám data: " . print_r($poi_data, true));
-                if (isset($poi_data['Typ'])) {
-                    error_log('[POI Import][DEBUG] Typ vstup: ' . print_r($poi_data['Typ'], true));
-                }
-                if (isset($poi_data['Název'])) {
-                    error_log('[POI Import][DEBUG] Název vstup: ' . print_r($poi_data['Název'], true));
                 }
 
                 $post_title = sanitize_text_field($poi_data['Název'] ?? '');
@@ -751,7 +743,6 @@ class POI_Admin {
                         if (!is_wp_error($result)) {
                             $poi_id = $candidate_id;
                             $updated++;
-                            error_log("[POI Import] Aktualizuji existující POI dle ID: {$candidate_id}");
                         } else {
                             $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$candidate_id}: " . $result->get_error_message();
                             continue;
@@ -761,29 +752,37 @@ class POI_Admin {
 
                 if (!$poi_id && $latInput !== null && $lngInput !== null) {
                     $tolerance = 1e-5;
-                    $candidates = $wpdb->get_col($wpdb->prepare(
-                        "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'poi' AND post_status = 'publish' AND post_title = %s",
+                    // Optimalizace: použít JOIN pro načtení lat/lng najednou místo get_post_meta() v loopu
+                    $candidates = $wpdb->get_results($wpdb->prepare(
+                        "SELECT p.ID, 
+                                lat.meta_value AS lat, 
+                                lng.meta_value AS lng
+                         FROM {$wpdb->posts} p
+                         LEFT JOIN {$wpdb->postmeta} lat ON p.ID = lat.post_id AND lat.meta_key = '_poi_lat'
+                         LEFT JOIN {$wpdb->postmeta} lng ON p.ID = lng.post_id AND lng.meta_key = '_poi_lng'
+                         WHERE p.post_type = 'poi' 
+                           AND p.post_status = 'publish' 
+                           AND p.post_title = %s
+                           AND lat.meta_value != '' 
+                           AND lng.meta_value != ''",
                         $post_title
-                    ));
-                    foreach ($candidates as $cid) {
-                        $clat = get_post_meta((int)$cid, '_poi_lat', true);
-                        $clng = get_post_meta((int)$cid, '_poi_lng', true);
-                        if ($clat === '' || $clng === '') continue;
-                        $clat = floatval($clat);
-                        $clng = floatval($clng);
+                    ), ARRAY_A);
+                    
+                    foreach ($candidates as $candidate) {
+                        $clat = floatval($candidate['lat']);
+                        $clng = floatval($candidate['lng']);
                         if (abs($clat - $latInput) <= $tolerance && abs($clng - $lngInput) <= $tolerance) {
                             $update_post = [
-                                'ID' => (int)$cid,
+                                'ID' => (int)$candidate['ID'],
                                 'post_title' => $post_title,
                                 'post_content' => $post_content,
                             ];
                             $result = wp_update_post($update_post, true);
                             if (!is_wp_error($result)) {
-                                $poi_id = (int)$cid;
+                                $poi_id = (int)$candidate['ID'];
                                 $updated++;
-                                error_log("[POI Import] Aktualizuji existující POI dle Title+Coords: {$cid}");
                             } else {
-                                $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
+                                $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$candidate['ID']}: " . $result->get_error_message();
                                 $rowAborted = true;
                                 break;
                             }
@@ -811,7 +810,6 @@ class POI_Admin {
                         if (!is_wp_error($result)) {
                             $poi_id = $cid;
                             $updated++;
-                            error_log("[POI Import] Aktualizuji existující POI dle Title-only: {$cid}");
                         } else {
                             $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
                             continue; // přeskočit celý řádek, aby se nevytvářely duplicitní POI
@@ -821,16 +819,29 @@ class POI_Admin {
 
                 if (!$poi_id && $latInput !== null && $lngInput !== null) {
                     $tolerance = 1e-5;
-                    $ids = $wpdb->get_col("SELECT ID FROM {$wpdb->posts} WHERE post_type = 'poi' AND post_status = 'publish' ORDER BY ID DESC LIMIT 1000");
+                    // Optimalizace: použít JOIN pro načtení lat/lng najednou místo get_post_meta() v loopu
+                    $candidates = $wpdb->get_results(
+                        "SELECT p.ID, 
+                                lat.meta_value AS lat, 
+                                lng.meta_value AS lng
+                         FROM {$wpdb->posts} p
+                         LEFT JOIN {$wpdb->postmeta} lat ON p.ID = lat.post_id AND lat.meta_key = '_poi_lat'
+                         LEFT JOIN {$wpdb->postmeta} lng ON p.ID = lng.post_id AND lng.meta_key = '_poi_lng'
+                         WHERE p.post_type = 'poi' 
+                           AND p.post_status = 'publish' 
+                           AND lat.meta_value != '' 
+                           AND lng.meta_value != ''
+                         ORDER BY p.ID DESC 
+                         LIMIT 1000",
+                        ARRAY_A
+                    );
+                    
                     $within = [];
-                    foreach ($ids as $cid) {
-                        $clat = get_post_meta((int)$cid, '_poi_lat', true);
-                        $clng = get_post_meta((int)$cid, '_poi_lng', true);
-                        if ($clat === '' || $clng === '') continue;
-                        $clat = floatval($clat);
-                        $clng = floatval($clng);
+                    foreach ($candidates as $candidate) {
+                        $clat = floatval($candidate['lat']);
+                        $clng = floatval($candidate['lng']);
                         if (abs($clat - $latInput) <= $tolerance && abs($clng - $lngInput) <= $tolerance) {
-                            $within[] = (int)$cid;
+                            $within[] = (int)$candidate['ID'];
                         }
                     }
                     if (count($within) === 1) {
@@ -844,7 +855,6 @@ class POI_Admin {
                         if (!is_wp_error($result)) {
                             $poi_id = $cid;
                             $updated++;
-                            error_log("[POI Import] Aktualizuji existující POI dle Coords-only: {$cid}");
                         } else {
                             $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
                             $rowAborted = true;
@@ -862,13 +872,11 @@ class POI_Admin {
                         'post_type' => 'poi',
                         'post_status' => 'publish'
                     ];
-                    error_log("[POI Import] Vytvářím POI: " . $post_title);
                     $poi_id = wp_insert_post($post_data);
                     if (is_wp_error($poi_id)) {
                         $errors[] = "Řádek {$row_count}: Chyba při vytváření POI: " . $poi_id->get_error_message();
                         continue;
                     }
-                    error_log("[POI Import] POI vytvořen s ID: {$poi_id}");
                     $imported++;
                 }
 
@@ -924,8 +932,6 @@ class POI_Admin {
                     }
                 }
 
-                error_log("[POI Import] POI {$poi_id} úspěšně importován/aktualizován");
-                
                 // Přidat ID do seznamu pro pozdější nearby recompute
                 if ($poi_id > 0 && !$rowAborted) {
                     $processed_poi_ids[] = $poi_id;
@@ -1150,10 +1156,16 @@ class POI_Admin {
         rewind($temp_file);
 
         try {
+            // Vypnout automatické ukládání pro rychlejší zpracování
+            wp_suspend_cache_addition(true);
+            
             // Zpracovat chunk
             $result = $this->import_from_stream($temp_file, [
                 'log_every' => 1000, // Méně logování pro chunky
             ]);
+            
+            // Znovu zapnout automatické ukládání
+            wp_suspend_cache_addition(false);
 
             // Načíst a aktualizovat celkové statistiky
             $total_stats = get_transient('db_poi_import_total_stats');

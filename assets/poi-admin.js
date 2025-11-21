@@ -437,9 +437,8 @@ jQuery(document).ready(function($) {
             
             const header = lines[0]; // První řádek je hlavička
             
-            // Rozdělit na chunky (po 100 řádcích pro lepší výkon a menší timeout)
-            // Menší chunky jsou nutné kvůli serverovým timeoutům
-            const CHUNK_SIZE = 100;
+            // Rozdělit na chunky (po 500 řádcích - optimalizováno pro rychlé zpracování)
+            const CHUNK_SIZE = 500;
             const chunks = [];
             let currentChunk = [header]; // První chunk obsahuje hlavičku
             
@@ -470,8 +469,8 @@ jQuery(document).ready(function($) {
             $('#db-import-progress-container').show();
             updateProgress(0, totalChunks, 0);
 
-            // Spustit chunked import
-            processChunks(chunks, 0, totalChunks, submitBtn, originalText, formElement);
+            // Spustit chunked import (retryCount = 0 pro první pokus)
+            processChunks(chunks, 0, totalChunks, submitBtn, originalText, formElement, 0);
         };
 
         reader.onerror = function() {
@@ -483,7 +482,7 @@ jQuery(document).ready(function($) {
     }
 
     // Zpracovat chunky postupně
-    function processChunks(chunks, currentIndex, totalChunks, submitBtn, originalText, form) {
+    function processChunks(chunks, currentIndex, totalChunks, submitBtn, originalText, form, retryCount) {
         // Pomocná funkce pro reset formu
         function resetForm() {
             if (form && typeof form.reset === 'function') {
@@ -495,6 +494,14 @@ jQuery(document).ready(function($) {
                 }
             }
         }
+        
+        // Inicializovat retry count pokud není nastaven
+        if (typeof retryCount === 'undefined') {
+            retryCount = 0;
+        }
+        
+        // Maximální počet retry pokusů
+        const MAX_RETRIES = 3;
         
         if (currentIndex >= chunks.length) {
             // Hotovo
@@ -568,9 +575,9 @@ jQuery(document).ready(function($) {
                         resetForm();
                         loadPoiByFilters();
                     } else {
-                        // Pokračovat s dalším chunkem
+                        // Pokračovat s dalším chunkem (reset retry count)
                         setTimeout(function() {
-                            processChunks(chunks, currentIndex + 1, totalChunks, submitBtn, originalText, form);
+                            processChunks(chunks, currentIndex + 1, totalChunks, submitBtn, originalText, form, 0);
                         }, 100); // Malá pauza mezi chunky
                     }
                 } else {
@@ -584,6 +591,26 @@ jQuery(document).ready(function($) {
                 let errorMsg = `Chyba při zpracování balíčku ${currentIndex + 1}`;
                 if (status === 'timeout' || xhr.status === 504) {
                     errorMsg = `❌ Timeout při zpracování balíčku ${currentIndex + 1}`;
+                    
+                    // Zkontrolovat, zda jsme dosáhli maximálního počtu retry pokusů
+                    if (retryCount >= MAX_RETRIES) {
+                        addLog(`${errorMsg}`, 'error');
+                        addLog(`❌ Balíček ${currentIndex + 1} selhal po ${MAX_RETRIES} pokusech. Import přerušen.`, 'error');
+                        addLog('💡 Zkuste rozdělit CSV soubor na menší části nebo použijte CLI import.', 'info');
+                        submitBtn.prop('disabled', false).text(originalText);
+                        resetForm();
+                        return;
+                    }
+                    
+                    addLog(`${errorMsg}`, 'error');
+                    addLog(`Zkouším znovu za 2 sekundy... (pokus ${retryCount + 1}/${MAX_RETRIES})`, 'warning');
+                    
+                    // Retry mechanismus pro timeouty - zkusit znovu po 2 sekundách
+                    setTimeout(function() {
+                        addLog(`Opakuji balíček ${currentIndex + 1}...`, 'info');
+                        processChunks(chunks, currentIndex, totalChunks, submitBtn, originalText, form, retryCount + 1);
+                    }, 2000);
+                    return; // Neukončit import, ale zkusit znovu
                 } else if (xhr.responseJSON && xhr.responseJSON.data) {
                     errorMsg = xhr.responseJSON.data;
                 }
