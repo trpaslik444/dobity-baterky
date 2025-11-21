@@ -529,7 +529,8 @@ jQuery(document).ready(function($) {
                 chunk_index: currentIndex,
                 total_chunks: totalChunks,
                 is_first: isFirst ? '1' : '0',
-                is_last: isLast ? '1' : '0'
+                is_last: isLast ? '1' : '0',
+                is_retry: (retryCount > 0) ? '1' : '0'
             },
             timeout: 180000, // 3 minuty na chunk (zvýšeno kvůli velkým souborům)
             success: function(response) {

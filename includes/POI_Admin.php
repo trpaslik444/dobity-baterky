@@ -1071,6 +1071,7 @@ class POI_Admin {
         $chunk_data = isset($_POST['chunk_data']) ? wp_unslash($_POST['chunk_data']) : '';
         $is_first = isset($_POST['is_first']) && $_POST['is_first'] === '1';
         $is_last = isset($_POST['is_last']) && $_POST['is_last'] === '1';
+        $is_retry = isset($_POST['is_retry']) && $_POST['is_retry'] === '1';
         $chunk_index = isset($_POST['chunk_index']) ? (int)$_POST['chunk_index'] : 0;
         $total_chunks = isset($_POST['total_chunks']) ? (int)$_POST['total_chunks'] : 1;
 
@@ -1080,6 +1081,19 @@ class POI_Admin {
 
         // Pro první chunk nastavit flag a vymazat předchozí stav
         if ($is_first) {
+            // Pokud je to retry pokus a flag je stále nastavený, resetovat ho
+            // (předchozí pokus pravděpodobně timeoutnul)
+            if ($is_retry && db_is_poi_import_running()) {
+                // Zkontrolovat, zda existují transienty - pokud ne, znamená to, že předchozí pokus selhal
+                $existing_header = get_transient('db_poi_import_header');
+                $existing_stats = get_transient('db_poi_import_total_stats');
+                
+                // Pokud neexistují transienty nebo jsou prázdné, resetovat flag
+                if (!$existing_header && !$existing_stats) {
+                    db_set_poi_import_running(false);
+                }
+            }
+            
             // Kontrola, zda už neprobíhá jiný import (ochrana před souběžnými importy)
             if (db_is_poi_import_running()) {
                 wp_send_json_error('Import již probíhá. Počkejte, až se dokončí současný import, nebo zkuste znovu za chvíli.');
