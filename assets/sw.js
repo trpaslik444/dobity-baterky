@@ -59,11 +59,14 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   // Externí API požadavky (např. Nominatim, OpenRouteService) - přeskočit Service Worker, aby nebyly blokovány CORS
-  // Tato kontrola musí být na začátku, před ostatními kontroly
-  const isExternalAPI = url.hostname === 'nominatim.openstreetmap.org' || 
-                        url.hostname === 'api.openrouteservice.org' ||
-                        url.hostname.endsWith('.openstreetmap.org') ||
-                        url.hostname.includes('openrouteservice.org');
+  // POZOR: NEPŘESKOČIT tile servery (tile.openstreetmap.org) - ty potřebují cache-first logiku
+  // Kontrola musí být před tile handling, ale musíme vyloučit tile servery
+  const isTile = isTileRequest(url.href);
+  const isExternalAPI = !isTile && (
+    url.hostname === 'nominatim.openstreetmap.org' || 
+    url.hostname === 'api.openrouteservice.org' ||
+    (url.hostname.includes('openrouteservice.org') && !url.hostname.includes('tiles'))
+  );
   if (isExternalAPI) {
     // Nechat projít bez Service Worker interference - browser zpracuje CORS normálně
     return;
@@ -102,7 +105,7 @@ self.addEventListener('fetch', (event) => {
   const isHTML = request.destination === 'document' || request.headers.get('accept')?.includes('text/html');
 
   // Strategii zvolíme podle typu:
-  if (isTileRequest(url.href)) {
+  if (isTile) {
     // Map tiles: cache-first s expirací by byla fajn (zde jednoduché cache-first)
     event.respondWith(
       caches.open(RUNTIME_CACHE).then(async (cache) => {
