@@ -58,6 +58,11 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
+  // Source map soubory - přeskočit Service Worker, aby nebyly chyby
+  if (url.pathname.endsWith('.map') || url.searchParams.has('sourceMappingURL')) {
+    return;
+  }
+
   // Externí API požadavky (např. Nominatim, OpenRouteService) - přeskočit Service Worker, aby nebyly blokovány CORS
   // POZOR: NEPŘESKOČIT tile servery (tile.openstreetmap.org) - ty potřebují cache-first logiku
   // Kontrola musí být před tile handling, ale musíme vyloučit tile servery
