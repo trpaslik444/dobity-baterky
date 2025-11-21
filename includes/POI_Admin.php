@@ -1095,13 +1095,29 @@ class POI_Admin {
             // Pro první chunk uložit hlavičku
             $lines = explode("\n", $chunk_data);
             if (!empty($lines[0])) {
-                $header = $lines[0];
-                set_transient('db_poi_import_header', $header, 1800); // 30 minut TTL
+                $header = trim($lines[0]);
+                if (!empty($header)) {
+                    set_transient('db_poi_import_header', $header, 1800); // 30 minut TTL
+                } else {
+                    db_set_poi_import_running(false);
+                    delete_transient('db_poi_import_processed_ids');
+                    delete_transient('db_poi_import_total_stats');
+                    delete_transient('db_poi_import_header');
+                    wp_send_json_error('Hlavička CSV souboru je prázdná.');
+                    return;
+                }
+            } else {
+                db_set_poi_import_running(false);
+                delete_transient('db_poi_import_processed_ids');
+                delete_transient('db_poi_import_total_stats');
+                delete_transient('db_poi_import_header');
+                wp_send_json_error('Hlavička CSV souboru nebyla nalezena v prvním chunku.');
+                return;
             }
         } else {
             // Pro další chunky načíst hlavičku a přidat ji
             $header = get_transient('db_poi_import_header');
-            if (!$header) {
+            if (!$header || empty(trim($header))) {
                 // Pokud hlavička chybí (vypršela nebo byla smazána), import nemůže pokračovat
                 db_set_poi_import_running(false);
                 delete_transient('db_poi_import_processed_ids');
@@ -1160,8 +1176,16 @@ class POI_Admin {
                 $processed_ids = [];
             }
             $processed_ids = array_merge($processed_ids, $result['processed_poi_ids'] ?? []);
-            set_transient('db_poi_import_processed_ids', $processed_ids, 600); // 10 minut
-            set_transient('db_poi_import_total_stats', $total_stats, 600);
+            set_transient('db_poi_import_processed_ids', $processed_ids, 1800); // 30 minut
+            set_transient('db_poi_import_total_stats', $total_stats, 1800); // 30 minut
+            
+            // Obnovit hlavičku a flag (aby nevypršely během dlouhého importu)
+            $header = get_transient('db_poi_import_header');
+            if ($header) {
+                set_transient('db_poi_import_header', $header, 1800);
+            }
+            // Obnovit flag
+            db_set_poi_import_running(true);
 
             // Pro poslední chunk zařadit do fronty a vymazat flag
             if ($is_last) {
