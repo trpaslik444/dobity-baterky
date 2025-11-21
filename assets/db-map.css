@@ -35,8 +35,7 @@
 .leaflet-container {
   position: relative;
 }
-.db-manual-load-container,
-.db-manual-load-container--fixed {
+.db-manual-load-container {
   position: absolute;
   bottom: 60px;
   left: 50%;
@@ -48,6 +47,24 @@
   width: fit-content;
   max-width: calc(100% - 40px);
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Fallback tlačítko připojené k body musí být fixed, aby zůstalo viditelné i při scrollování */
+.db-manual-load-container--fixed {
+  position: fixed !important;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 680; /* pod mobilním sheetem (700) i kartami, nad mapou */
+  display: inline-flex;
+  animation: slideInFromBottom 0.3s ease-out;
+  pointer-events: auto;
+  width: fit-content;
+  max-width: calc(100% - 40px);
   align-items: center;
   justify-content: center;
   white-space: nowrap;

@@ -10179,9 +10179,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       });
     }
-    document.body.appendChild(container);
+    // Explicitně nastavit fixed positioning pro fallback tlačítko (emergency fallback)
+    container.style.position = 'fixed';
+    container.style.bottom = '60px';
+    container.style.left = '50%';
+    container.style.transform = 'translateX(-50%)';
+    container.style.zIndex = '680';
     container.style.display = 'block';
-    console.log('[DB Map] Fallback tlačítko vytvořeno a připojeno do DOM');
+    document.body.appendChild(container);
+    console.log('[DB Map] Fallback tlačítko vytvořeno a připojeno do DOM (position: fixed)');
   }
   if (typeof window !== 'undefined') {
     window.createDirectLegacyButton = createDirectLegacyButton;
