@@ -459,6 +459,12 @@ jQuery(document).ready(function($) {
             const totalChunks = chunks.length;
             addLog(`Soubor rozdělen na ${totalChunks} balíčků (po ${CHUNK_SIZE} řádcích)`, 'info');
             addLog(`Celkem řádků: ${lines.length - 1}`, 'info');
+            
+            // Debug: zkontrolovat první chunk
+            if (chunks.length > 0) {
+                const firstChunkPreview = chunks[0].substring(0, 100);
+                addLog(`První chunk preview: ${firstChunkPreview}...`, 'info');
+            }
 
             // Zobrazit progress bar
             $('#db-import-progress-container').show();
