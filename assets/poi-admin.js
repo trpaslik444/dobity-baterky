@@ -437,9 +437,8 @@ jQuery(document).ready(function($) {
             
             const header = lines[0]; // První řádek je hlavička
             
-            // Rozdělit na chunky (po 50 řádcích pro lepší výkon a menší timeout)
-            // Menší chunky jsou nutné kvůli serverovým timeoutům
-            const CHUNK_SIZE = 50;
+            // Rozdělit na chunky (po 500 řádcích - optimalizováno pro rychlé zpracování)
+            const CHUNK_SIZE = 500;
             const chunks = [];
             let currentChunk = [header]; // První chunk obsahuje hlavičku
             
