@@ -600,7 +600,7 @@ class POI_Admin {
     }
 
     private function read_csv_headers($handle): array {
-        while (($row = fgetcsv($handle)) !== false) {
+        while (($row = fgetcsv($handle, 0, ',', '"', '\\')) !== false) {
             if ($this->is_csv_row_empty($row)) {
                 continue;
             }
@@ -694,7 +694,7 @@ class POI_Admin {
 
         global $wpdb;
 
-        while (($data = fgetcsv($handle)) !== false) {
+        while (($data = fgetcsv($handle, 0, ',', '"', '\\')) !== false) {
             $raw_rows++;
 
             if ($this->is_csv_row_empty($data)) {
