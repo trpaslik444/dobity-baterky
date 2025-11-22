@@ -1,0 +1,119 @@
+#!/usr/bin/expect -f
+
+# Usage: STAGING_PASS=heslo ./scripts/import-csv-staging.expect /cesta/k/exported_pois_staging_complete.csv
+
+set timeout 7200
+
+if { [llength $argv] < 1 } {
+    puts "ERROR: Musíš předat cestu k CSV souboru."
+    exit 2
+}
+
+set csv_file [lindex $argv 0]
+
+if { ! [file exists $csv_file] } {
+    puts "ERROR: CSV soubor $csv_file neexistuje."
+    exit 2
+}
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+set timestamp [clock format [clock seconds] -format "%Y%m%d%H%M%S"]
+set remote_csv_path "/tmp/poi_import_${timestamp}.csv"
+
+set user "staging-f576-dobitybaterky.wordpress.com"
+set sftp_host "sftp.wp.com"
+set ssh_host "ssh.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+# Krok 1: Nahrát CSV soubor na staging přes SFTP
+puts "📤 Nahrávám CSV soubor na staging..."
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${sftp_host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "put \"$csv_file\" \"$remote_csv_path\"\r"
+
+expect "sftp>"
+puts "✅ CSV soubor nahrán na staging: $remote_csv_path"
+send "exit\r"
+
+expect eof
+
+# Krok 2: Nahrát safe-import-csv-staging.php na staging
+puts ""
+puts "🔍 Nahrávám import skript na staging serveru..."
+
+# Získat cestu k plugin root (where safe-import-csv-staging.php should be)
+# csv_file je v plugin root, takže safe-import-csv-staging.php je ve stejném adresáři
+set csv_dir [file dirname [file normalize $csv_file]]
+set local_import_script "$csv_dir/safe-import-csv-staging.php"
+set remote_import_script "/tmp/safe-import-csv-staging.php"
+
+# Nahrát safe-import-csv-staging.php
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${sftp_host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "put \"$local_import_script\" \"$remote_import_script\"\r"
+
+expect "sftp>"
+puts "✅ Import skript nahrán na staging: $remote_import_script"
+send "exit\r"
+
+expect eof
+
+# Krok 3: Nahrát safe-import-csv-staging.php přímo do plugin directory
+puts ""
+puts "🔍 Nahrávám import skript do plugin directory na staging..."
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${sftp_host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "cd wp-content/plugins/dobity-baterky\r"
+
+expect "sftp>"
+send "put \"$local_import_script\" \"safe-import-csv-staging.php\"\r"
+
+expect "sftp>"
+puts "✅ Import skript nahrán do plugin directory"
+send "exit\r"
+
+expect eof
+
+# Krok 4: Spustit import přes SSH pomocí WP-CLI
+puts ""
+puts "🔍 Spouštím import na staging serveru pomocí WP-CLI..."
+
+# Použít safe-import-csv-staging.php přímo - má vyšší memory limit
+set import_cmd "cd /srv/htdocs/wp-content/plugins/dobity-baterky && php -d memory_limit=1024M safe-import-csv-staging.php \"$remote_csv_path\" --log-every=1000"
+
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $import_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        catch wait result
+        set exit_code [lindex $result 3]
+        exit $exit_code
+    }
+    timeout {
+        puts "❌ Timeout při spouštění import skriptu"
+        exit 1
+    }
+}

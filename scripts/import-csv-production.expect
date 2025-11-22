@@ -1,0 +1,112 @@
+#!/usr/bin/expect -f
+
+# Optimalizovaný produkční import skript
+# Spouští import v pozadí pomocí nohup pro zabránění timeoutům
+
+# Usage: STAGING_PASS=heslo ./scripts/import-csv-production.expect /cesta/k/file.csv
+
+set timeout 300  # Pouze pro nahrání souborů, ne pro import samotný
+
+if { [llength $argv] < 1 } {
+    puts "ERROR: Musíš předat cestu k CSV souboru."
+    exit 2
+}
+
+set csv_file [lindex $argv 0]
+
+if { ! [file exists $csv_file] } {
+    puts "ERROR: CSV soubor $csv_file neexistuje."
+    exit 2
+}
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+set timestamp [clock format [clock seconds] -format "%Y%m%d%H%M%S"]
+set remote_csv_path "/tmp/poi_import_${timestamp}.csv"
+set log_file "/tmp/poi_import_${timestamp}.log"
+
+set user "staging-f576-dobitybaterky.wordpress.com"
+set sftp_host "sftp.wp.com"
+set ssh_host "ssh.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+# Krok 1: Nahrát CSV soubor na staging přes SFTP
+puts "📤 Nahrávám CSV soubor na staging..."
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${sftp_host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "put \"$csv_file\" \"$remote_csv_path\"\r"
+
+expect "sftp>"
+puts "✅ CSV soubor nahrán na staging: $remote_csv_path"
+send "exit\r"
+
+expect eof
+
+# Krok 2: Nahrát safe-import-csv-staging.php do plugin directory
+puts ""
+puts "🔍 Nahrávám import skript do plugin directory..."
+
+set csv_dir [file dirname [file normalize $csv_file]]
+set local_import_script "$csv_dir/safe-import-csv-staging.php"
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${sftp_host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "cd wp-content/plugins/dobity-baterky\r"
+
+expect "sftp>"
+send "put \"$local_import_script\" \"safe-import-csv-staging.php\"\r"
+
+expect "sftp>"
+puts "✅ Import skript nahrán do plugin directory"
+send "exit\r"
+
+expect eof
+
+# Krok 3: Spustit import v pozadí pomocí nohup (bez timeoutu)
+puts ""
+puts "🚀 Spouštím import na staging serveru v pozadí..."
+
+# Použít nohup pro spuštění v pozadí + výstup do log souboru
+set import_cmd "cd /srv/htdocs/wp-content/plugins/dobity-baterky && nohup php -d memory_limit=1024M safe-import-csv-staging.php \"$remote_csv_path\" --log-every=1000 > \"$log_file\" 2>&1 & echo \$!"
+
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $import_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    -re {(\d+)} {
+        set pid $expect_out(1,string)
+        puts "✅ Import spuštěn v pozadí (PID: $pid)"
+        puts "📋 Log soubor: $log_file"
+        puts ""
+        puts "📊 Sledovat průběh:"
+        puts "   tail -f $log_file"
+        exp_continue
+    }
+    eof {
+        catch wait result
+        set exit_code [lindex $result 3]
+        exit $exit_code
+    }
+    timeout {
+        puts "⚠️  Timeout při spouštění (ale import možná běží v pozadí)"
+        puts "📋 Zkontroluj log: $log_file"
+        exit 0
+    }
+}
+
