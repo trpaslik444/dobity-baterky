@@ -8797,6 +8797,39 @@ document.addEventListener('DOMContentLoaded', async function() {
     const starSvg = '<svg viewBox="0 0 24 24" width="'+Math.max(10, Math.round(size*0.7))+'" height="'+Math.max(10, Math.round(size*0.7))+'" fill="#FF6A4B" xmlns="http://www.w3.org/2000/svg"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
     return '<div style="width:'+size+'px;height:'+size+'px;border-radius:4px;background:#ffffff;border:2px solid #FF6A4B;display:flex;align-items:center;justify-content:center;pointer-events:none;">'+starSvg+'</div>';
   }
+  function getDbRecommendedBadgeHtml(size = 20) {
+    const logoSize = Math.max(10, Math.round(size * 0.78));
+    const dbData = (typeof dbMapData !== 'undefined' && dbMapData) ? dbMapData : (typeof window !== 'undefined' && window.dbMapData ? window.dbMapData : {});
+    let base = dbData && dbData.pluginUrl ? dbData.pluginUrl : '';
+    if (!base && typeof window !== 'undefined' && window.location) {
+      base = window.location.origin + '/wp-content/plugins/dobity-baterky/';
+    }
+    if (base && !base.endsWith('/')) {
+      base += '/';
+    }
+    const normalizedBase = base ? base.replace(/\/+$/, '/') : '';
+    const assetsBase = normalizedBase + 'assets/pwa/';
+    const normalizeUrl = (url) => {
+      if (!url) return '';
+      if (typeof window !== 'undefined' && window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return url.replace(/^http:\/\//, 'https://');
+      }
+      return url;
+    };
+    const src1x = normalizeUrl(assetsBase + 'db-icon-180.png');
+    const src2x = normalizeUrl(assetsBase + 'db-icon-192.png');
+    const src3x = normalizeUrl(assetsBase + 'db-icon-512.png');
+    const defaultSrc = logoSize >= 256 ? src3x : (logoSize >= 192 ? src2x : src1x);
+    const srcsetAttr = [src1x ? `${src1x} 1x` : '', src2x ? `${src2x} 2x` : '', src3x ? `${src3x} 3x` : '']
+      .filter(Boolean)
+      .join(', ');
+    const logoImg = '<img src="' + defaultSrc + '"' + (srcsetAttr ? ' srcset="' + srcsetAttr + '"' : '') + ' alt="DB doporučuje" width="' + logoSize + '" height="' + logoSize + '" style="display:block;width:100%;height:100%;object-fit:contain;">';
+    return '<span style="display:inline-flex;align-items:center;justify-content:center;width:' + size + 'px;height:' + size + 'px;border:2px solid #FF6A4B;border-radius:4px;pointer-events:none;flex-shrink:0;" title="' + t('filters.db_recommended_badge', 'DB doporučuje') + '">'
+         +     '<span style="width:' + logoSize + 'px;height:' + logoSize + 'px;display:flex;align-items:center;justify-content:center;">'
+         +       logoImg
+         +     '</span>'
+         + '</span>';
+  }
   function isRecommended(props){
     const v = props && props.db_recommended;
     return v === true || v === 1 || v === '1' || v === 'true';
@@ -9911,7 +9944,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       } else if (p.post_type === 'rv_spot') {
         typeHtml = `<div class="db-map-card-label">${p.rv_type || ''}</div>`;
       }
-      const recommendedBadge = isRecommended(p) ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; margin-left:6px; border:2px solid #FF6A4B; display:inline-block;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
+      const recommendedBadge = isRecommended(p) ? getDbRecommendedBadgeHtml(20) : '';
       const titleHtml = p.permalink
         ? `<a class="db-map-card-title" href="${p.permalink}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;">${p.title}${recommendedBadge}</a>`
         : `<div class="db-map-card-title" style="display:flex;align-items:center;gap:6px;">${p.title}${recommendedBadge}</div>`;
@@ -11901,7 +11934,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (address) subtitleParts.push(address);
       if (typeLabel) subtitleParts.push(typeLabel);
       const subtitle = subtitleParts.join(' • ');
-      const badge = item?.is_recommended ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; margin-left:6px; border:2px solid #FF6A4B;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
+      const badge = item?.is_recommended ? getDbRecommendedBadgeHtml(20) : '';
       return `
         <div class="db-desktop-ac-item" data-source="internal" data-index="${idx}" style="padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.15s;">
           <div style="font-weight:600; color:#111; display:flex; align-items:center;">
@@ -12308,7 +12341,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (address) subtitleParts.push(address);
       if (typeLabel) subtitleParts.push(typeLabel);
       const subtitle = subtitleParts.join(' • ');
-      const badge = item?.is_recommended ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; border:2px solid #FF6A4B;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
+      const badge = item?.is_recommended ? getDbRecommendedBadgeHtml(20) : '';
       return `
         <div class="db-mobile-ac-item" data-source="internal" data-index="${idx}" style="padding:12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.2s;">
           <div style="font-weight:600; color:#111; display:flex; align-items:center; gap:6px;">
