@@ -236,6 +236,10 @@ class REST_Map {
         $limit     = max(1, intval($request->get_param('limit') ?: 5000));
         $offset    = max(0, intval($request->get_param('offset') ?: 0));
 
+        // Filtry
+        $db_recommended = $request->get_param('db_recommended'); // '1' nebo null
+        $free_only = $request->get_param('free'); // '1' nebo null
+
         $post_type_map = [
             'charger' => 'charging_location',
             'rv_spot' => 'rv_spot',
@@ -435,6 +439,31 @@ class REST_Map {
                 $args['orderby'] = 'post__in';
                 $args['order'] = 'ASC';
                 $args['posts_per_page'] = count($ids_for_type);
+            }
+            
+            // Přidat meta_query pro filtry
+            $meta_query = array();
+            
+            // Filtr "DB doporučuje" - pouze pro charging_location
+            if ($db_recommended === '1' && $pt === 'charging_location') {
+                $meta_query[] = array(
+                    'key'     => '_db_recommended',
+                    'value'   => '1',
+                    'compare' => '='
+                );
+            }
+            
+            // Filtr "Zdarma" - pouze pro charging_location
+            if ($free_only === '1' && $pt === 'charging_location') {
+                $meta_query[] = array(
+                    'key'     => '_db_price',
+                    'value'   => 'free',
+                    'compare' => '='
+                );
+            }
+            
+            if (!empty($meta_query)) {
+                $args['meta_query'] = $meta_query;
             }
 
             // Dočasně vypneme meta query - necháme všechno na Haversine
