@@ -9911,9 +9911,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       } else if (p.post_type === 'rv_spot') {
         typeHtml = `<div class="db-map-card-label">${p.rv_type || ''}</div>`;
       }
+      const recommendedBadge = isRecommended(p) ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; margin-left:6px; border:2px solid #FF6A4B; display:inline-block;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
       const titleHtml = p.permalink
-        ? `<a class="db-map-card-title" href="${p.permalink}" target="_blank" rel="noopener">${p.title}</a>`
-        : `<div class="db-map-card-title">${p.title}</div>`;
+        ? `<a class="db-map-card-title" href="${p.permalink}" target="_blank" rel="noopener" style="display:flex;align-items:center;gap:6px;">${p.title}${recommendedBadge}</a>`
+        : `<div class="db-map-card-title" style="display:flex;align-items:center;gap:6px;">${p.title}${recommendedBadge}</div>`;
       card.innerHTML = `
         <div style="display:flex;align-items:flex-start;gap:1em;">
           <div style="display:flex;flex-direction:column;align-items:center;min-width:64px;">
