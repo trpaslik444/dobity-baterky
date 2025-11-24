@@ -11900,7 +11900,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (address) subtitleParts.push(address);
       if (typeLabel) subtitleParts.push(typeLabel);
       const subtitle = subtitleParts.join(' • ');
-      const badge = item?.is_recommended ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; margin-left:6px;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
+      const badge = item?.is_recommended ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; margin-left:6px; border:2px solid #FF6A4B;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
       return `
         <div class="db-desktop-ac-item" data-source="internal" data-index="${idx}" style="padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.15s;">
           <div style="font-weight:600; color:#111; display:flex; align-items:center;">
@@ -12307,7 +12307,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (address) subtitleParts.push(address);
       if (typeLabel) subtitleParts.push(typeLabel);
       const subtitle = subtitleParts.join(' • ');
-      const badge = item?.is_recommended ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
+      const badge = item?.is_recommended ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; border:2px solid #FF6A4B;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
       return `
         <div class="db-mobile-ac-item" data-source="internal" data-index="${idx}" style="padding:12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.2s;">
           <div style="font-weight:600; color:#111; display:flex; align-items:center; gap:6px;">
