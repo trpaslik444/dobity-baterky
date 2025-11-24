@@ -3767,8 +3767,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         </div>
 
         <div class="db-filter-section">
-          <div class="db-filter-section__title">Typ POI v okolí</div>
-          <button type="button" id="db-open-poi-type-modal" class="db-filter-provider-btn">Vybrat typy POI...</button>
+          <div class="db-filter-section__title">${t('filters.poi_type_nearby', 'Typ POI v okolí')}</div>
+          <button type="button" id="db-open-poi-type-modal" class="db-filter-provider-btn">${t('filters.select_poi_type', 'Vybrat typy POI...')}</button>
         </div>
 
         <!-- Ostatní filtry dočasně zakomentovány
@@ -3808,7 +3808,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   providerModal.innerHTML = `
     <div class="db-provider-modal__content" style="background:#FEF9E8;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
       <div class="db-provider-modal__header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-shrink:0;">
-        <h3 style="margin:0;color:#049FE8;font-size:1.3rem;font-weight:600;">Vyberte provozovatele</h3>
+        <h3 style="margin:0;color:#049FE8;font-size:1.3rem;font-weight:600;">${t('filters.select_provider_title', 'Vyberte provozovatele')}</h3>
         <button type="button" class="db-provider-modal__close" style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:background 0.2s;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='none'">&times;</button>
       </div>
       <div class="db-provider-modal__body" id="db-provider-grid" style="flex:1;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;padding-right:8px;"></div>
@@ -3828,7 +3828,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   poiTypeModal.innerHTML = `
     <div class="db-provider-modal__content" style="background:#FEF9E8;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
       <div class="db-provider-modal__header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-shrink:0;">
-        <h3 style="margin:0;color:#049FE8;font-size:1.3rem;font-weight:600;">Vyberte typy POI</h3>
+        <h3 style="margin:0;color:#049FE8;font-size:1.3rem;font-weight:600;">${t('filters.select_poi_type_title', 'Vyberte typy POI')}</h3>
         <button type="button" class="db-poi-type-modal__close" style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:background 0.2s;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='none'">&times;</button>
       </div>
       <div class="db-provider-modal__body" id="db-poi-type-grid" style="flex:1;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;padding-right:8px;"></div>
@@ -4193,7 +4193,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const btn = document.getElementById('db-open-provider-modal');
     if (btn) {
       const count = filterState.providers.size;
-      btn.textContent = count > 0 ? `Provozovatel (${count})` : 'Vybrat provozovatele...';
+      btn.textContent = count > 0 ? t('filters.provider_with_count', 'Provozovatel ({count})').replace('{count}', count) : t('filters.select_provider', 'Vybrat provozovatele...');
     }
     
     // Aktualizovat reset tlačítko
@@ -4280,7 +4280,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const btn = document.getElementById('db-open-poi-type-modal');
     if (btn) {
       const count = filterState.poiTypes ? filterState.poiTypes.size : 0;
-      btn.textContent = count > 0 ? `Typ POI (${count})` : 'Vybrat typy POI...';
+      btn.textContent = count > 0 ? t('filters.poi_type_with_count', 'Typ POI ({count})').replace('{count}', count) : t('filters.select_poi_type', 'Vybrat typy POI...');
     }
     
     // Aktualizovat reset tlačítko
@@ -4660,7 +4660,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const resetBtn = document.getElementById('db-filter-reset');
     if (resetBtn) {
       const count = countActiveFilters();
-      resetBtn.textContent = `Resetovat filtry (${count})`;
+      resetBtn.textContent = t('filters.reset_with_count', 'Resetovat filtry ({count})').replace('{count}', count);
       resetBtn.disabled = count === 0;
     }
     // Aktualizovat vizuální stav tlačítek Filtry (topbar + list header)
@@ -4811,7 +4811,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Resetovat provider tlačítko
       const providerBtn = document.getElementById('db-open-provider-modal');
       if (providerBtn) {
-        providerBtn.textContent = 'Vybrat provozovatele...';
+        providerBtn.textContent = t('filters.select_provider', 'Vybrat provozovatele...');
       }
       // Aktualizovat viditelnost reset tlačítka
       updateResetButtonVisibility();
@@ -11633,7 +11633,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (address) subtitleParts.push(address);
       if (typeLabel) subtitleParts.push(typeLabel);
       const subtitle = subtitleParts.join(' • ');
-      const badge = item?.is_recommended ? '<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; margin-left:6px;">DB doporučuje</span>' : '';
+      const badge = item?.is_recommended ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px; margin-left:6px;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
       return `
         <div class="db-desktop-ac-item" data-source="internal" data-index="${idx}" style="padding:10px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.15s;">
           <div style="font-weight:600; color:#111; display:flex; align-items:center;">
@@ -12016,7 +12016,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (address) subtitleParts.push(address);
       if (typeLabel) subtitleParts.push(typeLabel);
       const subtitle = subtitleParts.join(' • ');
-      const badge = item?.is_recommended ? '<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px;">DB doporučuje</span>' : '';
+      const badge = item?.is_recommended ? `<span style="background:#049FE8; color:#fff; font-size:0.7rem; padding:2px 6px; border-radius:999px;">${t('filters.db_recommended_badge', 'DB doporučuje')}</span>` : '';
       return `
         <div class="db-mobile-ac-item" data-source="internal" data-index="${idx}" style="padding:12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.2s;">
           <div style="font-weight:600; color:#111; display:flex; align-items:center; gap:6px;">
