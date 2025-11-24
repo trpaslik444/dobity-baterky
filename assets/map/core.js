@@ -7757,7 +7757,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             <label class="db-toggle-label">
               <input type="checkbox" id="db-recommended-toggle" ${p.db_recommended ? 'checked' : ''}>
               <span class="db-toggle-slider"></span>
-              DB doporučuje
+              ${t('filters.db_recommended', 'Jen DB doporučuje')}
             </label>
           </div>
           <div class="db-admin-photos">
