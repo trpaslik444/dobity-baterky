@@ -38,7 +38,21 @@ expect "sftp>"
 send "cd wp-content/plugins\r"
 
 expect "sftp>"
+# Vytvořit backup (pokud plugin existuje)
+puts "📦 Vytvářím backup: $backup_dir"
 send "rename dobity-baterky $backup_dir\r"
+expect {
+    -re "No such file" {
+        puts "⚠️  WARNING: Plugin složka 'dobity-baterky' neexistuje na produkci (první nasazení?)"
+        expect "sftp>"
+    }
+    "sftp>" {
+        puts "✅ Backup vytvořen: $backup_dir"
+    }
+    timeout {
+        puts "⚠️  WARNING: Timeout při vytváření backupu, pokračuji..."
+    }
+}
 
 expect "sftp>"
 send "mkdir dobity-baterky\r"

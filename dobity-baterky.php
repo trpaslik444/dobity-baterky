@@ -1183,7 +1183,7 @@ add_action('wp_footer', function() {
     $script_added = true;
     
     // Použít vlastní endpoint pro ServiceWorker (z root, aby mohl mít scope /)
-    $sw_url = home_url('/db-sw.js');
+    $sw_url = add_query_arg('db_sw', '1', home_url('/'));
     ?>
     <script>
     (function() {
@@ -1227,13 +1227,26 @@ add_action('wp_footer', function() {
                     const sitePath = '<?php echo esc_js(parse_url(home_url('/'), PHP_URL_PATH)); ?>';
                     const siteScope = window.location.origin + sitePath;
                     const ourSwSuffix = '/db-sw.js';
+                    const ourSwQueryParam = 'db_sw';
                     function isOurReg(reg) {
                         try {
-                            const url = (reg && reg.active && reg.active.scriptURL)
+                            const urlString = (reg && reg.active && reg.active.scriptURL)
                                       || (reg && reg.waiting && reg.waiting.scriptURL)
                                       || (reg && reg.installing && reg.installing.scriptURL)
                                       || null;
-                            return !!(url && url.indexOf(ourSwSuffix) !== -1);
+                            if (!urlString) return false;
+                            try {
+                                const parsed = new URL(urlString, window.location.origin);
+                                if (parsed.pathname && parsed.pathname.indexOf(ourSwSuffix) !== -1) {
+                                    return true;
+                                }
+                                if (parsed.searchParams && parsed.searchParams.has(ourSwQueryParam)) {
+                                    return true;
+                                }
+                            } catch(_) {
+                                return urlString.indexOf(ourSwSuffix) !== -1 || urlString.indexOf(ourSwQueryParam + '=') !== -1;
+                            }
+                            return false;
                         } catch(_) { return false; }
                     }
                     if (typeof navigator.serviceWorker.getRegistrations === 'function') {

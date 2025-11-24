@@ -2290,7 +2290,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   const MIN_FETCH_ZOOM = (typeof window.DB_MIN_FETCH_ZOOM !== 'undefined') ? window.DB_MIN_FETCH_ZOOM : 9; // pod tímto zoomem nerefreshujeme
   const FIXED_RADIUS_KM = (typeof window.DB_FIXED_RADIUS_KM !== 'undefined') ? window.DB_FIXED_RADIUS_KM : 50; // fixní okruh pro radius režim
   // Vynucené trvalé zobrazení manuálního tlačítka načítání (staging-safe)
-  // Nastaveno na false - tlačítko se zobrazuje jen při posunu mimo načtená místa
+  // Nastaveno na true - tlačítko se zobrazuje permanentně (kromě aktivních speciálních filtrů)
   const ALWAYS_SHOW_MANUAL_BUTTON = true;
   const DEBUG_FORCE_LEGACY =
     (typeof window !== 'undefined' && Boolean(window.DB_FORCE_LEGACY_MANUAL_BUTTON)) ||
@@ -5108,6 +5108,40 @@ document.addEventListener('DOMContentLoaded', async function() {
     return '';
   }
 
+  // Získat originální ikonu pro typ bodu - globální funkce pro použití v renderCards
+  function getTypeIcon(props) {
+    if (props.svg_content && props.svg_content.trim() !== '') {
+      // Pro POI použít SVG obsah
+      return props.svg_content;
+    } else if (props.icon_slug && props.icon_slug.trim() !== '') {
+      // Pro POI použít icon_slug jako fallback
+      const iconUrl = getIconUrl(props.icon_slug);
+      return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+    } else if (props.post_type === 'charging_location') {
+      // Pro charging locations zkusit načíst ikonu z featureCache
+      const cachedFeature = featureCache.get(props.id);
+      if (cachedFeature && cachedFeature.properties && cachedFeature.properties.svg_content && cachedFeature.properties.svg_content.trim() !== '') {
+        return recolorChargerIcon(cachedFeature.properties.svg_content, props);
+      }
+      if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
+        const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
+        return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '🔌';
+      }
+      // Fallback pro nabíječky
+      return '🔌';
+    } else if (props.post_type === 'rv_spot') {
+      // Fallback pro RV
+      return '🚐';
+    } else if (props.post_type === 'poi') {
+      // Fallback pro POI - použít generickou ikonu podniku
+      return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
+      </svg>`;
+    }
+    return '📍';
+  }
   function openMobileSheet(feature) {
     if (window.innerWidth > 900) return;
 
@@ -5117,6 +5151,26 @@ document.addEventListener('DOMContentLoaded', async function() {
     const lng = coords ? coords[0] : null;
     const favoriteButtonHtml = getFavoriteStarButtonHtml(p, 'sheet');
     const favoriteChipHtml = getFavoriteChipHtml(p, 'sheet');
+
+  // Získat barvu čtverečku podle typu místa (stejně jako piny na mapě)
+  const getSquareColor = (props) => {
+    if (props.post_type === 'charging_location') {
+      // Pro nabíječky použít stejnou logiku jako piny
+      const mode = getChargerMode(props);
+      const acColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.ac) || '#049FE8';
+      const dcColor = (dbMapData && dbMapData.chargerColors && dbMapData.chargerColors.dc) || '#FFACC4';
+      if (mode === 'hybrid') {
+        return `linear-gradient(135deg, ${acColor} 0%, ${acColor} 30%, ${dcColor} 70%, ${dcColor} 100%)`;
+      }
+      return mode === 'dc' ? dcColor : acColor;
+    } else if (props.post_type === 'rv_spot') {
+      return '#FCE67D'; // Žlutá pro RV místa
+    } else if (props.post_type === 'poi') {
+      // Pozadí u POI dědí centrální barvu pinu
+      return props.icon_color || '#FCE67D';
+    }
+    return '#049FE8'; // Modrá jako fallback
+  };
     // Nový obsah s kompaktním designem
     const finalHTML = `
       <div class="sheet-header">
@@ -7315,7 +7369,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     detailModal.classList.remove('open'); 
     detailModal.innerHTML = ''; 
     // Odstranit třídu pro scroll lock
-    try { document.body.classList.remove('db-modal-open'); } catch(_) {}
+    try { 
+      document.body.classList.remove('db-modal-open'); 
+      if (window.smartLoadingManager && typeof window.smartLoadingManager.setManualButtonHidden === 'function') {
+        window.smartLoadingManager.setManualButtonHidden(false);
+      }
+    } catch(_) {}
     // Vyčistit isochrones při zavření modalu
     clearIsochrones();
   }
@@ -7340,8 +7399,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       return;
     }
-     // Přidat třídu pro scroll lock
-     try { document.body.classList.add('db-modal-open'); } catch(_) {}
+   // Přidat třídu pro scroll lock
+   try { 
+     document.body.classList.add('db-modal-open'); 
+     if (window.smartLoadingManager && typeof window.smartLoadingManager.setManualButtonHidden === 'function') {
+       window.smartLoadingManager.setManualButtonHidden(true);
+     }
+   } catch(_) {}
      // debug log removed
 
      // Pokud je to POI, pokus se před renderem obohatit (pokud chybí data)
@@ -8306,9 +8370,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Přidat autocomplete pro desktop
+    // Zvýšit debounce na 400ms pro desktop, aby se snížilo množství požadavků
     const handleDesktopAutocompleteInput = debounce((value) => {
       showDesktopAutocomplete(value, searchInput);
-    }, 250);
+    }, 400);
 
     searchInput.addEventListener('input', function() {
       const query = this.value.trim();
@@ -8696,13 +8761,36 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   function getDbLogoHtml(size) {
-    // Bílý podklad pro čitelnost, oranžový obrys dle brandbooku - čtvercový
-    const logoSvg = '<svg id="Vrstva_1" data-name="Vrstva 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2160 2160"><rect fill="#fef9df" x="2.59" y="-4.68" width="2166.26" height="2168.05"/><g><g><path fill="#049FE8" d="M673.43,1162.81l487.73-536.65c-6.54-79.14-28.79-148.76-66.82-208.79-45.94-72.5-109.75-128.72-191.41-168.69-81.68-39.95-176.33-59.95-283.98-59.95H158.18v975.91h460.78c18.55,0,36.7-.64,54.48-1.82ZM433.8,944.35V409h174.01c55.68,0,104.17,10.46,145.47,31.37,41.29,20.91,73.54,51.37,96.75,91.32,23.19,39.97,34.8,88.31,34.8,144.99s-11.62,103.86-34.8,144.3c-23.21,40.43-55.46,71.1-96.75,92.01-41.31,20.91-89.79,31.37-145.47,31.37h-174.01Z"/><g id="ZgxFBL"><polygon fill="#FCE67D" points="1437.12 353.63 707.35 1158.94 1021.77 1154.04 687.52 1792.66 1465 983.72 1113.45 983.72 1437.12 353.63"/></g></g><path fill="#FFACC4" d="M1959.36,1554.4c-28.32-39.49-67.99-69.71-119.02-90.62-5.8-2.38-11.76-4.58-17.79-6.69,38.68-20.7,69.46-47.29,92.27-79.75,26.45-37.64,39.68-81.56,39.68-131.75,0-76.2-31.57-137.78-94.66-184.73-63.12-46.92-158.69-70.41-286.77-70.41h-87.61l-410.75,434.4v541.5h526.2c130.86,0,230.39-23.46,298.6-70.41,68.21-46.92,102.32-112.69,102.32-197.27,0-56.68-14.16-104.78-42.46-144.3ZM1536.87,1189.83c46.39,0,81.19,7.67,104.41,23,23.18,15.34,34.8,38.82,34.8,70.41s-11.62,55.31-34.8,71.1c-23.21,15.81-58.01,23.7-104.41,23.7h-189.32v-188.21h189.32ZM1686.52,1742.62c-24.61,16.27-60.56,24.4-107.89,24.4h-231.09v-197.97h231.09c47.33,0,83.28,8.15,107.89,24.4,24.58,16.27,36.89,41.13,36.89,74.59s-12.31,58.34-36.89,74.59Z"/></g></svg>';
-    const logoSize = Math.max(10, Math.round(size*0.78));
-    return '<div style="width:'+size+'px;height:'+size+'px;border-radius:4px;background:#ffffff;border:2px solid #FF6A4B;display:flex;align-items:center;justify-content:center;pointer-events:none;">'
-         +   '<div style="width:'+logoSize+'px;height:'+logoSize+'px;display:flex;align-items:center;justify-content:center;">'
-         +     logoSvg
-         +   '</div>'
+    const logoSize = Math.max(10, Math.round(size * 0.78));
+    const dbData = (typeof dbMapData !== 'undefined' && dbMapData) ? dbMapData : (typeof window !== 'undefined' && window.dbMapData ? window.dbMapData : {});
+    let base = dbData && dbData.pluginUrl ? dbData.pluginUrl : '';
+    if (!base && typeof window !== 'undefined' && window.location) {
+      base = window.location.origin + '/wp-content/plugins/dobity-baterky/';
+    }
+    if (base && !base.endsWith('/')) {
+      base += '/';
+    }
+    const normalizedBase = base ? base.replace(/\/+$/, '/') : '';
+    const assetsBase = normalizedBase + 'assets/pwa/';
+    const normalizeUrl = (url) => {
+      if (!url) return '';
+      if (typeof window !== 'undefined' && window.location && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return url.replace(/^http:\/\//, 'https://');
+      }
+      return url;
+    };
+    const src1x = normalizeUrl(assetsBase + 'db-icon-180.png');
+    const src2x = normalizeUrl(assetsBase + 'db-icon-192.png');
+    const src3x = normalizeUrl(assetsBase + 'db-icon-512.png');
+    const defaultSrc = logoSize >= 256 ? src3x : (logoSize >= 192 ? src2x : src1x);
+    const srcsetAttr = [src1x ? `${src1x} 1x` : '', src2x ? `${src2x} 2x` : '', src3x ? `${src3x} 3x` : '']
+      .filter(Boolean)
+      .join(', ');
+    const logoImg = '<img src="' + defaultSrc + '"' + (srcsetAttr ? ' srcset="' + srcsetAttr + '"' : '') + ' alt="Dobitý Baterky" width="' + logoSize + '" height="' + logoSize + '" style="display:block;width:100%;height:100%;object-fit:contain;">';
+    return '<div style="width:' + size + 'px;height:' + size + 'px;display:flex;align-items:center;justify-content:center;pointer-events:none;">'
+         +     '<div style="width:' + logoSize + 'px;height:' + logoSize + 'px;display:flex;align-items:center;justify-content:center;">'
+         +       logoImg
+         +     '</div>'
          + '</div>';
   }
   function getFavoriteBadgeHtml(size) {
@@ -10325,6 +10413,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         return; // Nepouštět watcher v trvalém režimu
       }
       
+      // Zajistit, aby se tlačítko zobrazovalo v radius mode (na desktopu i mobilu)
+      // Zobrazit hned, pokud je v radius mode
+      if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+        // V radius mode zobrazit tlačítko hned - bez delay
+        this.showManualLoadButton();
+      }
+      
       // Standardní režim – řízený watcherem (tlačítko se zobrazuje jen při posunu mimo načtená místa)
       if (!this._visibilityHandlerBound) {
         const self = this;
@@ -10401,6 +10496,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           
           if (typeof lastViewportChangeTs === 'number' && lastViewportChangeTs <= this.lastCheckTime) return;
           this.lastCheckTime = Date.now();
+          
           // Pokud jsou aktivní speciální filtry, neschovávat tlačítko
           if (filterState.free || showOnlyRecommended) {
             if (this.manualLoadButton) {
@@ -10409,9 +10505,25 @@ document.addEventListener('DOMContentLoaded', async function() {
             return;
           }
           
+          // V radius mode tlačítko vždy zobrazit - neschovávat ho
+          // Watcher jen zajišťuje, že je viditelné, ale neschovává ho
+          if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+            this.showManualLoadButton();
+            return;
+          }
+          
+          // Standardní režim - zobrazovat/schovávat podle pozice
+          // POZNÁMKA: V radius mode se sem nedostaneme (return výše), takže můžeme bezpečně schovávat
           const c = map.getCenter();
           const outsideArea = this.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
-          if (outsideArea) this.showManualLoadButton(); else this.hideManualLoadButton();
+          if (outsideArea) {
+            this.showManualLoadButton();
+          } else {
+            // V radius mode se sem nedostaneme, ale pro jistotu zkontrolovat
+            if (typeof loadMode === 'undefined' || loadMode !== 'radius') {
+              this.hideManualLoadButton();
+            }
+          }
         } catch(e) {
           console.error('[DB Map][SmartLoading] Chyba v watcheru:', e);
         }
@@ -10440,8 +10552,11 @@ document.addEventListener('DOMContentLoaded', async function() {
             console.warn('[DB Map][SmartLoading] Legacy button: SmartLoadingManager not ready');
           }
         });
+        button.style.pointerEvents = 'auto';
       }
       document.body.appendChild(container);
+      this.applyManualButtonStyles('body');
+      this.logManualButtonPlacement('legacy-append-body');
       this.manualLoadButton = container;
       this.showManualLoadButton();
         return;
@@ -10461,33 +10576,58 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Přidat do mapy (robustní: zkusit opakovaně, než Leaflet vytvoří container)
       const attach = () => {
         const mapContainer = document.querySelector('.leaflet-container');
-        if (mapContainer && !document.getElementById('db-manual-load-container')) {
-          mapContainer.appendChild(this.manualLoadButton);
-          this.manualLoadButton.classList.remove('db-manual-load-container--fixed');
+        if (mapContainer && this.manualLoadButton) {
+          if (window.getComputedStyle(mapContainer).position === 'static') {
+            mapContainer.style.position = 'relative';
+          }
+          if (this.manualLoadButton.parentElement !== mapContainer) {
+            console.log('[DB Map][ManualButton] Připojuji tlačítko do .leaflet-container');
+            mapContainer.appendChild(this.manualLoadButton);
+            this.manualLoadButton.classList.remove('db-manual-load-container--fixed');
+            this.applyManualButtonStyles('map');
+            this.logManualButtonPlacement('attach-map-container');
+          }
           return true;
         }
+        console.log('[DB Map][ManualButton] attach(): .leaflet-container nedostupná, čekám…');
         return false;
       };
-      if (!attach()) {
-        let tries = 0;
-        const iv = setInterval(() => {
-          tries++;
-          if (attach() || tries > 50) { // ~5s
-            clearInterval(iv);
-            // Fallback: pokud se nepodařilo připojit do mapy, připojit do body jako fixní overlay
-            if (!document.getElementById('db-manual-load-container')) {
-              if (document.body) {
-                this.manualLoadButton.classList.add('db-manual-load-container--fixed');
-                document.body.appendChild(this.manualLoadButton);
-              } else {
-                console.warn('[DB Map][SmartLoading] document.body neexistuje!');
-              }
-            }
+      let tries = 0;
+      let fallbackAttached = document.body.contains(this.manualLoadButton);
+      const attachInterval = setInterval(() => {
+        tries++;
+        if (attach()) {
+          fallbackAttached = false;
+          if (tries > 1) {
+            console.log('[DB Map][ManualButton] Úspěšně připojeno po', tries, 'pokusech');
           }
-        }, 100);
-      }
+          clearInterval(attachInterval);
+          return;
+        }
+        if (!fallbackAttached && tries === 30) { // ~3s
+          if (document.body && !document.body.contains(this.manualLoadButton)) {
+            console.warn('[DB Map][ManualButton] Fallback do <body> – z-index snížen');
+            this.manualLoadButton.classList.add('db-manual-load-container--fixed');
+            document.body.appendChild(this.manualLoadButton);
+            this.applyManualButtonStyles('body');
+            this.logManualButtonPlacement('attach-body-fallback');
+            fallbackAttached = true;
+          }
+        }
+        if (tries > 400) {
+          console.warn('[DB Map][ManualButton] attach(): nepodařilo se najít .leaflet-container ani po 40s');
+          clearInterval(attachInterval);
+        }
+      }, 100);
       
-      this.manualLoadButton.style.display = 'none';
+      // V radius mode zobrazit tlačítko hned (na mobilu i desktopu)
+      // V ostatních režimech schovat a nechat watcher rozhodnout
+      if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+        // V radius mode zobrazit tlačítko hned - bez delay
+        this.showManualLoadButton();
+      } else {
+        this.manualLoadButton.style.display = 'none';
+      }
     }
     
     loadUserPreferences() {
@@ -10552,7 +10692,21 @@ document.addEventListener('DOMContentLoaded', async function() {
         this.outsideLoadedArea = true;
       } else {
         console.warn('[DB Map][SmartLoading] showManualLoadButton: tlačítko neexistuje!');
+        return;
       }
+      // Kontrola, zda už není tlačítko zobrazené - zabránit nekonečné smyčce
+      const currentDisplay = window.getComputedStyle(this.manualLoadButton).display;
+      if (currentDisplay !== 'none' && currentDisplay !== 'hidden') {
+        // Tlačítko už je zobrazené - neprovádět zbytečné operace a logování
+        return;
+      }
+      const inLeaflet = typeof this.manualLoadButton.closest === 'function' ? this.manualLoadButton.closest('.leaflet-container') : null;
+      const mode = inLeaflet ? 'map' : 'body';
+      this.applyManualButtonStyles(mode);
+      console.log('[DB Map][ManualButton] show() mode:', mode, 'parent:', this.manualLoadButton.parentElement ? this.manualLoadButton.parentElement.tagName + '#' + (this.manualLoadButton.parentElement.id || '') : 'null');
+      this.manualLoadButton.style.display = 'block';
+      this.outsideLoadedArea = true;
+      this.logManualButtonPlacement('show');
     }
     
     hideManualLoadButton() {
@@ -10569,11 +10723,86 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (ALWAYS_SHOW_MANUAL_BUTTON || this.legacyMode) {
         return;
       }
+      // V radius mode zobrazit tlačítko vždy (na desktopu i mobilu)
+      // aby bylo vidět i když není mimo načtenou oblast
+      if (typeof loadMode !== 'undefined' && loadMode === 'radius') {
+        // V radius mode tlačítko neschovávat - nechat ho viditelné
+        return;
+      }
       if (this.manualLoadButton) {
         this.manualLoadButton.style.display = 'none';
         this.outsideLoadedArea = false;
+        this.logManualButtonPlacement('hide');
       } else {
         console.warn('[DB Map][SmartLoading] hideManualLoadButton: tlačítko neexistuje!');
+      }
+    }
+    
+    setManualButtonHidden(hidden) {
+      if (!this.manualLoadButton) return;
+      this.manualLoadButton.classList.toggle('db-manual-load-hidden', hidden === true);
+      if (!hidden) {
+        const inLeaflet = typeof this.manualLoadButton.closest === 'function' ? this.manualLoadButton.closest('.leaflet-container') : null;
+        const mode = inLeaflet ? 'map' : 'body';
+        this.applyManualButtonStyles(mode);
+      }
+    }
+
+    applyManualButtonStyles(mode) {
+      if (!this.manualLoadButton) return;
+      try {
+        const el = this.manualLoadButton;
+        const isSmallScreen = window.innerHeight <= 700;
+        const targetBottom = isSmallScreen ? 40 : 80;
+        el.style.position = mode === 'body' ? 'fixed' : 'absolute';
+        el.style.top = 'auto';
+        el.style.bottom = targetBottom + 'px';
+        el.style.left = '50%';
+        el.style.right = 'auto';
+        el.style.transform = 'translateX(-50%)';
+        el.style.zIndex = mode === 'body' ? '680' : '690';
+        el.style.pointerEvents = 'auto';
+        el.style.display = 'inline-flex';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'center';
+        el.style.width = 'fit-content';
+        el.style.maxWidth = 'calc(100% - 40px)';
+        el.style.whiteSpace = 'nowrap';
+      } catch (e) {
+        console.warn('[DB Map][ManualButton] applyManualButtonStyles failed:', e);
+      }
+    }
+
+    logManualButtonPlacement(context) {
+      if (!this.manualLoadButton || typeof console === 'undefined' || !console.log) return;
+      try {
+        const parentEl = this.manualLoadButton.parentElement;
+        const parentInfo = parentEl ? {
+          tag: parentEl.tagName,
+          id: parentEl.id || null,
+          className: parentEl.className || null
+        } : null;
+        const buttonRect = this.manualLoadButton.getBoundingClientRect();
+        const mapContainer = document.querySelector('.leaflet-container');
+        const mapRect = mapContainer ? mapContainer.getBoundingClientRect() : null;
+
+        console.log('[DB Map][ManualButton][' + context + ']', {
+          parent: parentInfo,
+          buttonRect: {
+            top: Math.round(buttonRect.top),
+            left: Math.round(buttonRect.left),
+            width: Math.round(buttonRect.width),
+            height: Math.round(buttonRect.height)
+          },
+          mapRect: mapRect ? {
+            top: Math.round(mapRect.top),
+            left: Math.round(mapRect.left),
+            width: Math.round(mapRect.width),
+            height: Math.round(mapRect.height)
+          } : null
+        });
+      } catch (e) {
+        console.warn('[DB Map][ManualButton] logManualButtonPlacement failed:', e);
       }
     }
     
@@ -10615,7 +10844,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Disable tlačítko během fetch (zabrání dvojkliku a zrušení probíhajícího requestu)
       this.disableManualLoadButton();
       // Schovat tlačítko během načítání (standardní chování)
-      this.hideManualLoadButton();
+      // V radius mode tlačítko neschovávat - jen ho deaktivovat
+      if (typeof loadMode === 'undefined' || loadMode !== 'radius') {
+        this.hideManualLoadButton();
+      }
       
       try {
         const center = map.getCenter();
@@ -10664,8 +10896,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       });
     }
-    document.body.appendChild(container);
+    // Explicitně nastavit fixed positioning pro fallback tlačítko (emergency fallback)
+    container.style.position = 'fixed';
+    container.style.bottom = '60px';
+    container.style.left = '50%';
+    container.style.transform = 'translateX(-50%)';
+    container.style.zIndex = '680';
     container.style.display = 'block';
+    document.body.appendChild(container);
   }
   if (typeof window !== 'undefined') {
     window.createDirectLegacyButton = createDirectLegacyButton;
@@ -10690,12 +10928,27 @@ document.addEventListener('DOMContentLoaded', async function() {
       window.smartLoadingManager = new SmartLoadingManager();
       window.smartLoadingManager.init();
     } catch (fallbackError) {
+      console.error('[DB Map] Fallback inicializace také selhala:', fallbackError);
       // Pokud vše selže a jsme na stagingu, vytvořit tlačítko přímo
       if (FORCE_LEGACY_MANUAL_BUTTON) {
-        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-          createDirectLegacyButton();
-        } else {
-          document.addEventListener('DOMContentLoaded', createDirectLegacyButton);
+        try {
+          if (typeof createDirectLegacyButton === 'function') {
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+              createDirectLegacyButton();
+            } else {
+              document.addEventListener('DOMContentLoaded', createDirectLegacyButton);
+            }
+          }
+        } catch (legacyErr) {
+          console.error('[DB Map] Nepodařilo se vytvořit legacy tlačítko:', legacyErr);
+        }
+      } else {
+        try {
+          if (typeof createDirectLegacyButton === 'function') {
+            createDirectLegacyButton();
+          }
+        } catch (legacyErr) {
+          console.error('[DB Map] Nepodařilo se vytvořit legacy tlačítko:', legacyErr);
         }
       }
     }
@@ -10754,14 +11007,17 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Kontrola, zda jsme mimo načtenou oblast – prováděj i při nízkém zoomu,
       // aby se tlačítko mohlo zobrazit, ale bez automatického fetchování
-      // V trvalém režimu (ALWAYS_SHOW_MANUAL_BUTTON) tlačítko neschovávat
-      if (!ALWAYS_SHOW_MANUAL_BUTTON) {
+      // V trvalém režimu (ALWAYS_SHOW_MANUAL_BUTTON) nebo radius mode tlačítko neschovávat
+      if (!ALWAYS_SHOW_MANUAL_BUTTON && (!loadMode || loadMode !== 'radius')) {
         const outsideArea = window.smartLoadingManager.checkIfOutsideLoadedArea(c, FIXED_RADIUS_KM);
         if (outsideArea) {
           window.smartLoadingManager.showManualLoadButton();
         } else {
           window.smartLoadingManager.hideManualLoadButton();
         }
+      } else if (loadMode === 'radius') {
+        // V radius mode vždy zobrazit tlačítko
+        window.smartLoadingManager.showManualLoadButton();
       }
       
       // Pokud je příliš malý zoom, tak dál nic nedělej (šetři API)
@@ -11100,7 +11356,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         <div style="display: flex; gap: 8px; align-items: center;">
         <input type="text"
                placeholder="Hledám víc než jen cíl cesty.."
-                 style="flex: 1; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; outline: none;"
+                 style="flex: 1; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; outline: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent;"
                id="db-mobile-search-field-input">
           <button type="button" 
                   style="padding: 0.75rem; background: #049FE8; color: #fff; border: none; border-radius: 8px; cursor: pointer; white-space: nowrap;"
@@ -11121,9 +11377,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Event listener pro input
       const searchInput = searchField.querySelector('#db-mobile-search-field-input');
+      // Pro mobilní zařízení použít kratší debounce (300ms) pro lepší UX
       const handleAutocompleteInput = debounce((value) => {
         showMobileAutocomplete(value, searchInput);
-      }, 250);
+      }, 300);
 
       searchInput.addEventListener('input', function() {
         const query = this.value.trim();
@@ -11164,14 +11421,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
       }
       
-      // Event listener pro kliknutí mimo pole - skrýt pole
-      document.addEventListener('click', function(e) {
+      // Event listener pro kliknutí/touch mimo pole - skrýt pole
+      // Použít jak click, tak touchstart pro lepší kompatibilitu s Androidem
+      const handleOutsideClick = function(e) {
         if (!searchField.contains(e.target) && !e.target.closest('#db-search-toggle')) {
           if (!searchField.classList.contains('hidden')) {
             closeMobileSearchField();
           }
         }
-      });
+      };
+      document.addEventListener('click', handleOutsideClick);
+      document.addEventListener('touchstart', handleOutsideClick, { passive: true });
       
       return searchField;
     } else {
@@ -11201,9 +11461,16 @@ document.addEventListener('DOMContentLoaded', async function() {
               // Focus na input
               const searchInput = searchField.querySelector('#db-mobile-search-field-input');
               if (searchInput) {
-                // Nespouštět auto-focus na mobilech kvůli iOS zoomu
-                const isMobile2 = /Mobi|Android/i.test(navigator.userAgent);
-                if (!isMobile2) {
+                // Pro Android použít touch event pro focus, pro iOS nechat bez focus kvůli zoomu
+                const isAndroid = /Android/i.test(navigator.userAgent);
+                const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+                if (isAndroid) {
+                  // Na Androidu použít touchstart pro focus, aby fungovalo kliknutí
+                  searchInput.addEventListener('touchstart', function() {
+                    this.focus();
+                  }, { once: true, passive: true });
+                } else if (!isIOS) {
+                  // Na desktopu použít normální focus
                   setTimeout(() => searchInput.focus(), 100);
                 }
               }
@@ -11788,11 +12055,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     const normalized = trimmed.toLowerCase();
     const cachedInternal = internalSearchCache.get(normalized);
     const cachedExternal = externalSearchCache.get(normalized);
-    if (cachedInternal || cachedExternal) {
+    
+    // Zobrazit cache pouze pokud už máme kompletní data (oba typy výsledků)
+    // Jinak počkat na načtení dat, aby se nezobrazovaly duplicitní listy
+    const hasCompleteCache = cachedInternal && cachedExternal;
+    
+    if (hasCompleteCache) {
       renderDesktopAutocomplete({
         internal: cachedInternal || [],
         external: (cachedExternal && cachedExternal.results) || []
       }, inputElement);
+      // Pokud máme kompletní cache, nemusíme načítat znovu
+      return;
     }
 
     if (desktopSearchController) {
@@ -11822,7 +12096,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (error.name === 'AbortError') {
         return;
       }
-      console.error('Chyba při načítání desktop autocomplete:', error);
+      // Pokud je to CORS chyba, zobrazit pouze interní výsledky
+      if (error.message && (error.message.includes('CORS') || error.message.includes('Failed to fetch'))) {
+        console.warn('CORS chyba při načítání externích výsledků, zobrazuji pouze interní:', error);
+        // Zkusit zobrazit alespoň interní výsledky, pokud jsou
+        try {
+          const internal = await getInternalSearchResults(trimmed, signal);
+          if (!signal.aborted && internal && internal.length > 0) {
+            renderDesktopAutocomplete({
+              internal,
+              external: []
+            }, inputElement);
+          }
+        } catch (internalError) {
+          console.error('Chyba při načítání interních výsledků:', internalError);
+        }
+      } else {
+        console.error('Chyba při načítání desktop autocomplete:', error);
+      }
       if (desktopSearchController && desktopSearchController.signal === signal) {
         desktopSearchController = null;
       }
@@ -12251,7 +12542,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (error.name === 'AbortError') {
         return;
       }
-      console.error('Chyba při načítání autocomplete:', error);
+      // Pokud je to CORS chyba, zobrazit pouze interní výsledky
+      if (error.message && (error.message.includes('CORS') || error.message.includes('Failed to fetch'))) {
+        console.warn('CORS chyba při načítání externích výsledků, zobrazuji pouze interní:', error);
+        // Zkusit zobrazit alespoň interní výsledky, pokud jsou
+        try {
+          const internal = await getInternalSearchResults(trimmed, signal);
+          if (!signal.aborted && internal && internal.length > 0) {
+            renderMobileAutocomplete({
+              internal,
+              external: []
+            }, inputElement);
+          }
+        } catch (internalError) {
+          console.error('Chyba při načítání interních výsledků:', internalError);
+        }
+      } else {
+        console.error('Chyba při načítání autocomplete:', error);
+      }
       if (mobileSearchController && mobileSearchController.signal === signal) {
         mobileSearchController = null;
       }

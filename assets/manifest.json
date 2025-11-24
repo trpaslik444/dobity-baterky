@@ -2,7 +2,7 @@
   "name": "Dobitý Baterky",
   "short_name": "Dobitý Baterky",
   "description": "Interaktivní mapa nabíjecích stanic a RV míst",
-  "start_url": "/?pwa=1",
+  "start_url": "/mapa/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

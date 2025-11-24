@@ -1,7 +1,10 @@
 (function () {
   const data = window.dbMapData || {};
   const baseUrl = data.assetsBase || (data.pluginUrl ? data.pluginUrl + 'assets/map/' : '');
-  const versionSuffix = data.version ? '?ver=' + encodeURIComponent(data.version) : '';
+  const CACHE_BUST_TAG = '20241120a';
+  const baseVersion = data.version ? String(data.version) : '';
+  const versionString = baseVersion ? baseVersion + '-' + CACHE_BUST_TAG : CACHE_BUST_TAG;
+  const versionSuffix = '?ver=' + encodeURIComponent(versionString);
 
   if (!baseUrl) {
     console.error('[DB Map][Loader] Neznámá URL k mapovým skriptům.');
