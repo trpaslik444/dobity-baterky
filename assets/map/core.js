@@ -141,9 +141,6 @@ let searchCache = new Map(); // Cache pro vyhledávání
 let pendingRequests = new Map();
 let requestQueue = [];
 let isProcessingQueue = false;
-const radiusDatasetCache = new Map();
-const RADIUS_CACHE_TTL = 45 * 1000; // 45 sekund
-const RADIUS_CACHE_LIMIT = 8;
 
 // Konfigurace optimalizací
 const OPTIMIZATION_CONFIG = {
@@ -154,117 +151,6 @@ const OPTIMIZATION_CONFIG = {
     retryAttempts: 2,
     retryDelay: 1000
 };
-
-function cloneFeaturePayload(list) {
-  if (!Array.isArray(list)) {
-    return [];
-  }
-  if (typeof structuredClone === 'function') {
-    try {
-      return structuredClone(list);
-    } catch (_) {
-      // fallback below
-    }
-  }
-  return list.map((feature) => {
-    const cloned = { ...feature };
-    if (feature.properties && typeof feature.properties === 'object') {
-      cloned.properties = { ...feature.properties };
-    }
-    if (feature.geometry && typeof feature.geometry === 'object') {
-      cloned.geometry = { ...feature.geometry };
-      if (Array.isArray(feature.geometry.coordinates)) {
-        cloned.geometry.coordinates = feature.geometry.coordinates.slice(0);
-      }
-    }
-    return cloned;
-  });
-}
-
-function buildRadiusCacheKey(center, radiusKm, includedTypesCsv) {
-  if (!center || typeof center.lat !== 'number' || typeof center.lng !== 'number') {
-    return null;
-  }
-  const latKey = center.lat.toFixed(3);
-  const lngKey = center.lng.toFixed(3);
-  const radiusKey = Number(radiusKm || 0).toFixed(2);
-  const includedKey = (includedTypesCsv || 'charging_location,rv_spot,poi')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .sort()
-    .join(',');
-  return `${latKey}:${lngKey}:${radiusKey}:${includedKey}`;
-}
-
-function getRadiusCacheEntry(cacheKey) {
-  if (!cacheKey || !radiusDatasetCache.has(cacheKey)) {
-    return null;
-  }
-  const entry = radiusDatasetCache.get(cacheKey);
-  if (!entry) return null;
-  if (Date.now() - entry.timestamp > RADIUS_CACHE_TTL) {
-    radiusDatasetCache.delete(cacheKey);
-    return null;
-  }
-  return {
-    features: cloneFeaturePayload(entry.features),
-    meta: entry.meta || {}
-  };
-}
-
-function setRadiusCacheEntry(cacheKey, features, meta = {}) {
-  if (!cacheKey) {
-    return;
-  }
-  radiusDatasetCache.set(cacheKey, {
-    timestamp: Date.now(),
-    features: cloneFeaturePayload(features),
-    meta
-  });
-  if (radiusDatasetCache.size > RADIUS_CACHE_LIMIT) {
-    let oldestKey = null;
-    let oldestTs = Infinity;
-    for (const [key, value] of radiusDatasetCache.entries()) {
-      if (value.timestamp < oldestTs) {
-        oldestTs = value.timestamp;
-        oldestKey = key;
-      }
-    }
-    if (oldestKey) {
-      radiusDatasetCache.delete(oldestKey);
-    }
-  }
-}
-
-function applyRadiusDataset(incoming, center, radiusKm, source = 'network') {
-  const dataset = Array.isArray(incoming) ? incoming : [];
-  features = dataset;
-  window.features = dataset;
-  lastRenderedFeatures = dataset.slice(0);
-  if (center && typeof center.lat === 'number' && typeof center.lng === 'number') {
-    lastSearchCenter = { lat: center.lat, lng: center.lng };
-  }
-  if (Number.isFinite(radiusKm)) {
-    lastSearchRadiusKm = radiusKm;
-  }
-  if (window.smartLoadingManager && ALWAYS_SHOW_MANUAL_BUTTON) {
-    setTimeout(() => {
-      const hasSpecialFilters = filterState.free || showOnlyRecommended;
-      if (hasSpecialFilters) {
-        window.smartLoadingManager.hideManualLoadButton();
-      } else {
-        window.smartLoadingManager.showManualLoadButton();
-      }
-    }, 0);
-  }
-  if (typeof clearMarkers === 'function') {
-    clearMarkers();
-  }
-  if (typeof renderCards === 'function') {
-    renderCards('', null, false);
-  }
-}
 
 // ===== ŽIVÁ POLOHA UŽIVATELE (LocationService) =====
 const LocationService = (() => {
@@ -2693,7 +2579,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     return url.toString();
   }
 
-  async function fetchAndRenderRadius(center, includedTypesCsv = null, options = {}) {
+  async function fetchAndRenderRadius(center, includedTypesCsv = null) {
     if (favoritesState.isActive) {
       return;
     }
@@ -2710,10 +2596,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     const radiusKm = getRadiusForRequest();
     const url = buildRestUrlForRadius(center, includedTypesCsv, radiusKm);
     
-    await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url, options);
+    await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
   }
   
-  async function fetchAndRenderRadiusWithFixedRadius(center, includedTypesCsv = null, fixedRadiusKm = null, options = {}) {
+  async function fetchAndRenderRadiusWithFixedRadius(center, includedTypesCsv = null, fixedRadiusKm = null) {
     if (favoritesState.isActive) {
       return;
     }
@@ -2729,18 +2615,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     const radiusKm = fixedRadiusKm || FIXED_RADIUS_KM;
     const url = buildRestUrlForRadius(center, includedTypesCsv, radiusKm);
     
-    await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url, options);
+    await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
   }
-  async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url, options = {}) {
-    const skipCache = options?.skipCache === true;
-    const cacheKey = buildRadiusCacheKey(center, radiusKm, includedTypesCsv);
-    if (!skipCache) {
-      const cached = getRadiusCacheEntry(cacheKey);
-      if (cached && Array.isArray(cached.features) && cached.features.length) {
-        applyRadiusDataset(cached.features, center, radiusKm, 'cache');
-        return;
-      }
-    }
+  async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
     specialDatasetActive = false;
     if (favoritesState.isActive) {
       return;
@@ -2790,10 +2667,29 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Nastavit lastSearchCenter a lastSearchRadiusKm PŘED nastavením features
       // aby checkIfOutsideLoadedArea fungoval správně
-      let nextFeatures = incoming;
+      lastSearchCenter = { lat: center.lat, lng: center.lng };
+      lastSearchRadiusKm = radiusKm;
       
+      // Aktualizovat viditelnost tlačítka po načtení dat
+      if (window.smartLoadingManager && ALWAYS_SHOW_MANUAL_BUTTON) {
+        setTimeout(() => {
+          const hasSpecialFilters = filterState.free || showOnlyRecommended;
+          if (hasSpecialFilters) {
+            window.smartLoadingManager.hideManualLoadButton();
+          } else {
+            window.smartLoadingManager.showManualLoadButton();
+          }
+        }, 0);
+      }
+      
+      // POUŽÍT POUZE nové body - staré odstranit i když se oblasti překrývají
+      // Tím zajistíme, že mapa vždy zobrazuje pouze aktuální radius
+      features = incoming;
+      
+      window.features = features;
+
       // FALLBACK: Pokud radius vrátí 0 bodů, stáhneme ALL a vyfiltrujeme klientsky
-      if (nextFeatures.length === 0) {
+      if (features.length === 0) {
         try {
           const allUrl = new URL((dbMapData?.restUrl) || '/wp-json/db/v1/map', window.location.origin);
           const allHeaders = {
@@ -2821,15 +2717,35 @@ document.addEventListener('DOMContentLoaded', async function() {
               return distance <= RADIUS_KM;
             });
               
-              nextFeatures = filteredFeatures;
+              features = filteredFeatures;
+              window.features = features;
           }
         } catch (fallbackErr) {
         }
       }
-      applyRadiusDataset(nextFeatures, center, radiusKm, 'network');
-      if (!skipCache) {
-        setRadiusCacheEntry(cacheKey, nextFeatures, { radiusKm });
+
+
+      // Vykreslit karty s novými daty (pouze viditelné v viewportu pro optimalizaci)
+      if (typeof clearMarkers === 'function') {
+        clearMarkers();
       }
+      
+      // Při prvním načtení vykreslit všechny features v radiusu, ne jen ty v viewportu
+      // selectFeaturesForView() se používá jen pro optimalizaci při panování/zoomování
+      
+      // Vykreslit všechny features - markery se přidají do clusterů, které je optimalizují
+      if (typeof renderCards === 'function') {
+        renderCards('', null, false);
+      }
+      
+      // Uložit všechny features pro pozdější použití
+      window.features = features;
+      lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
+      // Zachovej stabilní viewport po fetchi: bez auto-fit/auto-pan.
+      // Poloha mapy je výhradně řízena uživatelem; přesuny provádíme
+      // pouze na explicitní akce (klik na pin, potvrzení vyhledávání, moje poloha).
+      // Intencionálně no-op zde.
+      // map.setView(center, Math.max(map.getZoom() || 9, 9)); // vypnuto: neposouvat mapu po načtení v režimu okruhu
     } catch (err) {
       if (err.name !== 'AbortError') {
         // Silent fail - chyby se logují pouze v development módu
@@ -11087,7 +11003,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       try {
         const center = map.getCenter();
         // Použít fixní radius místo dynamického - stejně jako při inicializaci
-        await fetchAndRenderRadiusWithFixedRadius(center, null, FIXED_RADIUS_KM, { skipCache: true });
+        await fetchAndRenderRadiusWithFixedRadius(center, null, FIXED_RADIUS_KM);
+        lastSearchCenter = { lat: center.lat, lng: center.lng };
+        lastSearchRadiusKm = FIXED_RADIUS_KM;
       } catch (error) {
         console.error('[DB Map] Error loading new area:', error);
         // Při chybě zobrazit tlačítko znovu (watcher ho případně skryje, pokud jsme uvnitř oblasti)
