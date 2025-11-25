@@ -7,7 +7,7 @@
 #   STAGING_PASS=heslo ./scripts/import-csv-production.expect /cesta/k/file.csv
 #   IMPORT_ENV=production PROD_PASS=heslo ./scripts/import-csv-production.expect /cesta/k/file.csv
 
-set timeout 300  # Pouze pro nahrání souborů, ne pro import samotný
+set timeout 300  ;# Pouze pro nahrání souborů, ne pro import samotný
 
 if { [llength $argv] < 1 } {
     puts "ERROR: Musíš předat cestu k CSV souboru."
