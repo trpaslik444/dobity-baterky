@@ -24,6 +24,21 @@ IMPORT_ENV=production PROD_PASS="••••" ./scripts/import-csv-production.e
 
 > Doporučení: nejprve spusť import na stagingu, zkontroluj výsledek, a poté identický CSV soubor nahraj na produkci s `--env=production`.
 
+### Párování nearby po importu
+
+- Wrapper skript po dokončení každého balíčku automaticky zpracuje frontu nearby a spáruje nově importované body s nabíječkami.
+- Výchozí limit je `--process-nearby=50`. Parametrem můžeš rozsah upravit nebo párování vypnout.
+
+```bash
+# Zpracovat větší část fronty
+./scripts/import-csv-production.sh --process-nearby=200 exported_pois.csv
+
+# Naopak párování přeskočit (např. při testu)
+./scripts/import-csv-production.sh --skip-nearby exported_pois.csv
+```
+
+- Při přímém volání expect skriptu lze nastavit proměnnou `PROCESS_NEARBY_LIMIT` (implicitně 50).
+
 ### Automatický import (doporučeno)
 
 ```bash

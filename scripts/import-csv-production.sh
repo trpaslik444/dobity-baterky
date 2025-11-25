@@ -20,11 +20,12 @@ fi
 # Výchozí hodnoty
 IMPORT_ENV="staging"
 CSV_FILE=""
+PROCESS_NEARBY_LIMIT=50
 
 usage () {
     cat <<'EOT'
 Použití:
-  ./scripts/import-csv-production.sh [--env=staging|production] [cesta/k/souboru.csv]
+  ./scripts/import-csv-production.sh [--env=staging|production] [--process-nearby=N] [cesta/k/souboru.csv]
 
 Příklady:
   ./scripts/import-csv-production.sh exported_pois_staging_complete.csv
@@ -45,6 +46,18 @@ while [[ $# -gt 0 ]]; do
         --env)
             IMPORT_ENV="${2:-}"
             shift 2
+            ;;
+        --process-nearby=*)
+            PROCESS_NEARBY_LIMIT="${1#*=}"
+            shift
+            ;;
+        --process-nearby)
+            PROCESS_NEARBY_LIMIT="${2:-50}"
+            shift 2
+            ;;
+        --skip-nearby)
+            PROCESS_NEARBY_LIMIT=0
+            shift
             ;;
         -h|--help)
             usage
@@ -108,6 +121,11 @@ if [ -z "$PASSWORD_VALUE" ]; then
     exit 1
 fi
 
+PROCESS_NEARBY_LIMIT=$(printf '%s' "$PROCESS_NEARBY_LIMIT" | tr -cd '0-9')
+if [[ -z "$PROCESS_NEARBY_LIMIT" ]]; then
+    PROCESS_NEARBY_LIMIT=50
+fi
+
 # Optimální velikost balíčku (3000 řádků = ~3 minuty)
 OPTIMAL_CHUNK_SIZE=3000
 
@@ -117,6 +135,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "🌍 Prostředí: $IMPORT_ENV"
 echo "📄 CSV soubor: $CSV_FILE"
 echo "📦 Velikost balíčku: $OPTIMAL_CHUNK_SIZE řádků (optimalizováno)"
+echo "🔁 Post-processing nearby fronty: $PROCESS_NEARBY_LIMIT položek"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -164,7 +183,7 @@ for chunk_file in "${CHUNK_PREFIX}"*.csv; do
     echo "📦 Balíček $CHUNK_NUM/$CHUNK_COUNT: $(basename "$chunk_file")"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
-    IMPORT_ENV="$IMPORT_ENV" IMPORT_PASS="$PASSWORD_VALUE" \
+    IMPORT_ENV="$IMPORT_ENV" IMPORT_PASS="$PASSWORD_VALUE" PROCESS_NEARBY_LIMIT="$PROCESS_NEARBY_LIMIT" \
         "$SCRIPT_DIR/import-csv-production.expect" "$chunk_file"
     
     EXIT_CODE=$?

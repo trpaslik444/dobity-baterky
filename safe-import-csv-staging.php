@@ -43,6 +43,7 @@ $csvFile = $argv[1] ?? '';
 $maxRows = 0;
 $logEvery = 100;
 $forceNew = false;
+$processNearbyLimit = 50;
 
 for ($i = 2; $i < count($argv); $i++) {
     if (preg_match('/^--max-rows=(\d+)$/', $argv[$i], $m)) {
@@ -51,6 +52,10 @@ for ($i = 2; $i < count($argv); $i++) {
         $logEvery = max(1, (int)$m[1]);
     } elseif ($argv[$i] === '--force-new') {
         $forceNew = true;
+    } elseif (preg_match('/^--process-nearby=(\d+)$/', $argv[$i], $m)) {
+        $processNearbyLimit = max(0, (int)$m[1]);
+    } elseif ($argv[$i] === '--skip-nearby') {
+        $processNearbyLimit = 0;
     }
 }
 
@@ -429,6 +434,12 @@ echo "   • Zařazeno do fronty: {$enqueued_count} POI, {$affected_count} affec
 echo "   • Celkový čas: " . number_format($totalTime, 2) . "s\n";
 echo "   • Průměrný čas na řádek: " . ($row_count > 0 ? number_format($totalTime / $row_count, 3) : 'N/A') . "s\n";
 
+if ($processNearbyLimit > 0) {
+    db_process_nearby_queue_after_import($processNearbyLimit);
+} else {
+    echo "ℹ️ Přeskakuji automatické párování nearby (process-nearby=$processNearbyLimit)\n";
+}
+
 if (!empty($errors)) {
     echo "\n⚠️  CHYBY BĚHEM IMPORTU:\n";
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
@@ -452,4 +463,64 @@ if (count($errors) === 0) {
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n";
 
 exit(count($errors) > 0 ? 1 : 0);
+
+/**
+ * Po importu zpracuje frontu nearby položek, aby se nové body spárovaly s nabíječkami.
+ */
+function db_process_nearby_queue_after_import(int $limit) {
+    if (!class_exists('\DB\Jobs\Nearby_Batch_Processor') || !class_exists('\DB\Jobs\Nearby_Queue_Manager')) {
+        echo "ℹ️ Nearby batch processor není dostupný – přeskočeno.\n";
+        return;
+    }
+
+    $limit = max(1, $limit);
+
+    try {
+        $queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
+        $batch_processor = new \DB\Jobs\Nearby_Batch_Processor();
+
+        $stats = $queue_manager->get_stats();
+        $pending = (int)($stats->pending ?? 0);
+
+        if ($pending === 0) {
+            echo "ℹ️ Fronta nearby je prázdná – není co zpracovat.\n";
+            return;
+        }
+
+        $target = min($pending, $limit);
+        $processedTotal = 0;
+        $passes = 0;
+
+        while ($processedTotal < $target) {
+            $passes++;
+            $batchSize = min(10, $target - $processedTotal);
+            $result = $batch_processor->process_batch($batchSize);
+            $processed = (int)($result['processed'] ?? 0);
+
+            if ($processed === 0) {
+                $message = $result['message'] ?? 'Bez detailů';
+                echo "⚠️ Nearby batch se zastavil: {$message}\n";
+                break;
+            }
+
+            $processedTotal += $processed;
+
+            if ($processed < $batchSize) {
+                break;
+            }
+        }
+
+        $statsAfter = $queue_manager->get_stats();
+        $pendingAfter = (int)($statsAfter->pending ?? 0);
+
+        echo "🔁 Nearby fronta: zpracováno {$processedTotal} položek (zbývá {$pendingAfter}, průchodů {$passes}).\n";
+
+        if ($pendingAfter > 0 && class_exists('\DB\Jobs\Nearby_Worker')) {
+            \DB\Jobs\Nearby_Worker::dispatch(60);
+            echo "ℹ️ Zbytek fronty se dokončí na pozadí (worker plánován).\n";
+        }
+    } catch (\Throwable $e) {
+        echo "⚠️ Nepodařilo se zpracovat nearby frontu: " . $e->getMessage() . "\n";
+    }
+}
 
