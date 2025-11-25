@@ -8787,11 +8787,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     const srcsetAttr = [src1x ? `${src1x} 1x` : '', src2x ? `${src2x} 2x` : '', src3x ? `${src3x} 3x` : '']
       .filter(Boolean)
       .join(', ');
-    const logoImg = '<img src="' + defaultSrc + '"' + (srcsetAttr ? ' srcset="' + srcsetAttr + '"' : '') + ' alt="Dobitý Baterky" width="' + logoSize + '" height="' + logoSize + '" style="display:block;width:100%;height:100%;object-fit:contain;">';
-    return '<div style="width:' + size + 'px;height:' + size + 'px;display:flex;align-items:center;justify-content:center;pointer-events:none;border:' + borderWidth + 'px solid #FF6A4B;border-radius:4px;background:transparent;">'
-         +     '<div style="width:' + logoSize + 'px;height:' + logoSize + 'px;display:flex;align-items:center;justify-content:center;">'
-         +       logoImg
-         +     '</div>'
+    const logoImg = '<img src="' + defaultSrc + '"' + (srcsetAttr ? ' srcset="' + srcsetAttr + '"' : '') + ' alt="Dobitý Baterky" style="display:block;width:100%;height:100%;object-fit:cover;">';
+    return '<div style="width:' + size + 'px;height:' + size + 'px;display:block;pointer-events:none;border:' + borderWidth + 'px solid #FF6A4B;border-radius:4px;background:transparent;box-sizing:border-box;overflow:hidden;">'
+         +   logoImg
          + '</div>';
   }
   function getFavoriteBadgeHtml(size) {
