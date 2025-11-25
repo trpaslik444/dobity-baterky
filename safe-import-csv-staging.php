@@ -248,45 +248,21 @@ try {
                 }
             }
             
-            // Pokud POI ještě nemá ID, zkontrolovat duplicity podle názvu (jako admin importer)
+            // Pokud POI ještě nemá ID, vytvořit nový POI (SAFE MODE: bez vyhledávání podle názvu)
             if (!$poi_id) {
-                // KONTROLA DUPLICIT: Zkusit najít podle názvu (jako admin importer)
-                $candidates = $wpdb->get_col($wpdb->prepare(
-                    "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'poi' AND post_status = 'publish' AND post_title = %s",
-                    $post_title
-                ));
-                
-                if (count($candidates) === 1) {
-                    // Aktualizovat existující POI místo vytváření duplicit
-                    $cid = (int)$candidates[0];
-                    $update_post = [
-                        'ID' => $cid,
-                        'post_title' => $post_title,
-                        'post_content' => $post_content,
-                    ];
-                    $result = wp_update_post($update_post, true);
-                    if (!is_wp_error($result)) {
-                        $poi_id = $cid;
-                        $updated++;
-                    } else {
-                        $errors[] = "Řádek {$row_count}: Chyba při aktualizaci POI {$cid}: " . $result->get_error_message();
-                        continue;
-                    }
-                } else {
-                    // Vytvořit nový POI pouze pokud neexistuje duplicit
-                    $post_data = [
-                        'post_title' => $post_title,
-                        'post_content' => $post_content,
-                        'post_type' => 'poi',
-                        'post_status' => 'publish'
-                    ];
-                    $poi_id = wp_insert_post($post_data);
-                    if (is_wp_error($poi_id)) {
-                        $errors[] = "Řádek {$row_count}: Chyba při vytváření POI: " . $poi_id->get_error_message();
-                        continue;
-                    }
-                    $imported++;
+                // Vytvořit nový POI - bez kontroly duplicit (safe mode)
+                $post_data = [
+                    'post_title' => $post_title,
+                    'post_content' => $post_content,
+                    'post_type' => 'poi',
+                    'post_status' => 'publish'
+                ];
+                $poi_id = wp_insert_post($post_data);
+                if (is_wp_error($poi_id)) {
+                    $errors[] = "Řádek {$row_count}: Chyba při vytváření POI: " . $poi_id->get_error_message();
+                    continue;
                 }
+                $imported++;
             }
             
             // Nastavit typ POI
