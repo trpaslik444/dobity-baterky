@@ -17,7 +17,85 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
     source "$SCRIPT_DIR/load-env.sh"
 fi
 
-CSV_FILE="${1:-exported_pois_staging_complete.csv}"
+# Výchozí hodnoty
+IMPORT_ENV="staging"
+CSV_FILE=""
+PROCESS_NEARBY_LIMIT=50
+
+usage () {
+    cat <<'EOT'
+Použití:
+  ./scripts/import-csv-production.sh [--env=staging|production] [--process-nearby=N] [cesta/k/souboru.csv]
+
+Příklady:
+  ./scripts/import-csv-production.sh exported_pois_staging_complete.csv
+  ./scripts/import-csv-production.sh --env=production exported_pois_prod.csv
+
+Proměnné:
+  STAGING_PASS  - heslo/passphrase pro staging (implicitní)
+  PROD_PASS     - heslo/passphrase pro produkci (při --env=production)
+EOT
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --env=*)
+            IMPORT_ENV="${1#*=}"
+            shift
+            ;;
+        --env)
+            IMPORT_ENV="${2:-}"
+            shift 2
+            ;;
+        --process-nearby=*)
+            PROCESS_NEARBY_LIMIT="${1#*=}"
+            shift
+            ;;
+        --process-nearby)
+            PROCESS_NEARBY_LIMIT="${2:-50}"
+            shift 2
+            ;;
+        --skip-nearby)
+            PROCESS_NEARBY_LIMIT=0
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            echo "❌ Neznámý parametr: $1" >&2
+            usage
+            exit 1
+            ;;
+        *)
+            CSV_FILE="$1"
+            shift
+            break
+            ;;
+    esac
+done
+
+# Pokud uživatel zadal další argumenty (např. zbylé po break), vezmeme první jako CSV
+if [[ -z "$CSV_FILE" && $# -gt 0 ]]; then
+    CSV_FILE="$1"
+    shift
+fi
+
+# Výchozí CSV soubor
+if [[ -z "$CSV_FILE" ]]; then
+    CSV_FILE="exported_pois_staging_complete.csv"
+fi
+
+IMPORT_ENV="$(echo "$IMPORT_ENV" | tr '[:upper:]' '[:lower:]')"
+if [[ "$IMPORT_ENV" != "staging" && "$IMPORT_ENV" != "production" ]]; then
+    echo "❌ CHYBA: --env musí být 'staging' nebo 'production'." >&2
+    exit 1
+fi
 
 # Rozšířit relativní cestu na absolutní
 if [[ ! "$CSV_FILE" = /* ]]; then
@@ -29,21 +107,35 @@ if [ ! -f "$CSV_FILE" ]; then
     exit 1
 fi
 
-if [ -z "${STAGING_PASS:-}" ]; then
-    echo "❌ CHYBA: STAGING_PASS není nastaven." >&2
-    echo "   Nastav ho v .env souboru nebo jako environment proměnnou:" >&2
-    echo "   export STAGING_PASS='tvoje_heslo'" >&2
+if [[ "$IMPORT_ENV" == "production" ]]; then
+    REQUIRED_PASS_VAR="PROD_PASS"
+else
+    REQUIRED_PASS_VAR="STAGING_PASS"
+fi
+
+PASSWORD_VALUE="${!REQUIRED_PASS_VAR:-}"
+if [ -z "$PASSWORD_VALUE" ]; then
+    echo "❌ CHYBA: Proměnná $REQUIRED_PASS_VAR není nastavena." >&2
+    echo "   Nastav ji v .env nebo jako environment proměnnou, např.:" >&2
+    echo "   export $REQUIRED_PASS_VAR='tajne_heslo'" >&2
     exit 1
+fi
+
+PROCESS_NEARBY_LIMIT=$(printf '%s' "$PROCESS_NEARBY_LIMIT" | tr -cd '0-9')
+if [[ -z "$PROCESS_NEARBY_LIMIT" ]]; then
+    PROCESS_NEARBY_LIMIT=50
 fi
 
 # Optimální velikost balíčku (3000 řádků = ~3 minuty)
 OPTIMAL_CHUNK_SIZE=3000
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 OPTIMALIZOVANÝ PRODUKČNÍ IMPORT"
+echo "🚀 OPTIMALIZOVANÝ IMPORT CSV"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🌍 Prostředí: $IMPORT_ENV"
 echo "📄 CSV soubor: $CSV_FILE"
 echo "📦 Velikost balíčku: $OPTIMAL_CHUNK_SIZE řádků (optimalizováno)"
+echo "🔁 Post-processing nearby fronty: $PROCESS_NEARBY_LIMIT položek"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -91,8 +183,8 @@ for chunk_file in "${CHUNK_PREFIX}"*.csv; do
     echo "📦 Balíček $CHUNK_NUM/$CHUNK_COUNT: $(basename "$chunk_file")"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
-    export STAGING_PASS
-    "$SCRIPT_DIR/import-csv-production.expect" "$chunk_file"
+    IMPORT_ENV="$IMPORT_ENV" IMPORT_PASS="$PASSWORD_VALUE" PROCESS_NEARBY_LIMIT="$PROCESS_NEARBY_LIMIT" \
+        "$SCRIPT_DIR/import-csv-production.expect" "$chunk_file"
     
     EXIT_CODE=$?
     

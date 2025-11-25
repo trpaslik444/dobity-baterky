@@ -11,12 +11,45 @@
 
 ## 🚀 Rychlý start
 
+### Volba prostředí
+
+- `--env=staging` (výchozí) – import běží proti stagingu, používá `STAGING_PASS`
+- `--env=production` – jednorázový import přímo na produkci, používá `PROD_PASS`
+
+Pokud spustíš expect skript přímo, nastav proměnné:
+
+```bash
+IMPORT_ENV=production PROD_PASS="••••" ./scripts/import-csv-production.expect data.csv
+```
+
+> Doporučení: nejprve spusť import na stagingu, zkontroluj výsledek, a poté identický CSV soubor nahraj na produkci s `--env=production`.
+
+### Párování nearby po importu
+
+- Wrapper skript po dokončení každého balíčku automaticky zpracuje frontu nearby a spáruje nově importované body s nabíječkami.
+- Výchozí limit je `--process-nearby=50`. Parametrem můžeš rozsah upravit nebo párování vypnout.
+
+```bash
+# Zpracovat větší část fronty
+./scripts/import-csv-production.sh --process-nearby=200 exported_pois.csv
+
+# Naopak párování přeskočit (např. při testu)
+./scripts/import-csv-production.sh --skip-nearby exported_pois.csv
+```
+
+- Při přímém volání expect skriptu lze nastavit proměnnou `PROCESS_NEARBY_LIMIT` (implicitně 50).
+
 ### Automatický import (doporučeno)
 
 ```bash
 cd "/Users/ondraplas/Local Sites/dobity-baterky-dev/app/public/wp-content/plugins/dobity-baterky"
 source scripts/load-env.sh
+# Staging (implicitně)
 ./scripts/import-csv-production.sh exported_pois_staging_complete.csv
+
+# Produkce (jednorázový import)
+export PROD_PASS="••••••"
+./scripts/import-csv-production.sh --env=production exported_pois_prod.csv
 ```
 
 **Co to udělá:**
@@ -112,9 +145,13 @@ ps aux | grep "safe-import-csv-staging.php"
 ### Pro produkci:
 
 ```bash
-# Stejný postup, jen změnit STAGING_PASS na PROD_PASS
+# Jednorázový import na produkci
 export PROD_PASS="produkční_heslo"
-./scripts/import-csv-production.sh exported_pois_production.csv
+./scripts/import-csv-production.sh --env=production exported_pois_production.csv
+
+# Manuálně (pokud vynecháte wrapper)
+IMPORT_ENV=production PROD_PASS="produkční_heslo" \
+  ./scripts/import-csv-production.expect exported_pois_prod_chunk_1.csv
 ```
 
 ---

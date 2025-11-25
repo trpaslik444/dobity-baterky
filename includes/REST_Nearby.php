@@ -1107,9 +1107,10 @@ class REST_Nearby {
                 'link' => get_permalink($post->ID),
             ];
             
-            // Přidat souřadnice
-            $lat = get_post_meta($post->ID, '_db_lat', true);
-            $lng = get_post_meta($post->ID, '_db_lng', true);
+            // Přidat souřadnice podle typu
+            $latLngKeys = $this->get_latlng_keys_for_post_type($post->post_type);
+            $lat = get_post_meta($post->ID, $latLngKeys['lat'], true);
+            $lng = get_post_meta($post->ID, $latLngKeys['lng'], true);
             if ($lat && $lng) {
                 $properties['lat'] = (float)$lat;
                 $properties['lng'] = (float)$lng;
@@ -1163,5 +1164,16 @@ class REST_Nearby {
         }
         
         return $adjusted_geojson;
+    }
+
+    private function get_latlng_keys_for_post_type($post_type) {
+        switch ($post_type) {
+            case 'poi':
+                return ['lat' => '_poi_lat', 'lng' => '_poi_lng'];
+            case 'rv_spot':
+                return ['lat' => '_rv_lat', 'lng' => '_rv_lng'];
+            default:
+                return ['lat' => '_db_lat', 'lng' => '_db_lng'];
+        }
     }
 }

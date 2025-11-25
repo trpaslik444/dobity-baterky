@@ -2230,6 +2230,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     } catch (_) { return []; }
   }
   let showOnlyRecommended = false;
+  let specialDatasetActive = false;
   
   // Zpřístupnit pro testování - použít getter/setter pro synchronizaci
   Object.defineProperty(window, 'showOnlyRecommended', {
@@ -2617,6 +2618,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
   }
   async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
+    specialDatasetActive = false;
     if (favoritesState.isActive) {
       return;
     }
@@ -2755,6 +2757,120 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
   
+  const SPECIAL_NEARBY_LIMIT = 25;
+  const SPECIAL_NEARBY_CONCURRENCY = 4;
+
+  async function fetchNearbyItemsForCharger(feature, headers = {}) {
+    const chargerId = parseInt(feature?.properties?.id, 10);
+    if (!Number.isFinite(chargerId)) {
+      return [];
+    }
+    const endpoint = (dbMapData?.restNearbyEndpoint) || '/wp-json/db/v1/nearby';
+    const url = new URL(endpoint, window.location.origin);
+    url.searchParams.set('origin_id', String(chargerId));
+    url.searchParams.set('type', 'charging_location');
+    url.searchParams.set('limit', String(SPECIAL_NEARBY_LIMIT));
+    const res = await fetch(url.toString(), {
+      signal: inFlightController?.signal,
+      headers
+    });
+    if (!res.ok) {
+      throw new Error(`Nearby HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    return Array.isArray(data?.items) ? data.items : [];
+  }
+
+  function convertNearbyItemToFeature(item, chargerFeature) {
+    if (!item) return null;
+    const rawLat = item.lat ?? item.latitude ?? (item.coords ? item.coords.lat : null);
+    const rawLng = item.lng ?? item.longitude ?? (item.coords ? item.coords.lng : null);
+    const lat = Number(rawLat);
+    const lng = Number(rawLng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return null;
+    }
+    const nearbySet = new Set();
+    const chargerId = Number(chargerFeature?.properties?.id);
+    if (Number.isFinite(chargerId)) {
+      nearbySet.add(chargerId);
+    }
+    const poiType = item.poi_type_slug || item.poi_type || '';
+    const props = {
+      id: item.id,
+      post_type: item.post_type || 'poi',
+      title: item.title || item.name || '',
+      description: item.description || '',
+      poi_type: poiType,
+      poi_type_slug: poiType,
+      icon_slug: item.icon_slug || '',
+      icon_color: item.icon_color || '',
+      svg_content: item.svg_content || '',
+      db_recommended: item.db_recommended ? 1 : 0,
+      price: item.price || null,
+      permalink: item.permalink || item.link || '',
+      distance_m: item.distance_m ?? item.walk_m ?? null,
+      duration_s: item.duration_s ?? item.secs ?? null,
+      source_charger_id: chargerId,
+      nearby_of: nearbySet,
+      _specialDataset: true
+    };
+    return {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [lng, lat] },
+      properties: props
+    };
+  }
+
+  async function buildSpecialNearbyDataset(chargingFeatures, headers = {}) {
+    if (!Array.isArray(chargingFeatures) || chargingFeatures.length === 0) {
+      return [];
+    }
+    const aggregated = new Map();
+    let index = 0;
+    const total = chargingFeatures.length;
+    const concurrency = Math.min(SPECIAL_NEARBY_CONCURRENCY, total);
+
+    async function worker() {
+      while (index < total) {
+        const currentIndex = index++;
+        const feature = chargingFeatures[currentIndex];
+        if (!feature) continue;
+        try {
+          const items = await fetchNearbyItemsForCharger(feature, headers);
+          items.forEach(item => {
+            const converted = convertNearbyItemToFeature(item, feature);
+            if (!converted) return;
+            const key = `${converted.properties.post_type || 'poi'}-${converted.properties.id}`;
+            if (aggregated.has(key)) {
+              const existing = aggregated.get(key);
+              if (existing?.properties?.nearby_of instanceof Set) {
+                const chargerId = Number(feature?.properties?.id);
+                if (Number.isFinite(chargerId)) {
+                  existing.properties.nearby_of.add(chargerId);
+                }
+              }
+            } else {
+              aggregated.set(key, converted);
+            }
+          });
+        } catch (err) {
+          if (err?.name === 'AbortError') {
+            throw err;
+          }
+          console.warn('[DB Map] Nepodařilo se načíst nearby data pro bod', feature?.properties?.id, err);
+        }
+      }
+    }
+
+    const workers = [];
+    for (let i = 0; i < concurrency; i++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+    return Array.from(aggregated.values());
+  }
+
   // Funkce pro načtení všech dat s filtry (bez radius filtru)
   async function fetchAndRenderAll() {
     const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
@@ -2773,6 +2889,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Pokud jsou aktivní speciální filtry, načíst charging_location s filtry a POI/RV bez filtrů
       if (hasSpecialFilters) {
+        specialDatasetActive = true;
         // Nejdřív načíst charging_location s filtry
         const chargingUrl = new URL(base, window.location.origin);
         chargingUrl.searchParams.set('limit', '5000');
@@ -2796,26 +2913,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         const chargingData = await chargingRes.json();
         const chargingFeatures = Array.isArray(chargingData?.features) ? chargingData.features : [];
         
-        // Pak načíst POI a RV bez filtrů (pro výpočet nearby)
-        const poiRvUrl = new URL(base, window.location.origin);
-        poiRvUrl.searchParams.set('limit', '5000');
-        poiRvUrl.searchParams.set('included', 'poi,rv_spot');
-        
-        const poiRvRes = await fetch(poiRvUrl.toString(), { 
-          signal: inFlightController?.signal, 
-          headers: headers
-        });
-        
-        if (!poiRvRes.ok) {
-          throw new Error(`HTTP ${poiRvRes.status}: ${poiRvRes.statusText}`);
-        }
-        
-        const poiRvData = await poiRvRes.json();
-        const poiRvFeatures = Array.isArray(poiRvData?.features) ? poiRvData.features : [];
-        
-        // Kombinovat charging_location s POI a RV
-        features = [...chargingFeatures, ...poiRvFeatures];
+        const poiRvFeatures = await buildSpecialNearbyDataset(chargingFeatures, headers);
+        features = poiRvFeatures.length > 0 ? [...chargingFeatures, ...poiRvFeatures] : [...chargingFeatures];
       } else {
+        specialDatasetActive = false;
         // Pokud nejsou aktivní speciální filtry, načíst všechna data normálně
         const url = new URL(base, window.location.origin);
         url.searchParams.set('limit', '5000');
@@ -9430,10 +9531,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       return true;
     });
+
+    const filteredChargingIds = new Set(filteredCharging.map(fc => fc.properties?.id));
+    const specialModeActive = specialDatasetActive && (filterState.free || showOnlyRecommended);
     
     // 2. Najít nearby POI a RV k vyfiltrovaným charging_location (pokud je aktivní jakýkoli filtr)
     const nearbyPoiRvIds = new Set();
-    if (hasAnyFilter && filteredCharging.length > 0) {
+    if (!specialModeActive && hasAnyFilter && filteredCharging.length > 0) {
       filteredCharging.forEach(chargingLocation => {
         const [clng, clat] = chargingLocation.geometry.coordinates;
         features.forEach(f => {
@@ -9467,11 +9571,25 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Charging_location: zobrazit pouze vyfiltrované
       if (p.post_type === 'charging_location') {
-        return filteredCharging.some(fc => fc.properties.id === p.id);
+        return filteredChargingIds.has(p.id);
       }
       
       // POI a RV: pokud je aktivní filtr, zobrazit pouze nearby
       if ((p.post_type === 'poi' || p.post_type === 'rv_spot')) {
+        if (specialModeActive) {
+          if (p.post_type === 'poi' && filterState.poiTypes && filterState.poiTypes.size > 0) {
+            const poiType = p.poi_type || p.poi_type_slug || '';
+            if (!filterState.poiTypes.has(poiType)) {
+              return false;
+            }
+          }
+          const relations = p.nearby_of instanceof Set ? Array.from(p.nearby_of) :
+            (Array.isArray(p.nearby_of) ? p.nearby_of : []);
+          if (!relations || relations.length === 0) {
+            return false;
+          }
+          return relations.some(chId => filteredChargingIds.has(chId));
+        }
         if (hasAnyFilter) {
           return nearbyPoiRvIds.has(p.id);
         }

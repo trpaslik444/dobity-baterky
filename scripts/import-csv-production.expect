@@ -1,11 +1,13 @@
 #!/usr/bin/expect -f
 
-# Optimalizovaný produkční import skript
+# Optimalizovaný import skript (staging/production)
 # Spouští import v pozadí pomocí nohup pro zabránění timeoutům
 
-# Usage: STAGING_PASS=heslo ./scripts/import-csv-production.expect /cesta/k/file.csv
+# Usage:
+#   STAGING_PASS=heslo ./scripts/import-csv-production.expect /cesta/k/file.csv
+#   IMPORT_ENV=production PROD_PASS=heslo ./scripts/import-csv-production.expect /cesta/k/file.csv
 
-set timeout 300  # Pouze pro nahrání souborů, ne pro import samotný
+set timeout 300  ;# Pouze pro nahrání souborů, ne pro import samotný
 
 if { [llength $argv] < 1 } {
     puts "ERROR: Musíš předat cestu k CSV souboru."
@@ -19,23 +21,57 @@ if { ! [file exists $csv_file] } {
     exit 2
 }
 
-if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
-    puts "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč."
+set import_env "staging"
+if { [info exists env(IMPORT_ENV)] && $env(IMPORT_ENV) ne "" } {
+    set import_env [string tolower $env(IMPORT_ENV)]
+}
+
+if { $import_env ne "staging" && $import_env ne "production" } {
+    puts "ERROR: IMPORT_ENV musí být 'staging' nebo 'production'."
     exit 2
 }
 
-set password $env(STAGING_PASS)
+if { $import_env eq "production" } {
+    set pass_var "PROD_PASS"
+    set user "dobitybaterky.wordpress.com"
+    set sftp_host "sftp.wp.com"
+    set ssh_host "ssh.wp.com"
+    set identity "~/.ssh/id_ed25519_wpcom"
+    set env_label "produkce"
+} else {
+    set pass_var "STAGING_PASS"
+    set user "staging-f576-dobitybaterky.wordpress.com"
+    set sftp_host "sftp.wp.com"
+    set ssh_host "ssh.wp.com"
+    set identity "~/.ssh/id_ed25519_wpcom"
+    set env_label "staging"
+}
+
+set password ""
+if { [info exists env(IMPORT_PASS)] && $env(IMPORT_PASS) ne "" } {
+    set password $env(IMPORT_PASS)
+} elseif { [info exists env($pass_var)] && $env($pass_var) ne "" } {
+    set password $env($pass_var)
+}
+
+if { $password eq "" } {
+    puts "ERROR: Není nastaveno heslo pro $env_label. Nastav IMPORT_PASS nebo $pass_var."
+    exit 2
+}
 set timestamp [clock format [clock seconds] -format "%Y%m%d%H%M%S"]
 set remote_csv_path "/tmp/poi_import_${timestamp}.csv"
 set log_file "/tmp/poi_import_${timestamp}.log"
 
-set user "staging-f576-dobitybaterky.wordpress.com"
-set sftp_host "sftp.wp.com"
-set ssh_host "ssh.wp.com"
-set identity "~/.ssh/id_ed25519_wpcom"
+set process_nearby_limit "50"
+if { [info exists env(PROCESS_NEARBY_LIMIT)] && $env(PROCESS_NEARBY_LIMIT) ne "" } {
+    set process_nearby_limit [string trim $env(PROCESS_NEARBY_LIMIT)]
+}
+if { ![string is integer -strict $process_nearby_limit] } {
+    set process_nearby_limit "50"
+}
 
-# Krok 1: Nahrát CSV soubor na staging přes SFTP
-puts "📤 Nahrávám CSV soubor na staging..."
+# Krok 1: Nahrát CSV soubor na vzdálený server přes SFTP
+puts "📤 Nahrávám CSV soubor na $env_label..."
 
 spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${sftp_host}
 
@@ -46,12 +82,12 @@ expect "sftp>"
 send "put \"$csv_file\" \"$remote_csv_path\"\r"
 
 expect "sftp>"
-puts "✅ CSV soubor nahrán na staging: $remote_csv_path"
+puts "✅ CSV soubor nahrán na $env_label: $remote_csv_path"
 send "exit\r"
 
 expect eof
 
-# Krok 2: Nahrát safe-import-csv-staging.php do plugin directory
+# Krok 2: Nahrát safe-import skript do plugin directory
 puts ""
 puts "🔍 Nahrávám import skript do plugin directory..."
 
@@ -77,10 +113,10 @@ expect eof
 
 # Krok 3: Spustit import v pozadí pomocí nohup (bez timeoutu)
 puts ""
-puts "🚀 Spouštím import na staging serveru v pozadí..."
+puts "🚀 Spouštím import na $env_label serveru v pozadí..."
 
 # Použít nohup pro spuštění v pozadí + výstup do log souboru
-set import_cmd "cd /srv/htdocs/wp-content/plugins/dobity-baterky && nohup php -d memory_limit=1024M safe-import-csv-staging.php \"$remote_csv_path\" --log-every=1000 > \"$log_file\" 2>&1 & echo \$!"
+set import_cmd "cd /srv/htdocs/wp-content/plugins/dobity-baterky && nohup php -d memory_limit=1024M safe-import-csv-staging.php \"$remote_csv_path\" --log-every=1000 --process-nearby=$process_nearby_limit > \"$log_file\" 2>&1 & echo \$!"
 
 spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $import_cmd
 
