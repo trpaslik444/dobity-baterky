@@ -8787,7 +8787,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       .filter(Boolean)
       .join(', ');
     const logoImg = '<img src="' + defaultSrc + '"' + (srcsetAttr ? ' srcset="' + srcsetAttr + '"' : '') + ' alt="Dobitý Baterky" width="' + logoSize + '" height="' + logoSize + '" style="display:block;width:100%;height:100%;object-fit:contain;">';
-    return '<div style="width:' + size + 'px;height:' + size + 'px;display:flex;align-items:center;justify-content:center;pointer-events:none;">'
+    return '<div style="width:' + size + 'px;height:' + size + 'px;display:flex;align-items:center;justify-content:center;pointer-events:none;border:2px solid #FF6A4B;border-radius:4px;background:transparent;">'
          +     '<div style="width:' + logoSize + 'px;height:' + logoSize + 'px;display:flex;align-items:center;justify-content:center;">'
          +       logoImg
          +     '</div>'
