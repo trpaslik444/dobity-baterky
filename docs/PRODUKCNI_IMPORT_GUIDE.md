@@ -11,12 +11,30 @@
 
 ## 🚀 Rychlý start
 
+### Volba prostředí
+
+- `--env=staging` (výchozí) – import běží proti stagingu, používá `STAGING_PASS`
+- `--env=production` – jednorázový import přímo na produkci, používá `PROD_PASS`
+
+Pokud spustíš expect skript přímo, nastav proměnné:
+
+```bash
+IMPORT_ENV=production PROD_PASS="••••" ./scripts/import-csv-production.expect data.csv
+```
+
+> Doporučení: nejprve spusť import na stagingu, zkontroluj výsledek, a poté identický CSV soubor nahraj na produkci s `--env=production`.
+
 ### Automatický import (doporučeno)
 
 ```bash
 cd "/Users/ondraplas/Local Sites/dobity-baterky-dev/app/public/wp-content/plugins/dobity-baterky"
 source scripts/load-env.sh
+# Staging (implicitně)
 ./scripts/import-csv-production.sh exported_pois_staging_complete.csv
+
+# Produkce (jednorázový import)
+export PROD_PASS="••••••"
+./scripts/import-csv-production.sh --env=production exported_pois_prod.csv
 ```
 
 **Co to udělá:**
@@ -112,9 +130,13 @@ ps aux | grep "safe-import-csv-staging.php"
 ### Pro produkci:
 
 ```bash
-# Stejný postup, jen změnit STAGING_PASS na PROD_PASS
+# Jednorázový import na produkci
 export PROD_PASS="produkční_heslo"
-./scripts/import-csv-production.sh exported_pois_production.csv
+./scripts/import-csv-production.sh --env=production exported_pois_production.csv
+
+# Manuálně (pokud vynecháte wrapper)
+IMPORT_ENV=production PROD_PASS="produkční_heslo" \
+  ./scripts/import-csv-production.expect exported_pois_prod_chunk_1.csv
 ```
 
 ---
