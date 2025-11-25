@@ -14,6 +14,7 @@ class REST_Map {
     const GOOGLE_DAILY_LIMIT = 900; // Bezplatný tarif má 1000 dotazů/den – necháme si rezervu
     const TRIPADVISOR_DAILY_LIMIT = 500;
     const USAGE_OPTION = 'db_poi_api_usage';
+    const MAP_CACHE_GROUP = 'db_map_rest';
 
     public static function get_instance() {
         if ( self::$instance === null ) {
@@ -312,65 +313,6 @@ class REST_Map {
 
         error_log('DB Map REST: Post types ke zpracování: ' . print_r($types, true));
 
-        if (!$has_ids_filter) {
-            // DEBUG: Kontrola existence postů s danými post_types
-            foreach ($types as $pt) {
-                $count = wp_count_posts($pt);
-                error_log('DB Map REST: Post count pro ' . $pt . ': ' . print_r($count, true));
-
-                // DEBUG: Kontrola meta klíčů na prvním existujícím postu
-                if ($count->publish > 0) {
-                    $sample_post = get_posts([
-                        'post_type' => $pt,
-                        'post_status' => 'publish',
-                        'posts_per_page' => 1,
-                        'orderby' => 'ID',
-                        'order' => 'ASC'
-                    ]);
-                    if (!empty($sample_post)) {
-                        $sample = $sample_post[0];
-                        $keys = $this->get_latlng_keys_for_type($pt);
-                        $sample_lat = get_post_meta($sample->ID, $keys['lat'], true);
-                        $sample_lng = get_post_meta($sample->ID, $keys['lng'], true);
-                        error_log('DB Map REST: Vzorek post ' . $pt . ' ID ' . $sample->ID . ' - ' . $keys['lat'] . ': ' . $sample_lat . ', ' . $keys['lng'] . ': ' . $sample_lng);
-                    }
-
-                    // DEBUG: Kontrola rozsahu souřadnic
-                    $keys = $this->get_latlng_keys_for_type($pt);
-                    global $wpdb;
-                    $min_lat = $wpdb->get_var($wpdb->prepare(
-                        "SELECT MIN(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
-                         WHERE meta_key = %s AND post_id IN (
-                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                         )",
-                        $keys['lat'], $pt
-                    ));
-                    $max_lat = $wpdb->get_var($wpdb->prepare(
-                        "SELECT MAX(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
-                         WHERE meta_key = %s AND post_id IN (
-                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                         )",
-                        $keys['lat'], $pt
-                    ));
-                    $min_lng = $wpdb->get_var($wpdb->prepare(
-                        "SELECT MIN(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
-                         WHERE meta_key = %s AND post_id IN (
-                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                         )",
-                        $keys['lng'], $pt
-                    ));
-                    $max_lng = $wpdb->get_var($wpdb->prepare(
-                        "SELECT MAX(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
-                         WHERE meta_key = %s AND post_id IN (
-                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                         )",
-                        $keys['lng'], $pt
-                    ));
-                    error_log('DB Map REST: Rozsah souřadnic pro ' . $pt . ' - lat: [' . $min_lat . ', ' . $max_lat . '], lng: [' . $min_lng . ', ' . $max_lng . ']');
-                }
-            }
-        }
-
         // Robustní příjem parametrů - nejprve zkusit oddělené lat/lng, pak center
         $lat = $lng = null;
         
@@ -414,9 +356,35 @@ class REST_Map {
         }
 
         $features = [];
-        $debug_stats = [ 'per_type' => [], 'totals' => [ 'found' => 0, 'bbox' => 0, 'kept' => 0 ] ];
+        $response_meta = null;
+        $cache_key = null;
+        $cache_hit = false;
+        $cached_payload = null;
+        $cacheable = $this->is_map_request_cacheable($has_ids_filter);
+        $cache_ttl = 0;
+        if ($cacheable) {
+            $cache_key = $this->build_map_cache_key([
+                'types' => $types,
+                'limit' => $limit,
+                'offset' => $offset,
+                'lat' => $use_radius ? round((float) $lat, 4) : null,
+                'lng' => $use_radius ? round((float) $lng, 4) : null,
+                'radius_km' => $use_radius ? (float) $radius_km : null,
+                'db_recommended' => $db_recommended === '1' ? 1 : 0,
+                'free' => $free_only === '1' ? 1 : 0,
+                'mode' => $use_radius ? 'radius' : 'all',
+            ]);
+            $cache_ttl = $this->get_map_cache_ttl();
+            $cached_payload = $this->get_map_cache_value($cache_key);
+            if (is_array($cached_payload) && isset($cached_payload['features'], $cached_payload['meta'])) {
+                $features = $cached_payload['features'];
+                $response_meta = $cached_payload['meta'];
+                $cache_hit = true;
+            }
+        }
 
-        foreach ($types as $pt) {
+        if (! $cache_hit) {
+            foreach ($types as $pt) {
             $keys = $this->get_latlng_keys_for_type($pt);
             // error_log('DB Map REST: Meta klíče pro ' . $pt . ': ' . print_r($keys, true));
 
@@ -501,9 +469,6 @@ class REST_Map {
             $q = new \WP_Query($args);
             // error_log('DB Map REST: WP_Query pro ' . $pt . ' - nalezeno postů: ' . $q->post_count);
             
-            $bbox_count = 0;
-            $haversine_count = 0;
-            
             foreach ($q->posts as $post) {
                 $laV = get_post_meta($post->ID, $keys['lat'], true);
                 $loV = get_post_meta($post->ID, $keys['lng'], true);
@@ -519,8 +484,6 @@ class REST_Map {
                     continue; 
                 }
                 $laF = (float)$laV; $loF = (float)$loV;
-                $bbox_count++;
-
                 // přesný dořez - pouze v radius režimu
                 $distance_km = 0;
                 if ($use_radius) {
@@ -533,10 +496,6 @@ class REST_Map {
                         continue;
                     }
                     $distance_km = $d;
-                    $haversine_count++;
-                } else {
-                    // V režimu "all" počítáme všechny body
-                    $haversine_count++;
                 }
 
                 // Načtení ikon a barev pomocí Icon_Registry
@@ -594,27 +553,16 @@ class REST_Map {
                     'poi_user_rating_count' => get_post_meta($post->ID, '_poi_user_rating_count', true),
                     'poi_price_level' => get_post_meta($post->ID, '_poi_price_level', true),
                     'poi_opening_hours' => get_post_meta($post->ID, '_poi_opening_hours', true),
-                    'poi_reviews' => get_post_meta($post->ID, '_poi_reviews', true),
                     'poi_photos' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_photos', true)),
                     'poi_photo_url' => get_post_meta($post->ID, '_poi_photo_url', true),
-                    'poi_photo_license' => get_post_meta($post->ID, '_poi_photo_license', true),
-                    'poi_photo_author' => get_post_meta($post->ID, '_poi_photo_author', true),
                     'poi_google_place_id' => get_post_meta($post->ID, '_poi_google_place_id', true) ?: get_post_meta($post->ID, '_poi_place_id', true),
-                    'poi_tripadvisor_location_id' => get_post_meta($post->ID, '_poi_tripadvisor_location_id', true),
                     'poi_primary_external_source' => get_post_meta($post->ID, '_poi_primary_external_source', true) ?: 'google_places',
                     'poi_social_links' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_social_links', true)),
                     'poi_external_cached_until' => array(
                         'google_places' => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_google_cache_expires', true))),
                         'tripadvisor'   => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_tripadvisor_cache_expires', true))),
                     ),
-                    'poi_description' => get_post_meta($post->ID, '_poi_description', true),
                     // Univerzální metadata pro všechny typy
-                    'content' => $post->post_content,
-                    'excerpt' => $post->post_excerpt,
-                    'date' => $post->post_date,
-                    'modified' => $post->post_modified,
-                    'author' => $post->post_author,
-                    'status' => $post->post_status,
                     // URL pro otevření detailu
                     'permalink' => get_permalink($post->ID),
                     'link' => get_permalink($post->ID),
@@ -919,74 +867,170 @@ class REST_Map {
                     'properties' => $properties,
                 ];
             }
-            // Uložení debug statistik pro aktuální post_type
-            $debug_stats['per_type'][$pt] = [
-                'found' => (int)$q->post_count,
-                'bbox'  => (int)$bbox_count,
-                'kept'  => (int)$haversine_count,
-            ];
-            $debug_stats['totals']['found'] += (int)$q->post_count;
-            $debug_stats['totals']['bbox']  += (int)$bbox_count;
-            $debug_stats['totals']['kept']  += (int)$haversine_count;
-            
         }
 
-        $total_before_limit = count($features);
-        if ($has_ids_filter) {
-            $order_map = [];
-            foreach ($ids_filter as $order_idx => $order_id) {
-                $order_map[$order_id] = $order_idx;
+            $total_before_limit = count($features);
+            if ($has_ids_filter) {
+                $order_map = [];
+                foreach ($ids_filter as $order_idx => $order_id) {
+                    $order_map[$order_id] = $order_idx;
+                }
+                usort($features, function($a, $b) use ($order_map) {
+                    $aId = $a['properties']['id'] ?? 0;
+                    $bId = $b['properties']['id'] ?? 0;
+                    $aPos = $order_map[$aId] ?? PHP_INT_MAX;
+                    $bPos = $order_map[$bId] ?? PHP_INT_MAX;
+                    return $aPos <=> $bPos;
+                });
+            } elseif ($use_radius) {
+                usort($features, function($a,$b) use($lat,$lng){
+                    [$alng,$alat] = $a['geometry']['coordinates'];
+                    [$blng,$blat] = $b['geometry']['coordinates'];
+                    $ad = ($alat-$lat)*($alat-$lat)+($alng-$lng)*($alng-$lng);
+                    $bd = ($blat-$lat)*($blat-$lat)+($blng-$lng)*($blng-$lng);
+                    return $ad <=> $bd;
+                });
+                // Aplikuj globální limit až po přesném dořezu a seřazení dle vzdálenosti
+                if ($limit && count($features) > $limit) {
+                    $features = array_slice($features, 0, $limit);
+                }
+            } else {
+                // V režimu "all" řadíme podle ID (nejnovější první)
+                usort($features, function($a,$b){
+                    return $b['properties']['id'] <=> $a['properties']['id'];
+                });
             }
-            usort($features, function($a, $b) use ($order_map) {
-                $aId = $a['properties']['id'] ?? 0;
-                $bId = $b['properties']['id'] ?? 0;
-                $aPos = $order_map[$aId] ?? PHP_INT_MAX;
-                $bPos = $order_map[$bId] ?? PHP_INT_MAX;
-                return $aPos <=> $bPos;
-            });
-        } elseif ($use_radius) {
-            usort($features, function($a,$b) use($lat,$lng){
-                [$alng,$alat] = $a['geometry']['coordinates'];
-                [$blng,$blat] = $b['geometry']['coordinates'];
-                $ad = ($alat-$lat)*($alat-$lat)+($alng-$lng)*($alng-$lng);
-                $bd = ($blat-$lat)*($blat-$lat)+($blng-$lng)*($blng-$lng);
-                return $ad <=> $bd;
-            });
-            // Aplikuj globální limit až po přesném dořezu a seřazení dle vzdálenosti
-            if ($limit && count($features) > $limit) {
-                $features = array_slice($features, 0, $limit);
-            }
-        } else {
-            // V režimu "all" řadíme podle ID (nejnovější první)
-            usort($features, function($a,$b){
-                return $b['properties']['id'] <=> $a['properties']['id'];
-            });
-        }
 
-        if (count($features) > 0) {
-        }
-
-        // Přidání meta informací pro diagnostiku
-        $response_data = [
-            'type' => 'FeatureCollection',
-            'features' => $features,
-            'meta' => [
+            $response_meta = [
                 'mode' => $use_radius ? 'radius' : 'all',
                 'center' => $use_radius ? [$lat, $lng] : null,
                 'radius_km' => $use_radius ? $radius_km : null,
                 'count' => count($features),
                 'post_types' => $types,
-                'bbox_count' => $bbox_count ?? 0,
-                'haversine_count' => $haversine_count ?? 0,
                 'limit_used' => $use_radius ? $limit : null,
                 'total_before_limit' => $use_radius ? $total_before_limit : null,
-                'debug' => $debug_stats
-            ]
+                'generated_at' => current_time('mysql', true),
+                'cached' => false,
+                'cache_ttl' => $cache_ttl,
+            ];
+
+            if ($cache_key && $cache_ttl > 0) {
+                $this->set_map_cache_value($cache_key, [
+                    'features' => $features,
+                    'meta' => $response_meta,
+                ], $cache_ttl);
+            }
+        } else {
+            if (!is_array($response_meta)) {
+                $response_meta = [];
+            }
+            $response_meta['cached'] = true;
+        }
+
+        if (!empty($favorite_assignments)) {
+            $features = $this->apply_favorites_metadata($features, $favorite_assignments, $favorite_folders_index);
+        }
+
+        $response_meta['count'] = count($features);
+
+        $response_data = [
+            'type' => 'FeatureCollection',
+            'features' => $features,
+            'meta' => $response_meta,
         ];
         
         $resp = rest_ensure_response($response_data);
         $resp->header('Cache-Control','public, max-age=60');
         return $resp;
+    }
+    
+    private function apply_favorites_metadata(array $features, array $favorite_assignments, array $favorite_folders_index) : array {
+        if (empty($features) || empty($favorite_assignments)) {
+            return $features;
+        }
+
+        foreach ($features as &$feature) {
+            $post_id = $feature['properties']['id'] ?? null;
+            if (!$post_id) {
+                continue;
+            }
+            $folder_id = $favorite_assignments[$post_id] ?? null;
+            if (!$folder_id) {
+                continue;
+            }
+            $folder_id = (string) $folder_id;
+            $feature['properties']['favorite_folder_id'] = $folder_id;
+            if (isset($favorite_folders_index[$folder_id])) {
+                $folder_meta = $favorite_folders_index[$folder_id];
+                $feature['properties']['favorite_folder'] = [
+                    'id' => $folder_meta['id'] ?? $folder_id,
+                    'name' => $folder_meta['name'] ?? '',
+                    'icon' => $folder_meta['icon'] ?? '',
+                    'type' => $folder_meta['type'] ?? 'custom',
+                    'limit' => $folder_meta['limit'] ?? 0,
+                ];
+            } else {
+                $feature['properties']['favorite_folder'] = [
+                    'id' => $folder_id,
+                    'name' => '',
+                    'icon' => '',
+                    'type' => 'custom',
+                    'limit' => 0,
+                ];
+            }
+        }
+        unset($feature);
+
+        return $features;
+    }
+
+    private function is_map_request_cacheable(bool $has_ids_filter) : bool {
+        if ($has_ids_filter) {
+            return false;
+        }
+        /**
+         * Allow disabling of the frontend map cache via filter.
+         *
+         * @param bool $disable_cache When true the cache is bypassed completely.
+         */
+        if (apply_filters('db_map_disable_cache', false)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    private function build_map_cache_key(array $params) : string {
+        if (defined('DB_PLUGIN_VERSION')) {
+            $params['version'] = DB_PLUGIN_VERSION;
+        }
+        ksort($params);
+
+        return 'db_map_' . md5(wp_json_encode($params));
+    }
+
+    private function get_map_cache_value(string $cache_key) {
+        $value = wp_cache_get($cache_key, self::MAP_CACHE_GROUP);
+        if (false !== $value) {
+            return $value;
+        }
+
+        $transient = get_transient($cache_key);
+        if (false !== $transient) {
+            return $transient;
+        }
+
+        return null;
+    }
+
+    private function set_map_cache_value(string $cache_key, array $payload, int $ttl) : void {
+        wp_cache_set($cache_key, $payload, self::MAP_CACHE_GROUP, $ttl);
+        set_transient($cache_key, $payload, $ttl);
+    }
+
+    private function get_map_cache_ttl() : int {
+        $ttl = (int) apply_filters('db_map_cache_ttl', 45);
+        return max(15, $ttl);
     }
 
     public function handle_map_search( $request ) {
