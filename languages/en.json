@@ -34,14 +34,23 @@
   "filters": {
     "title": "Filters",
     "reset": "Reset filters",
+    "reset_with_count": "Reset filters ({count})",
     "power": "Power (kW)",
     "connector_type": "Connector type",
     "provider": "Operator",
+    "provider_with_count": "Operator ({count})",
     "select_provider": "Select operator...",
+    "select_provider_title": "Select operator",
+    "poi_type": "POI type",
+    "poi_type_with_count": "POI type ({count})",
+    "poi_type_nearby": "POI types nearby",
+    "select_poi_type": "Select POI types...",
+    "select_poi_type_title": "Select POI types",
     "amenity_nearby": "Amenity nearby",
     "access": "Access",
     "free": "Free",
-    "db_recommended": "DB recommends only"
+    "db_recommended": "DB recommends only",
+    "db_recommended_badge": "DB recommends"
   },
   "cards": {
     "no_description": "Description not available yet",

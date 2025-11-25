@@ -34,14 +34,23 @@
   "filters": {
     "title": "Filtry",
     "reset": "Resetovat filtry",
+    "reset_with_count": "Resetovat filtry ({count})",
     "power": "Výkon (kW)",
     "connector_type": "Typ konektoru",
     "provider": "Provozovatel",
+    "provider_with_count": "Provozovatel ({count})",
     "select_provider": "Vybrat provozovatele...",
+    "select_provider_title": "Vyberte provozovatele",
+    "poi_type": "Typ POI",
+    "poi_type_with_count": "Typ POI ({count})",
+    "poi_type_nearby": "Typ POI v okolí",
+    "select_poi_type": "Vybrat typy POI...",
+    "select_poi_type_title": "Vyberte typy POI",
     "amenity_nearby": "Amenity v okolí",
     "access": "Přístup",
     "free": "Zdarma",
-    "db_recommended": "Jen DB doporučuje"
+    "db_recommended": "Jen DB doporučuje",
+    "db_recommended_badge": "DB doporučuje"
   },
   "cards": {
     "no_description": "Popis zatím není k dispozici",
