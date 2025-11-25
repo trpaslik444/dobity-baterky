@@ -8761,7 +8761,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   function getDbLogoHtml(size) {
-    const logoSize = Math.max(10, Math.round(size * 0.78));
+    const borderWidth = 2;
+    const logoSize = Math.max(8, size - borderWidth * 2);
     const dbData = (typeof dbMapData !== 'undefined' && dbMapData) ? dbMapData : (typeof window !== 'undefined' && window.dbMapData ? window.dbMapData : {});
     let base = dbData && dbData.pluginUrl ? dbData.pluginUrl : '';
     if (!base && typeof window !== 'undefined' && window.location) {
@@ -8787,7 +8788,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       .filter(Boolean)
       .join(', ');
     const logoImg = '<img src="' + defaultSrc + '"' + (srcsetAttr ? ' srcset="' + srcsetAttr + '"' : '') + ' alt="Dobitý Baterky" width="' + logoSize + '" height="' + logoSize + '" style="display:block;width:100%;height:100%;object-fit:contain;">';
-    return '<div style="width:' + size + 'px;height:' + size + 'px;display:flex;align-items:center;justify-content:center;pointer-events:none;border:2px solid #FF6A4B;border-radius:4px;background:transparent;">'
+    return '<div style="width:' + size + 'px;height:' + size + 'px;display:flex;align-items:center;justify-content:center;pointer-events:none;border:' + borderWidth + 'px solid #FF6A4B;border-radius:4px;background:transparent;">'
          +     '<div style="width:' + logoSize + 'px;height:' + logoSize + 'px;display:flex;align-items:center;justify-content:center;">'
          +       logoImg
          +     '</div>'
