@@ -28,49 +28,18 @@ class POI_Microservice_Client {
         if (defined('DB_POI_SERVICE_URL')) {
             $this->api_url = DB_POI_SERVICE_URL;
         } else {
-            // Pro staging/produkci: POI microservice běží na stejném serveru
-            // Detekce prostředí a automatické nastavení URL
-            $default_url = $this->get_default_service_url();
-            $this->api_url = get_option('db_poi_service_url', $default_url);
+            $this->api_url = get_option('db_poi_service_url', '');
         }
         
         // Validace URL
         if (empty($this->api_url) || !filter_var($this->api_url, FILTER_VALIDATE_URL)) {
-            error_log('[POI Microservice Client] Invalid or missing API URL. Please configure DB_POI_SERVICE_URL in wp-config.php or set db_poi_service_url option.');
-            $this->api_url = null; // Nebudeme používat fallback localhost
+            error_log('[POI Microservice Client] POI microservice URL není nakonfigurováno. Nastavte DB_POI_SERVICE_URL v wp-config.php nebo db_poi_service_url option.');
+            $this->api_url = null;
             return;
         }
         
         // Odstranit trailing slash
         $this->api_url = rtrim($this->api_url, '/');
-    }
-    
-    /**
-     * Získat default URL POI microservice podle prostředí
-     */
-    private function get_default_service_url() {
-        // Pokud je definována konstanta, použít ji
-        if (defined('DB_POI_SERVICE_URL')) {
-            return DB_POI_SERVICE_URL;
-        }
-        
-        // Detekce prostředí
-        $site_url = get_site_url();
-        
-        // Development: localhost s portem 3333 (vývojový default)
-        if (strpos($site_url, 'localhost') !== false || strpos($site_url, '127.0.0.1') !== false) {
-            return 'http://localhost:3333';
-        }
-        
-        // Staging/produkce: NEPOUŽÍVAT auto-detekci!
-        // POI microservice může běžet:
-        // 1. Na stejné doméně přes reverse proxy (např. /api/pois)
-        // 2. Na subdoméně (např. poi-api.dobitybaterky.cz)
-        // 3. Na jiném serveru
-        // 4. Na stejném serveru, ale jiném portu (jen pokud je to explicitně nastaveno)
-        // 
-        // Proto NEPOUŽÍVÁME auto-detekci a vyžadujeme explicitní konfiguraci!
-        return ''; // Prázdné - musí být explicitně nastaveno
     }
     
     /**

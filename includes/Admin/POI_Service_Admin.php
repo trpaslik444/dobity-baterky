@@ -59,15 +59,6 @@ class POI_Service_Admin {
     public function sanitize_url($url) {
         $url = trim($url);
         
-        // Development: default localhost
-        if (empty($url) && !defined('DB_POI_SERVICE_URL')) {
-            $site_url = get_site_url();
-            if (strpos($site_url, 'localhost') !== false || strpos($site_url, '127.0.0.1') !== false) {
-                $url = 'http://localhost:3333';
-            }
-            // Pro staging/produkci: NEPOUŽÍVAT auto-detekci, musí být explicitně nastaveno
-        }
-        
         $url = esc_url_raw($url);
         if (!empty($url) && !filter_var($url, FILTER_VALIDATE_URL)) {
             add_settings_error(
@@ -151,18 +142,9 @@ class POI_Service_Admin {
                         <td>
                             <?php
                             $current_url = get_option('db_poi_service_url', '');
-                            if (defined('DB_POI_SERVICE_URL')) {
+                            $is_constant = defined('DB_POI_SERVICE_URL');
+                            if ($is_constant) {
                                 $current_url = DB_POI_SERVICE_URL;
-                                $is_constant = true;
-                            } else {
-                                $is_constant = false;
-                                // Development: default localhost
-                                if (empty($current_url)) {
-                                    $site_url = get_site_url();
-                                    if (strpos($site_url, 'localhost') !== false || strpos($site_url, '127.0.0.1') !== false) {
-                                        $current_url = 'http://localhost:3333';
-                                    }
-                                }
                             }
                             ?>
                             <input type="url" 
@@ -170,22 +152,15 @@ class POI_Service_Admin {
                                    name="db_poi_service_url" 
                                    value="<?php echo esc_attr($current_url); ?>" 
                                    class="regular-text"
-                                   placeholder="<?php echo esc_attr($is_constant ? '' : (strpos(get_site_url(), 'localhost') !== false ? 'http://localhost:3333' : 'https://poi-api.your-site.com nebo https://your-site.com/api/pois')); ?>"
+                                   placeholder="https://poi-api.your-site.com nebo http://localhost:3333"
                                    <?php echo $is_constant ? 'readonly' : ''; ?> />
                             <p class="description">
                                 URL POI microservice API. 
                                 <?php if ($is_constant): ?>
                                     <strong>Nastaveno pomocí konstanty <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.</strong>
                                 <?php else: ?>
-                                    <strong>Pro staging/produkci musí být URL explicitně nastaveno!</strong><br>
-                                    Možnosti:
-                                    <ul style="margin-left: 20px; margin-top: 5px;">
-                                        <li>Subdoména: <code>https://poi-api.your-site.com</code></li>
-                                        <li>Stejná doména, jiná cesta: <code>https://your-site.com/api/pois</code> (přes reverse proxy)</li>
-                                        <li>Jiný server: <code>https://poi-service.your-site.com</code></li>
-                                        <li>Konstanta v <code>wp-config.php</code>: <code>define('DB_POI_SERVICE_URL', '...');</code></li>
-                                    </ul>
-                                    <strong>⚠️ Nepoužívejte port 3333 na produkci!</strong> Pouze pro lokální vývoj.
+                                    Nastavte URL, kde běží POI microservice. Může být stejné pro localhost i produkci, pokud je správně nakonfigurováno.<br>
+                                    Příklady: <code>https://poi-api.your-site.com</code>, <code>http://localhost:3333</code>, <code>https://your-site.com/api/pois</code>
                                 <?php endif; ?>
                             </p>
                         </td>
