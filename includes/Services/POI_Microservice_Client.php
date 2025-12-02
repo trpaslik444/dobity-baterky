@@ -366,7 +366,12 @@ class POI_Microservice_Client {
             update_post_meta($post_id, '_poi_phone', sanitize_text_field($poi['phone']));
         }
         if (isset($poi['opening_hours'])) {
-            update_post_meta($post_id, '_poi_opening_hours', $poi['opening_hours']);
+            // opening_hours může být array (JSON) nebo string
+            if (is_array($poi['opening_hours'])) {
+                update_post_meta($post_id, '_poi_opening_hours', $poi['opening_hours']);
+            } else {
+                update_post_meta($post_id, '_poi_opening_hours', sanitize_textarea_field($poi['opening_hours']));
+            }
         }
         if (isset($poi['photo_url'])) {
             update_post_meta($post_id, '_poi_photo_url', esc_url_raw($poi['photo_url']));
