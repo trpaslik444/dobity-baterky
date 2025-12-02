@@ -207,8 +207,10 @@ class POI_Service_Admin {
                                 <?php if ($is_constant): ?>
                                     <strong>Nastaveno pomocí konstanty <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.</strong>
                                 <?php else: ?>
-                                    Nastavte URL, kde běží POI microservice. Může být stejné pro localhost i produkci, pokud je správně nakonfigurováno.<br>
-                                    Příklady: <code>https://poi-api.your-site.com</code>, <code>http://localhost:3333</code>, <code>https://your-site.com/api/pois</code>
+                                    <strong>POI microservice je VOLITELNÝ!</strong> WordPress funguje normálně i bez něj.<br>
+                                    Pokud POI microservice nemáte nasazený, <strong>nechte pole prázdné</strong> - WordPress bude používat pouze POIs z vlastní databáze.<br>
+                                    Pokud máte POI microservice nasazený, nastavte jeho URL:<br>
+                                    Příklady: <code>https://poi-api.your-site.com</code>, <code>http://localhost:3333</code> (pouze pro lokální vývoj), <code>https://your-site.com/api/pois</code>
                                 <?php endif; ?>
                             </p>
                         </td>

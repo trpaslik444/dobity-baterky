@@ -13,24 +13,43 @@ cURL error 7: Failed to connect to staging-f576-dobitybaterky.wpcomstaging.com p
 
 ## 🔍 Co to znamená?
 
-**POI microservice není nasazený na staging serveru** nebo běží na jiné URL.
+**POI microservice není nasazený** nebo běží na jiné URL.
 
-POI microservice je **samostatná Node.js služba**, která musí běžet nezávisle na WordPressu. WordPress se k ní připojuje přes HTTP API.
+**DŮLEŽITÉ**: POI microservice je **VOLITELNÁ samostatná Node.js služba**. WordPress **FUNGUJE NORMÁLNĚ** i bez něj!
+
+- ✅ WordPress funguje bez POI microservice
+- ✅ Používá pouze POIs z vlastní databáze (manuálně vytvořené)
+- ✅ POI microservice je pouze **bonus** pro automatické získávání POIs z free zdrojů
+
+POI microservice je **samostatná služba**, která NEMUSÍ běžet na WordPress serveru. Může běžet:
+- Na jiném serveru
+- Nebo vůbec nemusí běžet (WordPress funguje normálně)
 
 ---
 
 ## ✅ Řešení
 
-### Krok 1: Zjistit, kde POI microservice běží (nebo jestli vůbec běží)
+### Krok 1: Rozhodnout, jestli POI microservice potřebujete
+
+**POI microservice je VOLITELNÝ!**
+
+- ✅ **Bez POI microservice**: WordPress funguje normálně, používá pouze POIs z vlastní databáze
+- ✅ **S POI microservice**: WordPress automaticky získává POIs z free zdrojů (OpenTripMap, Wikidata)
+
+**Pokud POI microservice nepotřebujete**: Nechat URL prázdné - WordPress funguje normálně.
+
+---
+
+### Krok 2: Pokud chcete použít POI microservice, zjistit kde běží
 
 **Možnosti**:
-1. POI microservice není nasazený → musí se nasadit
+1. POI microservice není nasazený → musí se nasadit (nebo nechat prázdné)
 2. POI microservice běží na jiném serveru → použít správnou URL
 3. POI microservice běží na stejném serveru, ale na jiném portu/cestě → použít správnou URL
 
 ---
 
-### Krok 2: Nastavit správnou URL v WordPress
+### Krok 3: Nastavit správnou URL v WordPress
 
 **V admin rozhraní** (`Tools > POI Microservice`):
 
@@ -48,8 +67,8 @@ https://poi-service.your-server.com
 https://staging-f576-dobitybaterky.wpcomstaging.com/api/pois
 ```
 
-#### Možnost C: POI microservice není nasazený (dočasně zakázat)
-**Nechat prázdné** - WordPress přeskočí synchronizaci POIs z microservice
+#### Možnost C: POI microservice není nasazený (doporučeno, pokud ho nepotřebujete)
+**Nechat prázdné** - WordPress funguje normálně bez POI microservice, používá pouze POIs z vlastní databáze
 
 ---
 
@@ -122,6 +141,9 @@ location /api/pois {
 
 ## 📝 Co vyplnit v admin rozhraní
 
+### Pokud POI microservice NENÍ nasazený (doporučeno, pokud ho nepotřebujete):
+**Nechat prázdné** - WordPress funguje normálně, používá pouze POIs z vlastní databáze
+
 ### Pokud POI microservice běží na jiném serveru:
 ```
 https://poi-api.your-server.com
@@ -131,9 +153,6 @@ https://poi-api.your-server.com
 ```
 https://staging-f576-dobitybaterky.wpcomstaging.com/api/pois
 ```
-
-### Pokud POI microservice není nasazený (dočasně):
-**Nechat prázdné** - WordPress bude fungovat, ale nebude synchronizovat POIs z microservice
 
 ---
 
@@ -171,16 +190,20 @@ Mělo by vrátit JSON s POIs.
 
 ## 💡 Doporučení
 
+**POI microservice je VOLITELNÝ!**
+
 **Pro staging** (WordPress.com hosting):
 - POI microservice pravděpodobně **není nasazený** na WordPress.com serveru
-- **Možnosti**:
-  1. Nasadit POI microservice na samostatný server
-  2. Nebo dočasně nechat URL prázdné (WordPress bude fungovat bez POI synchronizace)
+- **Doporučení**: **Nechat URL prázdné** - WordPress funguje normálně bez POI microservice
+- Pokud chcete použít POI microservice: nasadit na samostatný server
 
 **Pro produkci**:
-- Nasadit POI microservice na samostatný server nebo VPS
-- Použít subdoménu: `https://poi-api.dobitybaterky.cz`
-- Nebo přes reverse proxy: `https://dobitybaterky.cz/api/pois`
+- **Možnost 1**: Nechat URL prázdné - WordPress funguje normálně
+- **Možnost 2**: Nasadit POI microservice na samostatný server nebo VPS
+  - Použít subdoménu: `https://poi-api.dobitybaterky.cz`
+  - Nebo přes reverse proxy: `https://dobitybaterky.cz/api/pois`
+
+**Shrnutí**: POI microservice je **bonus funkcionalita**. WordPress **FUNGUJE NORMÁLNĚ** i bez něj!
 
 ---
 
