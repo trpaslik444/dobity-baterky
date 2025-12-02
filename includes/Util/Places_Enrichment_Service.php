@@ -20,6 +20,7 @@ class Places_Enrichment_Service {
     private static $instance = null;
     private $usageTable;
     private $inFlight = array();
+    private $tableChecked = false;
 
     private function __construct() {
         global $wpdb;
@@ -270,8 +271,27 @@ class Places_Enrichment_Service {
     }
 
     private function maybe_create_table(): void {
+        // Skip if already checked in this request
+        if ($this->tableChecked) {
+            return;
+        }
+
         global $wpdb;
         $table_name = $this->usageTable;
+
+        // Check if table exists before running dbDelta
+        $table_exists = $wpdb->get_var($wpdb->prepare(
+            "SHOW TABLES LIKE %s",
+            $table_name
+        ));
+
+        if ($table_exists === $table_name) {
+            // Table exists, mark as checked and return
+            $this->tableChecked = true;
+            return;
+        }
+
+        // Table doesn't exist, create it
         $charset_collate = $wpdb->get_charset_collate();
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         $sql = "CREATE TABLE {$table_name} (
@@ -282,5 +302,8 @@ class Places_Enrichment_Service {
             KEY api_name_idx (api_name)
         ) {$charset_collate};";
         dbDelta($sql);
+
+        // Mark as checked after creation attempt
+        $this->tableChecked = true;
     }
 }
