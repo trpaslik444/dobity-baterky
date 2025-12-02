@@ -28,17 +28,61 @@ class POI_Microservice_Client {
         if (defined('DB_POI_SERVICE_URL')) {
             $this->api_url = DB_POI_SERVICE_URL;
         } else {
-            $this->api_url = get_option('db_poi_service_url', 'http://localhost:3333');
+            // Pro staging/produkci: POI microservice běží na stejném serveru
+            // Detekce prostředí a automatické nastavení URL
+            $default_url = $this->get_default_service_url();
+            $this->api_url = get_option('db_poi_service_url', $default_url);
         }
         
         // Validace URL
-        if (!filter_var($this->api_url, FILTER_VALIDATE_URL)) {
-            error_log('[POI Microservice Client] Invalid API URL: ' . $this->api_url);
-            $this->api_url = 'http://localhost:3333'; // Fallback
+        if (empty($this->api_url) || !filter_var($this->api_url, FILTER_VALIDATE_URL)) {
+            error_log('[POI Microservice Client] Invalid or missing API URL. Please configure DB_POI_SERVICE_URL in wp-config.php or set db_poi_service_url option.');
+            $this->api_url = null; // Nebudeme používat fallback localhost
+            return;
         }
         
         // Odstranit trailing slash
         $this->api_url = rtrim($this->api_url, '/');
+    }
+    
+    /**
+     * Získat default URL POI microservice podle prostředí
+     */
+    private function get_default_service_url() {
+        // Pokud je definována konstanta, použít ji
+        if (defined('DB_POI_SERVICE_URL')) {
+            return DB_POI_SERVICE_URL;
+        }
+        
+        // Detekce prostředí
+        $site_url = get_site_url();
+        
+        // Staging/produkce: POI microservice běží na stejném serveru
+        // Předpokládáme, že POI microservice běží na stejném hostu, ale jiném portu nebo subdoméně
+        if (strpos($site_url, 'localhost') === false && strpos($site_url, '127.0.0.1') === false) {
+            // Produkce/staging - použít stejný host, ale port 3333 nebo subdoménu
+            $parsed = parse_url($site_url);
+            $host = $parsed['host'] ?? '';
+            $scheme = $parsed['scheme'] ?? 'https';
+            
+            // Možnost 1: POI microservice na stejném hostu, port 3333
+            // Možnost 2: POI microservice na subdoméně (např. poi-api.dobitybaterky.cz)
+            // Možnost 3: POI microservice na stejném hostu, jiná cesta (např. /poi-api)
+            
+            // Prozatím použijeme stejný host s portem 3333
+            // V produkci by mělo být nastaveno explicitně v wp-config.php
+            return $scheme . '://' . $host . ':3333';
+        }
+        
+        // Development: localhost
+        return 'http://localhost:3333';
+    }
+    
+    /**
+     * Zkontrolovat, zda je POI microservice nakonfigurován
+     */
+    public function is_configured() {
+        return !empty($this->api_url);
     }
 
     /**
@@ -52,6 +96,13 @@ class POI_Microservice_Client {
      * @return array|WP_Error Array s POIs nebo WP_Error při chybě
      */
     public function get_nearby_pois($lat, $lng, $radius = 2000, $minCount = 10, $refresh = false) {
+        if (!$this->is_configured()) {
+            return new \WP_Error(
+                'poi_service_not_configured',
+                'POI microservice URL není nakonfigurováno. Nastavte DB_POI_SERVICE_URL v wp-config.php nebo db_poi_service_url option.'
+            );
+        }
+        
         $url = $this->api_url . '/api/pois/nearby';
         $args = array(
             'lat' => $lat,

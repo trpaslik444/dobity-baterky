@@ -40,7 +40,7 @@ class POI_Service_Admin {
         register_setting('db_poi_service_settings', 'db_poi_service_url', array(
             'type' => 'string',
             'sanitize_callback' => array($this, 'sanitize_url'),
-            'default' => 'http://localhost:3333',
+            'default' => '', // Prázdné - musí být explicitně nastaveno
         ));
 
         register_setting('db_poi_service_settings', 'db_poi_service_timeout', array(
@@ -57,14 +57,30 @@ class POI_Service_Admin {
     }
 
     public function sanitize_url($url) {
+        $url = trim($url);
+        
+        // Pokud je prázdné a není konstanta, použít auto-detekci
+        if (empty($url) && !defined('DB_POI_SERVICE_URL')) {
+            // Zkusit auto-detekci
+            $site_url = get_site_url();
+            if (strpos($site_url, 'localhost') === false && strpos($site_url, '127.0.0.1') === false) {
+                $parsed = parse_url($site_url);
+                $host = $parsed['host'] ?? '';
+                $scheme = $parsed['scheme'] ?? 'https';
+                $url = $scheme . '://' . $host . ':3333';
+            } else {
+                $url = 'http://localhost:3333';
+            }
+        }
+        
         $url = esc_url_raw($url);
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        if (!empty($url) && !filter_var($url, FILTER_VALIDATE_URL)) {
             add_settings_error(
                 'db_poi_service_url',
                 'invalid_url',
                 'Neplatná URL adresa POI microservice'
             );
-            return get_option('db_poi_service_url', 'http://localhost:3333');
+            return get_option('db_poi_service_url', '');
         }
         return rtrim($url, '/');
     }
@@ -138,14 +154,41 @@ class POI_Service_Admin {
                             <label for="db_poi_service_url">POI Microservice URL</label>
                         </th>
                         <td>
+                            <?php
+                            $current_url = get_option('db_poi_service_url', '');
+                            if (defined('DB_POI_SERVICE_URL')) {
+                                $current_url = DB_POI_SERVICE_URL;
+                                $is_constant = true;
+                            } else {
+                                $is_constant = false;
+                                // Auto-detekce pro staging/produkci
+                                if (empty($current_url)) {
+                                    $site_url = get_site_url();
+                                    if (strpos($site_url, 'localhost') === false && strpos($site_url, '127.0.0.1') === false) {
+                                        $parsed = parse_url($site_url);
+                                        $host = $parsed['host'] ?? '';
+                                        $scheme = $parsed['scheme'] ?? 'https';
+                                        $current_url = $scheme . '://' . $host . ':3333';
+                                    } else {
+                                        $current_url = 'http://localhost:3333';
+                                    }
+                                }
+                            }
+                            ?>
                             <input type="url" 
                                    id="db_poi_service_url" 
                                    name="db_poi_service_url" 
-                                   value="<?php echo esc_attr(get_option('db_poi_service_url', 'http://localhost:3333')); ?>" 
+                                   value="<?php echo esc_attr($current_url); ?>" 
                                    class="regular-text"
-                                   placeholder="http://localhost:3333" />
+                                   placeholder="https://your-site.com:3333 nebo http://localhost:3333"
+                                   <?php echo $is_constant ? 'readonly' : ''; ?> />
                             <p class="description">
-                                URL POI microservice API. Může být také nastaveno pomocí konstanty <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.
+                                URL POI microservice API. 
+                                <?php if ($is_constant): ?>
+                                    <strong>Nastaveno pomocí konstanty <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.</strong>
+                                <?php else: ?>
+                                    Pro staging/produkci použijte URL ve formátu <code>https://your-site.com:3333</code> nebo nastavte konstantu <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.
+                                <?php endif; ?>
                             </p>
                         </td>
                     </tr>
