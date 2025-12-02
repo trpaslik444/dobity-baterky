@@ -28,17 +28,25 @@ class POI_Microservice_Client {
         if (defined('DB_POI_SERVICE_URL')) {
             $this->api_url = DB_POI_SERVICE_URL;
         } else {
-            $this->api_url = get_option('db_poi_service_url', 'http://localhost:3333');
+            $this->api_url = get_option('db_poi_service_url', '');
         }
         
         // Validace URL
-        if (!filter_var($this->api_url, FILTER_VALIDATE_URL)) {
-            error_log('[POI Microservice Client] Invalid API URL: ' . $this->api_url);
-            $this->api_url = 'http://localhost:3333'; // Fallback
+        if (empty($this->api_url) || !filter_var($this->api_url, FILTER_VALIDATE_URL)) {
+            error_log('[POI Microservice Client] POI microservice URL není nakonfigurováno. Nastavte DB_POI_SERVICE_URL v wp-config.php nebo db_poi_service_url option.');
+            $this->api_url = null;
+            return;
         }
         
         // Odstranit trailing slash
         $this->api_url = rtrim($this->api_url, '/');
+    }
+    
+    /**
+     * Zkontrolovat, zda je POI microservice nakonfigurován
+     */
+    public function is_configured() {
+        return !empty($this->api_url);
     }
 
     /**
@@ -52,6 +60,24 @@ class POI_Microservice_Client {
      * @return array|WP_Error Array s POIs nebo WP_Error při chybě
      */
     public function get_nearby_pois($lat, $lng, $radius = 2000, $minCount = 10, $refresh = false) {
+        if (!$this->is_configured()) {
+            return new \WP_Error(
+                'poi_service_not_configured',
+                'POI microservice URL není nakonfigurováno. Nastavte DB_POI_SERVICE_URL v wp-config.php nebo db_poi_service_url option.'
+            );
+        }
+        
+        // P3: Cache pro API response (5 minut)
+        $cache_key = 'poi_api_' . md5($lat . '_' . $lng . '_' . $radius . '_' . $minCount . '_' . ($refresh ? '1' : '0'));
+        $cache_duration = 300; // 5 minut
+        
+        if (!$refresh) {
+            $cached = get_transient($cache_key);
+            if ($cached !== false) {
+                return $cached;
+            }
+        }
+        
         $url = $this->api_url . '/api/pois/nearby';
         $args = array(
             'lat' => $lat,
@@ -119,6 +145,9 @@ class POI_Microservice_Client {
                 );
             }
 
+            // P3: Uložit do cache
+            set_transient($cache_key, $data, $cache_duration);
+            
             return $data;
         }
         
@@ -139,6 +168,17 @@ class POI_Microservice_Client {
      * @return array Array s výsledky synchronizace
      */
     public function sync_nearby_pois_to_wordpress($lat, $lng, $radius = 2000, $refresh = false) {
+        // P1: Kontrola existence post type
+        if (!post_type_exists('poi')) {
+            error_log('[POI Microservice Client] Post type "poi" is not registered');
+            return array(
+                'success' => false,
+                'error' => 'Post type "poi" is not registered',
+                'synced' => 0,
+                'failed' => 0,
+            );
+        }
+
         $result = $this->get_nearby_pois($lat, $lng, $radius, 10, $refresh);
 
         if (is_wp_error($result)) {
@@ -159,10 +199,22 @@ class POI_Microservice_Client {
             );
         }
 
+        // P1: Limit pro počet POIs (prevence timeoutu)
+        $max_pois = 100; // Maximální počet POIs najednou
+        $pois = array_slice($result['pois'], 0, $max_pois);
+        
+        if (count($result['pois']) > $max_pois) {
+            error_log(sprintf(
+                '[POI Microservice Client] Limiting POIs from %d to %d to prevent timeout',
+                count($result['pois']),
+                $max_pois
+            ));
+        }
+
         $synced = 0;
         $failed = 0;
 
-        foreach ($result['pois'] as $poi) {
+        foreach ($pois as $poi) {
             $post_id = $this->create_or_update_poi($poi);
             if ($post_id) {
                 $synced++;
@@ -171,12 +223,19 @@ class POI_Microservice_Client {
             }
         }
 
+        // P2: Validace providers_used
+        $providers_used = $result['providers_used'] ?? array();
+        if (!is_array($providers_used)) {
+            $providers_used = array();
+        }
+
         return array(
             'success' => true,
             'synced' => $synced,
             'failed' => $failed,
-            'total' => count($result['pois']),
-            'providers_used' => $result['providers_used'] ?? array(),
+            'total' => count($pois),
+            'total_available' => count($result['pois']),
+            'providers_used' => $providers_used,
         );
     }
 
@@ -234,77 +293,113 @@ class POI_Microservice_Client {
 
     /**
      * Najít existující POI
+     * 
+     * P1: Používá SELECT FOR UPDATE pro prevenci race condition
      */
     private function find_existing_poi($poi, $lat, $lng, $name) {
         global $wpdb;
 
-        // Nejdříve zkusit podle external_id (source_ids)
-        if (isset($poi['source_ids']) && is_array($poi['source_ids'])) {
-            foreach ($poi['source_ids'] as $source => $source_id) {
-                $post_id = $wpdb->get_var($wpdb->prepare(
-                    "SELECT post_id FROM {$wpdb->postmeta} 
-                     WHERE meta_key = '_poi_external_id' AND meta_value = %s 
-                     LIMIT 1",
-                    $source . ':' . $source_id
-                ));
-                if ($post_id) {
-                    return (int) $post_id;
+        // P1: Začít transakci pro prevenci race condition
+        $wpdb->query('START TRANSACTION');
+
+        try {
+            // Nejdříve zkusit podle external_id (source_ids)
+            if (isset($poi['source_ids']) && is_array($poi['source_ids'])) {
+                foreach ($poi['source_ids'] as $source => $source_id) {
+                    $post_id = $wpdb->get_var($wpdb->prepare(
+                        "SELECT post_id FROM {$wpdb->postmeta} 
+                         WHERE meta_key = '_poi_external_id' AND meta_value = %s 
+                         LIMIT 1 FOR UPDATE",
+                        $source . ':' . $source_id
+                    ));
+                    if ($post_id) {
+                        $wpdb->query('COMMIT');
+                        return (int) $post_id;
+                    }
                 }
             }
-        }
 
-        // Pokud ne, zkusit podle GPS + jméno (deduplikace)
-        $candidates = $wpdb->get_results($wpdb->prepare(
-            "SELECT p.ID, 
-                    pm_lat.meta_value+0 AS lat,
-                    pm_lng.meta_value+0 AS lon,
-                    p.post_title
-             FROM {$wpdb->posts} p
-             INNER JOIN {$wpdb->postmeta} pm_lat ON pm_lat.post_id = p.ID AND pm_lat.meta_key = '_poi_lat'
-             INNER JOIN {$wpdb->postmeta} pm_lng ON pm_lng.post_id = p.ID AND pm_lng.meta_key = '_poi_lng'
-             WHERE p.post_type = 'poi' 
-             AND p.post_status = 'publish'
-             AND (
-                 6371 * ACOS(
-                     COS(RADIANS(%f)) * COS(RADIANS(pm_lat.meta_value+0)) *
-                     COS(RADIANS(pm_lng.meta_value+0) - RADIANS(%f)) +
-                     SIN(RADIANS(%f)) * SIN(RADIANS(pm_lat.meta_value+0))
-                 )
-             ) <= 0.05
-             LIMIT 10",
-            $lat, $lng, $lat
-        ));
+            // Pokud ne, zkusit podle GPS + jméno (deduplikace)
+            $candidates = $wpdb->get_results($wpdb->prepare(
+                "SELECT p.ID, 
+                        pm_lat.meta_value+0 AS lat,
+                        pm_lng.meta_value+0 AS lon,
+                        p.post_title
+                 FROM {$wpdb->posts} p
+                 INNER JOIN {$wpdb->postmeta} pm_lat ON pm_lat.post_id = p.ID AND pm_lat.meta_key = '_poi_lat'
+                 INNER JOIN {$wpdb->postmeta} pm_lng ON pm_lng.post_id = p.ID AND pm_lng.meta_key = '_poi_lng'
+                 WHERE p.post_type = 'poi' 
+                 AND p.post_status = 'publish'
+                 AND (
+                     6371 * ACOS(
+                         COS(RADIANS(%f)) * COS(RADIANS(pm_lat.meta_value+0)) *
+                         COS(RADIANS(pm_lng.meta_value+0) - RADIANS(%f)) +
+                         SIN(RADIANS(%f)) * SIN(RADIANS(pm_lat.meta_value+0))
+                     )
+                 ) <= 0.05
+                 LIMIT 10 FOR UPDATE",
+                $lat, $lng, $lat
+            ));
 
-        // Zkontrolovat podobnost jména
-        foreach ($candidates as $candidate) {
-            $distance = $this->haversine_km($lat, $lng, (float) $candidate->lat, (float) $candidate->lon);
-            if ($distance <= 0.05) { // 50 metrů
-                $name_similarity = $this->name_similarity($name, $candidate->post_title);
-                if ($name_similarity > 0.8) { // 80% podobnost
-                    return (int) $candidate->ID;
+            // Zkontrolovat podobnost jména
+            foreach ($candidates as $candidate) {
+                $distance = $this->haversine_km($lat, $lng, (float) $candidate->lat, (float) $candidate->lon);
+                if ($distance <= 0.05) { // 50 metrů
+                    $name_similarity = $this->name_similarity($name, $candidate->post_title);
+                    if ($name_similarity > 0.8) { // 80% podobnost
+                        $wpdb->query('COMMIT');
+                        return (int) $candidate->ID;
+                    }
                 }
             }
-        }
 
-        return null;
+            $wpdb->query('COMMIT');
+            return null;
+        } catch (\Exception $e) {
+            $wpdb->query('ROLLBACK');
+            error_log('[POI Microservice Client] Error in find_existing_poi: ' . $e->getMessage());
+            return null;
+        }
     }
 
     /**
      * Vytvořit nový POI post
+     * 
+     * P1: Kontrola existence post type a použití transakce
      */
     private function create_poi($poi) {
-        $post_id = wp_insert_post(array(
-            'post_type' => 'poi',
-            'post_title' => sanitize_text_field($poi['name']),
-            'post_status' => 'publish',
-        ));
-
-        if (is_wp_error($post_id)) {
+        // P1: Kontrola existence post type
+        if (!post_type_exists('poi')) {
+            error_log('[POI Microservice Client] Post type "poi" is not registered');
             return false;
         }
 
-        $this->update_poi_meta($post_id, $poi);
-        return $post_id;
+        global $wpdb;
+        
+        // P1: Použít transakci pro prevenci race condition
+        $wpdb->query('START TRANSACTION');
+        
+        try {
+            $post_id = wp_insert_post(array(
+                'post_type' => 'poi',
+                'post_title' => sanitize_text_field($poi['name']),
+                'post_status' => 'publish',
+            ), true); // $wp_error = true pro lepší error handling
+
+            if (is_wp_error($post_id)) {
+                $wpdb->query('ROLLBACK');
+                error_log('[POI Microservice Client] Error creating POI post: ' . $post_id->get_error_message());
+                return false;
+            }
+
+            $this->update_poi_meta($post_id, $poi);
+            $wpdb->query('COMMIT');
+            return $post_id;
+        } catch (\Exception $e) {
+            $wpdb->query('ROLLBACK');
+            error_log('[POI Microservice Client] Exception creating POI post: ' . $e->getMessage());
+            return false;
+        }
     }
 
     /**

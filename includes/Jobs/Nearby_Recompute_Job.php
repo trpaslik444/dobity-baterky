@@ -846,6 +846,16 @@ class Nearby_Recompute_Job {
 
         try {
             $client = \DB\Services\POI_Microservice_Client::get_instance();
+            
+            // Zkontrolovat, zda je POI microservice nakonfigurován
+            if (!$client->is_configured()) {
+                $this->debug_log('[POI Sync] POI microservice not configured', array(
+                    'lat' => $lat,
+                    'lng' => $lng,
+                ));
+                return; // Přeskočit synchronizaci, pokud není nakonfigurováno
+            }
+            
             $result = $client->sync_nearby_pois_to_wordpress($lat, $lng, $radiusMeters, false);
             
             if ($result['success']) {
@@ -865,6 +875,14 @@ class Nearby_Recompute_Job {
                     'error' => $result['error'] ?? 'Unknown error',
                     'lat' => $lat,
                     'lng' => $lng,
+                ));
+                
+                // P3: Monitoring/alerting pro selhání
+                do_action('db_poi_sync_failed', array(
+                    'error' => $result['error'] ?? 'Unknown error',
+                    'lat' => $lat,
+                    'lng' => $lng,
+                    'radius' => $radiusMeters,
                 ));
             }
             

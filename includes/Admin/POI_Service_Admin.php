@@ -40,33 +40,83 @@ class POI_Service_Admin {
         register_setting('db_poi_service_settings', 'db_poi_service_url', array(
             'type' => 'string',
             'sanitize_callback' => array($this, 'sanitize_url'),
-            'default' => 'http://localhost:3333',
+            'default' => '', // Prázdné - musí být explicitně nastaveno
         ));
 
         register_setting('db_poi_service_settings', 'db_poi_service_timeout', array(
             'type' => 'integer',
-            'sanitize_callback' => 'absint',
+            'sanitize_callback' => array($this, 'sanitize_timeout'),
             'default' => 30,
         ));
 
         register_setting('db_poi_service_settings', 'db_poi_service_max_retries', array(
             'type' => 'integer',
-            'sanitize_callback' => 'absint',
+            'sanitize_callback' => array($this, 'sanitize_max_retries'),
             'default' => 3,
         ));
     }
 
     public function sanitize_url($url) {
+        $url = trim($url);
+        
         $url = esc_url_raw($url);
-        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        if (!empty($url) && !filter_var($url, FILTER_VALIDATE_URL)) {
             add_settings_error(
                 'db_poi_service_url',
                 'invalid_url',
                 'Neplatná URL adresa POI microservice'
             );
-            return get_option('db_poi_service_url', 'http://localhost:3333');
+            return get_option('db_poi_service_url', '');
         }
         return rtrim($url, '/');
+    }
+
+    /**
+     * P2: Sanitizace timeout hodnoty (5-300 sekund)
+     */
+    public function sanitize_timeout($timeout) {
+        $timeout = (int) $timeout;
+        if ($timeout < 5) {
+            add_settings_error(
+                'db_poi_service_timeout',
+                'invalid_timeout',
+                'Timeout musí být minimálně 5 sekund'
+            );
+            return 5;
+        }
+        if ($timeout > 300) {
+            add_settings_error(
+                'db_poi_service_timeout',
+                'invalid_timeout',
+                'Timeout musí být maximálně 300 sekund'
+            );
+            return 300;
+        }
+        return $timeout;
+    }
+
+    /**
+     * P2: Sanitizace max_retries hodnoty (1-10)
+     */
+    public function sanitize_max_retries($max_retries) {
+        $max_retries = (int) $max_retries;
+        if ($max_retries < 1) {
+            add_settings_error(
+                'db_poi_service_max_retries',
+                'invalid_max_retries',
+                'Maximální počet pokusů musí být minimálně 1'
+            );
+            return 1;
+        }
+        if ($max_retries > 10) {
+            add_settings_error(
+                'db_poi_service_max_retries',
+                'invalid_max_retries',
+                'Maximální počet pokusů musí být maximálně 10'
+            );
+            return 10;
+        }
+        return $max_retries;
     }
 
     public function handle_test_connection() {
@@ -138,14 +188,28 @@ class POI_Service_Admin {
                             <label for="db_poi_service_url">POI Microservice URL</label>
                         </th>
                         <td>
+                            <?php
+                            $current_url = get_option('db_poi_service_url', '');
+                            $is_constant = defined('DB_POI_SERVICE_URL');
+                            if ($is_constant) {
+                                $current_url = DB_POI_SERVICE_URL;
+                            }
+                            ?>
                             <input type="url" 
                                    id="db_poi_service_url" 
                                    name="db_poi_service_url" 
-                                   value="<?php echo esc_attr(get_option('db_poi_service_url', 'http://localhost:3333')); ?>" 
+                                   value="<?php echo esc_attr($current_url); ?>" 
                                    class="regular-text"
-                                   placeholder="http://localhost:3333" />
+                                   placeholder="https://poi-api.your-site.com nebo http://localhost:3333"
+                                   <?php echo $is_constant ? 'readonly' : ''; ?> />
                             <p class="description">
-                                URL POI microservice API. Může být také nastaveno pomocí konstanty <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.
+                                URL POI microservice API. 
+                                <?php if ($is_constant): ?>
+                                    <strong>Nastaveno pomocí konstanty <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.</strong>
+                                <?php else: ?>
+                                    Nastavte URL, kde běží POI microservice. Může být stejné pro localhost i produkci, pokud je správně nakonfigurováno.<br>
+                                    Příklady: <code>https://poi-api.your-site.com</code>, <code>http://localhost:3333</code>, <code>https://your-site.com/api/pois</code>
+                                <?php endif; ?>
                             </p>
                         </td>
                     </tr>
