@@ -30,19 +30,28 @@ class Wikidata_Provider {
         // Wikidata SPARQL query
         $query = $this->build_query($lat, $lng, $radius);
         
-        $response = wp_remote_get($this->api_url, array(
+        // Wikidata vyžaduje POST request s query v body
+        $response = wp_remote_post($this->api_url, array(
             'timeout' => 15,
             'headers' => array(
                 'Accept' => 'application/sparql-results+json',
+                'Content-Type' => 'application/x-www-form-urlencoded',
                 'User-Agent' => 'DobityBaterky/1.0 (https://dobitybaterky.cz)',
             ),
-            'body' => array(
+            'body' => http_build_query(array(
                 'query' => $query,
                 'format' => 'json',
-            ),
+            )),
         ));
         
         if (is_wp_error($response)) {
+            error_log('[Wikidata Provider] Error: ' . $response->get_error_message());
+            return array();
+        }
+        
+        $status_code = wp_remote_retrieve_response_code($response);
+        if ($status_code !== 200) {
+            error_log('[Wikidata Provider] HTTP ' . $status_code);
             return array();
         }
         
@@ -67,42 +76,46 @@ class Wikidata_Provider {
      * Vytvořit SPARQL query
      */
     private function build_query($lat, $lng, $radius) {
-        // Převést radius z metrů na stupně (přibližně)
-        $radius_deg = $radius / 111000; // 1 stupeň ≈ 111 km
+        // Převést radius z metrů na kilometry pro Wikidata
+        $radius_km = $radius / 1000;
         
-        $lat_min = $lat - $radius_deg;
-        $lat_max = $lat + $radius_deg;
-        $lng_min = $lng - $radius_deg;
-        $lng_max = $lng + $radius_deg;
-        
-        // Filtrovat pro relevantní typy míst
+        // Wikidata SPARQL query s geografickým filtrem
+        // Používáme SERVICE wikibase:around pro geografické vyhledávání
         $query = "
-        SELECT ?item ?itemLabel ?lat ?lon ?type WHERE {
-          ?item wdt:P31/wdt:P279* ?type .
-          VALUES ?type {
-            wd:Q33506  # Museum
-            wd:Q22698  # Gallery
-            wd:Q570116 # Tourist attraction
-            wd:Q107420  # Viewpoint
-            wd:Q47521   # Park
-            wd:Q22698   # Art gallery
-            wd:Q41176   # Building
-            wd:Q570116  # Tourist attraction
+        SELECT ?item ?itemLabel ?lat ?lon WHERE {
+          SERVICE wikibase:around {
+            ?item wdt:P625 ?location .
+            bd:serviceParam wikibase:center \"Point($lng $lat)\"^^geo:wktLiteral .
+            bd:serviceParam wikibase:radius \"$radius_km\" .
           }
-          ?item wdt:P625 ?coord .
-          ?item wdt:P17 wd:Q213 .  # Czech Republic
-          BIND(SUBSTR(STR(?coord), 32) AS ?coordStr)
+          # Filtrovat jen relevantní typy míst (muzea, galerie, památky, výhledy, parky)
+          {
+            ?item wdt:P31/wdt:P279* ?type .
+            VALUES ?type {
+              wd:Q33506    # Museum
+              wd:Q190598   # Art gallery
+              wd:Q570116   # Tourist attraction
+              wd:Q1075788  # Viewpoint
+              wd:Q22698    # Park
+              wd:Q12280    # Monument
+              wd:Q47513    # Castle
+              wd:Q16970    # Church
+              wd:Q483551   # Cultural heritage
+            }
+          }
+          # Extrahovat souřadnice
+          BIND(SUBSTR(STR(?location), 32) AS ?coordStr)
           BIND(REPLACE(?coordStr, ' ', '') AS ?cleanCoord)
           BIND(SUBSTR(?cleanCoord, 1, STRLEN(?cleanCoord)-1) AS ?coordWithoutParen)
           BIND(STRBEFORE(?coordWithoutParen, ',') AS ?lonStr)
           BIND(STRAFTER(?coordWithoutParen, ',') AS ?latStr)
           BIND(xsd:float(?latStr) AS ?lat)
           BIND(xsd:float(?lonStr) AS ?lon)
-          FILTER(?lat >= $lat_min && ?lat <= $lat_max)
-          FILTER(?lon >= $lng_min && ?lon <= $lng_max)
-          SERVICE wikibase:label { bd:serviceParam wikibase:language \"cs,en\" . }
+          SERVICE wikibase:label { 
+            bd:serviceParam wikibase:language \"cs,en\" . 
+          }
         }
-        LIMIT 50
+        LIMIT 100
         ";
         
         return $query;

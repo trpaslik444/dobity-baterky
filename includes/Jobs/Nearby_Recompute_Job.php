@@ -836,29 +836,44 @@ class Nearby_Recompute_Job {
         
         $all_pois = array();
         
-        // 1. OpenTripMap
-        if (!class_exists('DB\\Providers\\OpenTripMap_Provider')) {
-            $provider_file = dirname(dirname(__FILE__)) . '/Providers/OpenTripMap_Provider.php';
-            if (file_exists($provider_file)) {
-                require_once $provider_file;
+        // 1. OpenTripMap (volitelné - pouze pokud je API key nastaven)
+        $opentripmap_api_key = get_option('opentripmap_api_key', '');
+        if (!empty($opentripmap_api_key)) {
+            if (!class_exists('DB\\Providers\\OpenTripMap_Provider')) {
+                $provider_file = dirname(dirname(__FILE__)) . '/Providers/OpenTripMap_Provider.php';
+                if (file_exists($provider_file)) {
+                    require_once $provider_file;
+                }
             }
-        }
-        
-        if (class_exists('DB\\Providers\\OpenTripMap_Provider')) {
-            $opentripmap = new \DB\Providers\OpenTripMap_Provider();
-            $allowed_categories = array('restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'bakery', 'park', 'playground', 
-                                       'garden', 'sports_centre', 'swimming_pool', 'beach', 'tourist_attraction', 
-                                       'viewpoint', 'museum', 'gallery', 'zoo', 'aquarium', 'shopping_mall', 
-                                       'supermarket', 'marketplace');
-            $opentripmap_pois = $opentripmap->search_around($lat, $lng, $radiusMeters, $allowed_categories);
-            $all_pois = array_merge($all_pois, $opentripmap_pois);
-            $this->debug_log('[POI Fetch] OpenTripMap found ' . count($opentripmap_pois) . ' POIs', array(
+            
+            if (class_exists('DB\\Providers\\OpenTripMap_Provider')) {
+                try {
+                    $opentripmap = new \DB\Providers\OpenTripMap_Provider();
+                    $allowed_categories = array('restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'bakery', 'park', 'playground', 
+                                               'garden', 'sports_centre', 'swimming_pool', 'beach', 'tourist_attraction', 
+                                               'viewpoint', 'museum', 'gallery', 'zoo', 'aquarium', 'shopping_mall', 
+                                               'supermarket', 'marketplace');
+                    $opentripmap_pois = $opentripmap->search_around($lat, $lng, $radiusMeters, $allowed_categories);
+                    $all_pois = array_merge($all_pois, $opentripmap_pois);
+                    $this->debug_log('[POI Fetch] OpenTripMap found ' . count($opentripmap_pois) . ' POIs', array(
+                        'lat' => $lat,
+                        'lng' => $lng,
+                    ));
+                } catch (\Exception $e) {
+                    $this->debug_log('[POI Fetch] OpenTripMap error: ' . $e->getMessage(), array(
+                        'lat' => $lat,
+                        'lng' => $lng,
+                    ));
+                }
+            }
+        } else {
+            $this->debug_log('[POI Fetch] OpenTripMap API key not set, skipping', array(
                 'lat' => $lat,
                 'lng' => $lng,
             ));
         }
         
-        // 2. Wikidata
+        // 2. Wikidata (vždy dostupné, nevyžaduje API key)
         if (!class_exists('DB\\Providers\\Wikidata_Provider')) {
             $provider_file = dirname(dirname(__FILE__)) . '/Providers/Wikidata_Provider.php';
             if (file_exists($provider_file)) {

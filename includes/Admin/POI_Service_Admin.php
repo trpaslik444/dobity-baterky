@@ -185,7 +185,7 @@ class POI_Service_Admin {
                 <table class="form-table">
                     <tr>
                         <th scope="row">
-                            <label for="opentripmap_api_key">OpenTripMap API Key</label>
+                            <label for="opentripmap_api_key">OpenTripMap API Key (volitelné)</label>
                         </th>
                         <td>
                             <input type="text" 
@@ -193,11 +193,11 @@ class POI_Service_Admin {
                                    name="opentripmap_api_key" 
                                    value="<?php echo esc_attr(get_option('opentripmap_api_key', '')); ?>" 
                                    class="regular-text"
-                                   placeholder="Zadejte OpenTripMap API key" />
+                                   placeholder="Zadejte OpenTripMap API key (volitelné)" />
                             <p class="description">
-                                <strong>Doporučeno pro automatické stahování POIs!</strong><br>
-                                Získejte zdarma na <a href="https://opentripmap.io/docs" target="_blank">opentripmap.io</a>.<br>
-                                WordPress automaticky stáhne POIs z OpenTripMap a Wikidata při hledání nearby POIs.
+                                <strong>Volitelné!</strong> WordPress funguje i bez OpenTripMap API key - použije pouze Wikidata (zdarma, nevyžaduje registraci).<br>
+                                Pokud máte OpenTripMap API key, zadejte ho pro více POIs. Získejte na <a href="https://opentripmap.io/docs" target="_blank">opentripmap.io</a>.<br>
+                                <strong>Bez API key:</strong> WordPress automaticky stáhne POIs z Wikidata při hledání nearby POIs.
                             </p>
                         </td>
                     </tr>
