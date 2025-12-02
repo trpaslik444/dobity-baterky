@@ -24,8 +24,19 @@ class POI_Microservice_Client {
     }
 
     private function __construct() {
-        // URL POI microservice z options nebo konstanty
-        $this->api_url = get_option('db_poi_service_url', 'http://localhost:3333');
+        // URL POI microservice z konstanty (wp-config.php) nebo options
+        if (defined('DB_POI_SERVICE_URL')) {
+            $this->api_url = DB_POI_SERVICE_URL;
+        } else {
+            $this->api_url = get_option('db_poi_service_url', 'http://localhost:3333');
+        }
+        
+        // Validace URL
+        if (!filter_var($this->api_url, FILTER_VALIDATE_URL)) {
+            error_log('[POI Microservice Client] Invalid API URL: ' . $this->api_url);
+            $this->api_url = 'http://localhost:3333'; // Fallback
+        }
+        
         // Odstranit trailing slash
         $this->api_url = rtrim($this->api_url, '/');
     }
@@ -52,38 +63,70 @@ class POI_Microservice_Client {
 
         $url = add_query_arg($args, $url);
 
-        $response = wp_remote_get($url, array(
-            'timeout' => 30,
-            'headers' => array(
-                'Accept' => 'application/json',
-            ),
-        ));
+        // Získat timeout z options nebo použít default
+        $timeout = (int) get_option('db_poi_service_timeout', 30);
+        $max_retries = (int) get_option('db_poi_service_max_retries', 3);
+        
+        $last_error = null;
+        
+        // Retry logika s exponential backoff
+        for ($attempt = 1; $attempt <= $max_retries; $attempt++) {
+            $response = wp_remote_get($url, array(
+                'timeout' => $timeout,
+                'headers' => array(
+                    'Accept' => 'application/json',
+                ),
+            ));
 
-        if (is_wp_error($response)) {
-            return $response;
-        }
+            if (is_wp_error($response)) {
+                $last_error = $response;
+                
+                // Pokud není poslední pokus, počkat před dalším pokusem
+                if ($attempt < $max_retries) {
+                    $wait_time = pow(2, $attempt - 1); // Exponential backoff: 1s, 2s, 4s
+                    sleep($wait_time);
+                    continue;
+                }
+                
+                return $response;
+            }
 
-        $status_code = wp_remote_retrieve_response_code($response);
-        if ($status_code !== 200) {
+            $status_code = wp_remote_retrieve_response_code($response);
+            
+            // Retry pouze pro 5xx chyby nebo timeout
+            if ($status_code >= 500 && $status_code < 600 && $attempt < $max_retries) {
+                $wait_time = pow(2, $attempt - 1);
+                sleep($wait_time);
+                continue;
+            }
+            
+            if ($status_code !== 200) {
+                $body = wp_remote_retrieve_body($response);
+                return new \WP_Error(
+                    'poi_service_error',
+                    sprintf('POI microservice returned status %d: %s', $status_code, $body),
+                    array('status' => $status_code)
+                );
+            }
+
             $body = wp_remote_retrieve_body($response);
-            return new \WP_Error(
-                'poi_service_error',
-                sprintf('POI microservice returned status %d: %s', $status_code, $body),
-                array('status' => $status_code)
-            );
+            $data = json_decode($body, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return new \WP_Error(
+                    'poi_service_json_error',
+                    'Failed to parse JSON response from POI microservice: ' . json_last_error_msg()
+                );
+            }
+
+            return $data;
         }
-
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            return new \WP_Error(
-                'poi_service_json_error',
-                'Failed to parse JSON response from POI microservice: ' . json_last_error_msg()
-            );
-        }
-
-        return $data;
+        
+        // Pokud všechny pokusy selhaly, vrátit poslední chybu
+        return $last_error ?: new \WP_Error(
+            'poi_service_max_retries',
+            sprintf('POI microservice failed after %d attempts', $max_retries)
+        );
     }
 
     /**
@@ -144,6 +187,7 @@ class POI_Microservice_Client {
      * @return int|false Post ID nebo false při chybě
      */
     private function create_or_update_poi($poi) {
+        // Validace povinných polí
         if (!isset($poi['lat']) || !isset($poi['lon']) || !isset($poi['name'])) {
             return false;
         }
@@ -151,6 +195,30 @@ class POI_Microservice_Client {
         $lat = (float) $poi['lat'];
         $lng = (float) $poi['lon'];
         $name = sanitize_text_field($poi['name']);
+        
+        // Validace GPS souřadnic
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            error_log('[POI Microservice Client] Invalid GPS coordinates: ' . $lat . ', ' . $lng);
+            return false;
+        }
+        
+        // Validace názvu
+        if (empty($name) || strlen($name) > 255) {
+            error_log('[POI Microservice Client] Invalid name: ' . $name);
+            return false;
+        }
+        
+        // Validace rating (pokud existuje)
+        if (isset($poi['rating']) && ($poi['rating'] < 0 || $poi['rating'] > 5)) {
+            error_log('[POI Microservice Client] Invalid rating: ' . $poi['rating']);
+            unset($poi['rating']); // Odstranit nevalidní rating
+        }
+        
+        // Validace category (pokud existuje)
+        if (isset($poi['category']) && !is_string($poi['category'])) {
+            error_log('[POI Microservice Client] Invalid category: ' . print_r($poi['category'], true));
+            unset($poi['category']);
+        }
 
         // Najít existující POI podle external_id nebo GPS + jméno
         $existing_id = $this->find_existing_poi($poi, $lat, $lng, $name);
@@ -309,13 +377,16 @@ class POI_Microservice_Client {
 
         // External IDs pro deduplikaci
         if (isset($poi['source_ids']) && is_array($poi['source_ids'])) {
-            foreach ($poi['source_ids'] as $source => $source_id) {
-                update_post_meta($post_id, '_poi_external_id', $source . ':' . $source_id);
+            // Uložit první external_id jako primární
+            $first_source = key($poi['source_ids']);
+            $first_id = $poi['source_ids'][$first_source];
+            if ($first_source && $first_id) {
+                update_post_meta($post_id, '_poi_external_id', $first_source . ':' . $first_id);
             }
         }
 
-        // Source IDs
-        if (isset($poi['source_ids'])) {
+        // Source IDs (celý objekt)
+        if (isset($poi['source_ids']) && is_array($poi['source_ids'])) {
             update_post_meta($post_id, '_poi_source_ids', $poi['source_ids']);
         }
     }

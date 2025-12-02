@@ -1072,6 +1072,14 @@ if ( file_exists( __DIR__ . '/includes/Services/POI_Microservice_Client.php' ) )
     require_once __DIR__ . '/includes/Services/POI_Microservice_Client.php';
 }
 
+// POI Microservice Admin rozhraní
+if ( file_exists( __DIR__ . '/includes/Admin/POI_Service_Admin.php' ) ) {
+    require_once __DIR__ . '/includes/Admin/POI_Service_Admin.php';
+    if ( class_exists( 'DB\Admin\POI_Service_Admin' ) ) {
+        DB\Admin\POI_Service_Admin::get_instance();
+    }
+}
+
 // REST API pro synchronizaci POIs z POI microservice (volitelné - pro externí integrace)
 if ( file_exists( __DIR__ . '/includes/REST_POI_Sync.php' ) ) {
     require_once __DIR__ . '/includes/REST_POI_Sync.php';
