@@ -29,6 +29,9 @@ class Activation {
         self::create_nearby_queue_table();
         // Vytvoření tabulky pro POI discovery queue
         self::create_poi_discovery_queue_table();
+
+        // Vytvoření tabulky pro sledování denní kvóty Places API
+        self::create_places_usage_table();
         
         // Vypnout automatické zpracování při aktivaci
         update_option('db_nearby_auto_enabled', false);
@@ -98,6 +101,13 @@ class Activation {
         if ( $exists !== $table_name ) {
             self::create_feedback_table();
         }
+
+        // Zajistit existenci tabulky pro denní kvóty Places API
+        $usage_table = $wpdb->prefix . 'db_places_usage';
+        $exists_usage = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $usage_table ) );
+        if ( $exists_usage !== $usage_table ) {
+            self::create_places_usage_table();
+        }
     }
     
     /**
@@ -121,5 +131,23 @@ class Activation {
                 $qm->create_table();
             }
         }
+    }
+
+    /**
+     * Vytvoří tabulku pro sledování denní kvóty Google Places API.
+     */
+    private static function create_places_usage_table() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'db_places_usage';
+        $charset_collate = $wpdb->get_charset_collate();
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        $sql = "CREATE TABLE {$table_name} (
+            usage_date DATE NOT NULL,
+            api_name VARCHAR(64) NOT NULL,
+            request_count INT UNSIGNED NOT NULL DEFAULT 0,
+            PRIMARY KEY  (usage_date, api_name),
+            KEY api_name_idx (api_name)
+        ) {$charset_collate};";
+        dbDelta($sql);
     }
 }
