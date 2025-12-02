@@ -24,14 +24,48 @@ export class GooglePlacesProvider implements PoiProvider {
     radiusMeters: number,
     categories: string[]
   ): Promise<NormalizedPoi[]> {
-    if (!CONFIG.GOOGLE_PLACES_ENABLED || !CONFIG.googlePlacesApiKey) return [];
+    if (!CONFIG.PLACES_ENRICHMENT_ENABLED || !CONFIG.googlePlacesApiKey) return [];
     const type = this.pickType(categories);
     const url = `${this.endpoint}?location=${lat},${lon}&radius=${radiusMeters}&type=${encodeURIComponent(
       type
     )}&key=${CONFIG.googlePlacesApiKey}`;
-    const response = await fetch(url);
-    if (!response.ok) return [];
+    
+    let response: Response;
+    try {
+      response = await fetch(url);
+    } catch (error) {
+      console.error('[GooglePlaces] Network error:', error);
+      return [];
+    }
+    
+    if (!response.ok) {
+      // Error handling pro různé HTTP status kódy
+      if (response.status === 429) {
+        console.warn('[GooglePlaces] Rate limit exceeded (HTTP 429)');
+      } else if (response.status === 403) {
+        console.error('[GooglePlaces] API key invalid or quota exceeded (HTTP 403)');
+      } else {
+        console.error(`[GooglePlaces] API error: ${response.status} ${response.statusText}`);
+      }
+      return [];
+    }
+    
     const data = await response.json();
+    
+    // Kontrola Google API error status
+    if (data.status === 'OVER_QUERY_LIMIT') {
+      console.warn('[GooglePlaces] Over query limit');
+      return [];
+    }
+    if (data.status === 'REQUEST_DENIED') {
+      console.error('[GooglePlaces] Request denied:', data.error_message);
+      return [];
+    }
+    if (data.status === 'INVALID_REQUEST') {
+      console.error('[GooglePlaces] Invalid request:', data.error_message);
+      return [];
+    }
+    
     const results = (data.results ?? []) as GooglePlaceResult[];
     return results
       .map((result) => this.normalize(result))

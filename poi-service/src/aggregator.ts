@@ -14,6 +14,7 @@ import {
   passesRatingFilter,
 } from './poiUtils';
 import { haversineDistanceMeters } from './utils/geo';
+import { reserveGoogleQuota } from './quota';
 
 const CACHE_EPSILON = 0.0001;
 
@@ -61,13 +62,17 @@ export async function getNearbyPois(
   }
 
   const googleThreshold = Math.max(minCount, CONFIG.MIN_POIS_BEFORE_GOOGLE);
-  if (merged.length < googleThreshold && CONFIG.GOOGLE_PLACES_ENABLED && (await canUseGoogle())) {
-    const googleProvider = new GooglePlacesProvider();
-    const google = await googleProvider.searchAround(lat, lon, radiusMeters, normalizedCategories);
-    if (google.length) {
-      await incrementGoogleUsage();
-      merged = await persistIncoming([...mergedToNormalized(merged), ...google], lat, lon, radiusMeters);
-      providersUsed.push('google');
+  if (merged.length < googleThreshold && CONFIG.PLACES_ENRICHMENT_ENABLED) {
+    // Atomicky rezervovat kvótu PŘED voláním API (prevence race condition)
+    const quotaReserved = await reserveGoogleQuota();
+    if (quotaReserved) {
+      const googleProvider = new GooglePlacesProvider();
+      const google = await googleProvider.searchAround(lat, lon, radiusMeters, normalizedCategories);
+      if (google.length) {
+        merged = await persistIncoming([...mergedToNormalized(merged), ...google], lat, lon, radiusMeters);
+        providersUsed.push('google');
+      }
+      // Poznámka: Kvóta už byla rezervována v reserveGoogleQuota()
     }
   }
 
@@ -199,23 +204,3 @@ async function saveCache(
   }
 }
 
-async function canUseGoogle(): Promise<boolean> {
-  const today = startOfToday();
-  const usage = await prisma.apiUsage.findUnique({ where: { provider_date: { provider: 'google', date: today } } });
-  if (!usage) return true;
-  return usage.count < CONFIG.MAX_GOOGLE_CALLS_PER_DAY;
-}
-
-async function incrementGoogleUsage() {
-  const today = startOfToday();
-  await prisma.apiUsage.upsert({
-    where: { provider_date: { provider: 'google', date: today } },
-    create: { provider: 'google', date: today, count: 1 },
-    update: { count: { increment: 1 } },
-  });
-}
-
-function startOfToday(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}

@@ -11,21 +11,40 @@ TypeScript/Node.js microservice that surfaces nearby points of interest (POI) ar
 Defined in [`prisma/schema.prisma`](./prisma/schema.prisma):
 - `Poi` stores normalized POIs including rating, media metadata, category whitelist, and `source_ids` for deduplication.
 - `PoiCache` caches nearby lookups (`lat`, `lon`, `radius_m`) with providers used.
-- `ApiUsage` tracks provider usage (currently Google Places daily limit).
+- `ApiUsage` tracks provider usage (fallback if WordPress DB is not configured).
+
+### Google Places API Quota Management
+
+Microservice respektuje stejné denní limity jako WordPress plugin (PR #75):
+- **Výchozí limit**: 300 požadavků/den (konfigurovatelné přes `MAX_PLACES_REQUESTS_PER_DAY`)
+- **Synchronizace**: Pokud je nakonfigurována WordPress MySQL DB, kvóty jsou synchronizované přes tabulku `wp_db_places_usage`
+- **Atomické operace**: Používá MySQL transakce s `FOR UPDATE` lock pro prevenci race conditions
+- **Fallback**: Pokud WordPress DB není dostupná, používá PostgreSQL `ApiUsage` tabulku
+- **Rezervace před voláním**: Kvóta se rezervuje před voláním Google API, ne po
 
 Run migrations with Prisma after configuring `DATABASE_URL` in `.env`.
 
 ## Configuration
 Environment variables (defaults in `src/config.ts`):
-- `DATABASE_URL`
+- `DATABASE_URL` - PostgreSQL connection string
 - `OPENTRIPMAP_API_KEY`
 - `GOOGLE_PLACES_API_KEY`
 - `MIN_RATING` (default `4.0`)
 - `ALLOW_POIS_WITHOUT_RATING` (default `false`)
 - `CACHE_TTL_DAYS` (default `30`)
 - `MIN_POIS_BEFORE_GOOGLE` (default `6`)
-- `GOOGLE_PLACES_ENABLED` (default `true`)
-- `MAX_GOOGLE_CALLS_PER_DAY` (default `500`)
+- `PLACES_ENRICHMENT_ENABLED` (default `true`) - Feature flag pro Google Places
+- `MAX_PLACES_REQUESTS_PER_DAY` (default `300`) - Sjednoceno s WordPress (PR #75)
+
+### WordPress MySQL synchronizace kvót (volitelné)
+Pro synchronizaci kvót s WordPress pluginem (PR #75):
+- `WORDPRESS_DB_HOST` - WordPress MySQL host
+- `WORDPRESS_DB_NAME` - WordPress databáze
+- `WORDPRESS_DB_USER` - MySQL uživatel
+- `WORDPRESS_DB_PASSWORD` - MySQL heslo
+- `WORDPRESS_DB_PREFIX` (default `wp_`) - WordPress tabulka prefix
+
+Pokud není WordPress DB nakonfigurována, microservice použije vlastní PostgreSQL `ApiUsage` tabulku.
 
 ## Development
 ```bash
