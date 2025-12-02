@@ -1067,6 +1067,19 @@ if ( file_exists( __DIR__ . '/includes/REST_Charging_Discovery.php' ) ) {
     }
 }
 
+// POI Microservice Client - WordPress volá POI microservice API a vytváří posty sám
+if ( file_exists( __DIR__ . '/includes/Services/POI_Microservice_Client.php' ) ) {
+    require_once __DIR__ . '/includes/Services/POI_Microservice_Client.php';
+}
+
+// REST API pro synchronizaci POIs z POI microservice (volitelné - pro externí integrace)
+if ( file_exists( __DIR__ . '/includes/REST_POI_Sync.php' ) ) {
+    require_once __DIR__ . '/includes/REST_POI_Sync.php';
+    if ( class_exists( 'DB\REST_POI_Sync' ) ) {
+        DB\REST_POI_Sync::get_instance()->register();
+    }
+}
+
 // POI Discovery Worker helpers
 if ( file_exists( __DIR__ . '/includes/Jobs/POI_Discovery_Worker.php' ) ) {
     require_once __DIR__ . '/includes/Jobs/POI_Discovery_Worker.php';

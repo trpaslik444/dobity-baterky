@@ -815,10 +815,53 @@ class Nearby_Recompute_Job {
     }
     
     /**
+     * Synchronizovat POIs z POI microservice
+     */
+    private function sync_pois_from_microservice($lat, $lng, $radiusMeters) {
+        if (!class_exists('DB\\Services\\POI_Microservice_Client')) {
+            $client_file = dirname(dirname(__FILE__)) . '/Services/POI_Microservice_Client.php';
+            if (file_exists($client_file)) {
+                require_once $client_file;
+            } else {
+                return; // Client není k dispozici
+            }
+        }
+
+        try {
+            $client = \DB\Services\POI_Microservice_Client::get_instance();
+            $result = $client->sync_nearby_pois_to_wordpress($lat, $lng, $radiusMeters, false);
+            
+            if ($result['success']) {
+                $this->debug_log('[POI Sync] Synced POIs from microservice', array(
+                    'lat' => $lat,
+                    'lng' => $lng,
+                    'radius' => $radiusMeters,
+                    'synced' => $result['synced'],
+                    'failed' => $result['failed'],
+                    'providers' => $result['providers_used'] ?? array(),
+                ));
+            } else {
+                $this->debug_log('[POI Sync] Failed to sync POIs', array(
+                    'error' => $result['error'] ?? 'Unknown error',
+                ));
+            }
+        } catch (\Exception $e) {
+            $this->debug_log('[POI Sync] Exception', array(
+                'error' => $e->getMessage(),
+            ));
+        }
+    }
+
+    /**
      * Získat kandidáty pomocí Haversine SQL dotazu
      */
     public function get_candidates($lat, $lng, $type, $radiusKm, $limit) {
         global $wpdb;
+
+        // Pokud hledáme POIs, nejdříve zkusit synchronizovat z POI microservice
+        if ($type === 'poi') {
+            $this->sync_pois_from_microservice($lat, $lng, $radiusKm * 1000); // radiusKm -> metry
+        }
 
         $matrix_limit = max(1, API_Quota_Manager::ORS_MATRIX_MAX_LOCATIONS - 1);
         $limit = max(1, min((int)$limit, $matrix_limit));

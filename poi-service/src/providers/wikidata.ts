@@ -46,6 +46,22 @@ export class WikidataProvider implements PoiProvider {
           bd:serviceParam wikibase:center "Point(${lon} ${lat})"^^geo:wktLiteral .
           bd:serviceParam wikibase:radius ${radiusMeters / 1000} .
         }
+        # Filtrovat jen relevantní typy míst (muzea, galerie, památky, výhledy, parky)
+        {
+          ?item wdt:P31/wdt:P279* ?type .
+          VALUES ?type {
+            wd:Q33506    # museum
+            wd:Q190598   # art gallery
+            wd:Q570116   # tourist attraction
+            wd:Q1075788  # viewpoint
+            wd:Q22698    # park
+            wd:Q12280    # monument
+            wd:Q11424    # film
+            wd:Q47513    # castle
+            wd:Q16970    # church
+            wd:Q483551   # cultural heritage
+          }
+        }
         OPTIONAL { ?item wdt:P131 ?city . }
         OPTIONAL { ?item wdt:P17 ?country . }
         BIND(STRBEFORE(STR(AFTER(STR(?location),"Point("))," ") AS ?lon)

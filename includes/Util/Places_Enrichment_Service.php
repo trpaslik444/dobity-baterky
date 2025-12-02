@@ -168,6 +168,207 @@ class Places_Enrichment_Service {
         return true;
     }
 
+    /**
+     * Request Google Places Text Search API with quota management
+     * 
+     * @param string $query Search query
+     * @param float|null $lat Optional latitude for location bias
+     * @param float|null $lng Optional longitude for location bias
+     * @param array $context Additional context (post_id, force, endpoint)
+     * @return array|WP_Error
+     */
+    public function request_place_text_search(string $query, ?float $lat = null, ?float $lng = null, array $context = array()) {
+        if (empty($query) || !is_string($query)) {
+            return new WP_Error('invalid_query', 'Neplatný search query', array('status' => 400));
+        }
+
+        $context = wp_parse_args($context, array(
+            'post_id' => null,
+            'force' => false,
+            'endpoint' => 'places_textsearch',
+        ));
+
+        $endpoint = (string) $context['endpoint'];
+
+        if (!$this->is_enabled()) {
+            $this->log_usage($query, $endpoint, 'disabled');
+            return array(
+                'enriched' => false,
+                'reason' => 'feature_flag_disabled',
+            );
+        }
+
+        $quotaCheck = $this->reserve_quota($endpoint);
+        if (is_wp_error($quotaCheck)) {
+            $this->log_usage($query, $endpoint, 'quota_blocked');
+            return array(
+                'enriched' => false,
+                'reason' => 'quota_exceeded',
+            );
+        }
+
+        $response = $this->call_google_place_text_search($query, $lat, $lng);
+        if (is_wp_error($response)) {
+            $this->log_usage($query, $endpoint, 'error');
+            return $response;
+        }
+
+        $this->log_usage($query, $endpoint, 'ok');
+        return array(
+            'enriched' => true,
+            'data' => $response,
+        );
+    }
+
+    /**
+     * Request Google Places searchNearby API (New Places API) with quota management
+     * 
+     * @param float $lat Latitude
+     * @param float $lng Longitude
+     * @param array $types Included types (e.g., ['electric_vehicle_charging_station'])
+     * @param float $radius Radius in meters (default 500)
+     * @param array $context Additional context (post_id, force, endpoint)
+     * @return array|WP_Error
+     */
+    public function request_place_search_nearby(float $lat, float $lng, array $types = array('electric_vehicle_charging_station'), float $radius = 500.0, array $context = array()) {
+        $context = wp_parse_args($context, array(
+            'post_id' => null,
+            'force' => false,
+            'endpoint' => 'places_search_nearby',
+        ));
+
+        $endpoint = (string) $context['endpoint'];
+
+        if (!$this->is_enabled()) {
+            $this->log_usage("nearby:{$lat},{$lng}", $endpoint, 'disabled');
+            return array(
+                'enriched' => false,
+                'reason' => 'feature_flag_disabled',
+            );
+        }
+
+        $quotaCheck = $this->reserve_quota($endpoint);
+        if (is_wp_error($quotaCheck)) {
+            $this->log_usage("nearby:{$lat},{$lng}", $endpoint, 'quota_blocked');
+            return array(
+                'enriched' => false,
+                'reason' => 'quota_exceeded',
+            );
+        }
+
+        $response = $this->call_google_place_search_nearby($lat, $lng, $types, $radius);
+        if (is_wp_error($response)) {
+            $this->log_usage("nearby:{$lat},{$lng}", $endpoint, 'error');
+            return $response;
+        }
+
+        $this->log_usage("nearby:{$lat},{$lng}", $endpoint, 'ok');
+        return array(
+            'enriched' => true,
+            'data' => $response,
+        );
+    }
+
+    private function call_google_place_text_search(string $query, ?float $lat = null, ?float $lng = null) {
+        $api_key = get_option('db_google_api_key');
+        if (!$api_key) {
+            return new WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 500));
+        }
+
+        $url = 'https://maps.googleapis.com/maps/api/place/textsearch/json';
+        $args = array(
+            'query' => $query,
+            'key' => $api_key,
+            'language' => 'cs'
+        );
+
+        if ($lat !== null && $lng !== null) {
+            $args['location'] = "{$lat},{$lng}";
+            $args['radius'] = 5000; // 5km radius for location bias
+        }
+
+        $url = add_query_arg($args, $url);
+        $response = wp_remote_get($url, array('timeout' => 30));
+
+        if (is_wp_error($response)) {
+            return new WP_Error('google_api_error', 'Chyba při volání Google API: ' . $response->get_error_message(), array('status' => 500));
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if (isset($data['error_message']) || ($data['status'] ?? '') !== 'OK') {
+            error_log('[PLACES_ENRICHMENT] Google Text Search API Error: ' . ($data['error_message'] ?? $data['status'] ?? 'UNKNOWN'));
+        }
+
+        if ($status_code !== 200) {
+            return new WP_Error('google_api_error', 'Google API chyba: HTTP ' . $status_code, array('status' => 500));
+        }
+
+        if (isset($data['error_message'])) {
+            return new WP_Error('google_api_error', 'Google API chyba: ' . $data['error_message'], array('status' => 500));
+        }
+
+        if (($data['status'] ?? '') !== 'OK' && ($data['status'] ?? '') !== 'ZERO_RESULTS') {
+            return new WP_Error('google_api_error', 'Google API chyba: ' . ($data['status'] ?? 'UNKNOWN_ERROR'), array('status' => 500));
+        }
+
+        return array(
+            'results' => $data['results'] ?? array(),
+            'status' => $data['status'] ?? 'OK',
+        );
+    }
+
+    private function call_google_place_search_nearby(float $lat, float $lng, array $types, float $radius) {
+        $api_key = get_option('db_google_api_key');
+        if (!$api_key) {
+            return new WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 500));
+        }
+
+        $url = 'https://places.googleapis.com/v1/places:searchNearby';
+        
+        $requestData = array(
+            'includedTypes' => $types,
+            'locationRestriction' => array(
+                'circle' => array(
+                    'center' => array(
+                        'latitude' => $lat,
+                        'longitude' => $lng
+                    ),
+                    'radius' => $radius
+                )
+            )
+        );
+
+        $response = wp_remote_post($url, array(
+            'timeout' => 15,
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'X-Goog-Api-Key' => $api_key,
+                'X-Goog-FieldMask' => 'places.id,places.displayName,places.location,places.formattedAddress,places.businessStatus'
+            ),
+            'body' => json_encode($requestData)
+        ));
+
+        if (is_wp_error($response)) {
+            return new WP_Error('google_api_error', 'Chyba při volání Google API: ' . $response->get_error_message(), array('status' => 500));
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if ($status_code !== 200) {
+            error_log('[PLACES_ENRICHMENT] Google searchNearby API Error: HTTP ' . $status_code);
+            return new WP_Error('google_api_error', 'Google API chyba: HTTP ' . $status_code, array('status' => 500));
+        }
+
+        return array(
+            'places' => $data['places'] ?? array(),
+        );
+    }
+
     private function call_google_place_details(string $placeId) {
         $api_key = get_option('db_google_api_key');
         if (!$api_key) {

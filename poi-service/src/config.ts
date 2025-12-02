@@ -17,6 +17,12 @@ const configSchema = z.object({
   WORDPRESS_DB_USER: z.string().optional(),
   WORDPRESS_DB_PASSWORD: z.string().optional(),
   WORDPRESS_DB_PREFIX: z.string().default('wp_'),
+  // WordPress REST API pro synchronizaci POIs
+  WORDPRESS_REST_URL: z.string().optional(),
+  WORDPRESS_REST_NONCE: z.string().optional(),
+  WORDPRESS_USERNAME: z.string().optional(),
+  WORDPRESS_PASSWORD: z.string().optional(),
+  WORDPRESS_API_KEY: z.string().optional(),
 });
 
 const parsed = configSchema.parse(process.env);
@@ -39,6 +45,13 @@ export const CONFIG = {
   wordpressDbUser: parsed.WORDPRESS_DB_USER,
   wordpressDbPassword: parsed.WORDPRESS_DB_PASSWORD,
   wordpressDbPrefix: parsed.WORDPRESS_DB_PREFIX,
+  // WordPress REST API pro synchronizaci
+  wordpressRestUrl: parsed.WORDPRESS_REST_URL,
+  wordpressRestNonce: parsed.WORDPRESS_REST_NONCE,
+  wordpressUsername: parsed.WORDPRESS_USERNAME,
+  wordpressPassword: parsed.WORDPRESS_PASSWORD,
+  wordpressApiKey: parsed.WORDPRESS_API_KEY,
+  wordpressApiKey: parsed.WORDPRESS_API_KEY,
 };
 
 export const RATING_PRIORITY_ORDER = [
