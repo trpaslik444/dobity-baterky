@@ -51,7 +51,6 @@ export const CONFIG = {
   wordpressUsername: parsed.WORDPRESS_USERNAME,
   wordpressPassword: parsed.WORDPRESS_PASSWORD,
   wordpressApiKey: parsed.WORDPRESS_API_KEY,
-  wordpressApiKey: parsed.WORDPRESS_API_KEY,
 };
 
 export const RATING_PRIORITY_ORDER = [
