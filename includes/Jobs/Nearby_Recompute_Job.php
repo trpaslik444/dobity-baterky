@@ -815,7 +815,272 @@ class Nearby_Recompute_Job {
     }
     
     /**
-     * Synchronizovat POIs z POI microservice
+     * Stáhnout POIs z free zdrojů (OpenTripMap, Wikidata) a vytvořit WordPress posty
+     * 
+     * Jednoduché řešení - vše v PHP, bez potřeby samostatného Node.js microservice.
+     */
+    private function fetch_pois_from_providers($lat, $lng, $radiusMeters) {
+        // Cache check - prevence race conditions a duplicitních API callů
+        $cache_key = 'poi_fetch_' . md5($lat . '_' . $lng . '_' . $radiusMeters);
+        $cache_duration = 3600; // 1 hodina (free zdroje mají vlastní cache)
+        
+        $cached = get_transient($cache_key);
+        if ($cached !== false) {
+            $this->debug_log('[POI Fetch] Using cached fetch result', array(
+                'lat' => $lat,
+                'lng' => $lng,
+                'radius' => $radiusMeters,
+            ));
+            return; // Již staženo nedávno
+        }
+        
+        $all_pois = array();
+        
+        // 1. OpenTripMap
+        if (!class_exists('DB\\Providers\\OpenTripMap_Provider')) {
+            $provider_file = dirname(dirname(__FILE__)) . '/Providers/OpenTripMap_Provider.php';
+            if (file_exists($provider_file)) {
+                require_once $provider_file;
+            }
+        }
+        
+        if (class_exists('DB\\Providers\\OpenTripMap_Provider')) {
+            $opentripmap = new \DB\Providers\OpenTripMap_Provider();
+            $allowed_categories = array('restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'bakery', 'park', 'playground', 
+                                       'garden', 'sports_centre', 'swimming_pool', 'beach', 'tourist_attraction', 
+                                       'viewpoint', 'museum', 'gallery', 'zoo', 'aquarium', 'shopping_mall', 
+                                       'supermarket', 'marketplace');
+            $opentripmap_pois = $opentripmap->search_around($lat, $lng, $radiusMeters, $allowed_categories);
+            $all_pois = array_merge($all_pois, $opentripmap_pois);
+            $this->debug_log('[POI Fetch] OpenTripMap found ' . count($opentripmap_pois) . ' POIs', array(
+                'lat' => $lat,
+                'lng' => $lng,
+            ));
+        }
+        
+        // 2. Wikidata
+        if (!class_exists('DB\\Providers\\Wikidata_Provider')) {
+            $provider_file = dirname(dirname(__FILE__)) . '/Providers/Wikidata_Provider.php';
+            if (file_exists($provider_file)) {
+                require_once $provider_file;
+            }
+        }
+        
+        if (class_exists('DB\\Providers\\Wikidata_Provider')) {
+            $wikidata = new \DB\Providers\Wikidata_Provider();
+            $allowed_categories = array('museum', 'gallery', 'tourist_attraction', 'viewpoint', 'park');
+            $wikidata_pois = $wikidata->search_around($lat, $lng, $radiusMeters, $allowed_categories);
+            $all_pois = array_merge($all_pois, $wikidata_pois);
+            $this->debug_log('[POI Fetch] Wikidata found ' . count($wikidata_pois) . ' POIs', array(
+                'lat' => $lat,
+                'lng' => $lng,
+            ));
+        }
+        
+        // 3. Vytvořit WordPress posty pro každý POI
+        $synced = 0;
+        $failed = 0;
+        
+        foreach ($all_pois as $poi) {
+            $post_id = $this->create_or_update_poi_post($poi);
+            if ($post_id) {
+                $synced++;
+            } else {
+                $failed++;
+            }
+        }
+        
+        $this->debug_log('[POI Fetch] Created/updated ' . $synced . ' POIs, failed ' . $failed, array(
+            'lat' => $lat,
+            'lng' => $lng,
+            'total' => count($all_pois),
+        ));
+        
+        // Nastavit cache
+        set_transient($cache_key, true, $cache_duration);
+    }
+    
+    /**
+     * Vytvořit nebo aktualizovat WordPress POI post
+     */
+    private function create_or_update_poi_post($poi) {
+        if (!post_type_exists('poi')) {
+            return false;
+        }
+        
+        // Validace
+        if (!isset($poi['name']) || !isset($poi['lat']) || !isset($poi['lon'])) {
+            return false;
+        }
+        
+        $lat = (float) $poi['lat'];
+        $lng = (float) $poi['lon'];
+        $name = sanitize_text_field($poi['name']);
+        
+        // Validace GPS
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            return false;
+        }
+        
+        // Najít existující POI
+        $existing_id = $this->find_existing_poi_post($poi, $lat, $lng, $name);
+        
+        if ($existing_id) {
+            // Aktualizovat
+            wp_update_post(array(
+                'ID' => $existing_id,
+                'post_title' => $name,
+            ));
+            $this->update_poi_post_meta($existing_id, $poi);
+            return $existing_id;
+        } else {
+            // Vytvořit nový
+            $post_id = wp_insert_post(array(
+                'post_type' => 'poi',
+                'post_title' => $name,
+                'post_status' => 'publish',
+            ), true);
+            
+            if (is_wp_error($post_id)) {
+                return false;
+            }
+            
+            $this->update_poi_post_meta($post_id, $poi);
+            return $post_id;
+        }
+    }
+    
+    /**
+     * Najít existující POI post
+     */
+    private function find_existing_poi_post($poi, $lat, $lng, $name) {
+        global $wpdb;
+        
+        // Zkusit podle source_id
+        if (isset($poi['source']) && isset($poi['source_id'])) {
+            $external_id = $poi['source'] . ':' . $poi['source_id'];
+            $post_id = $wpdb->get_var($wpdb->prepare(
+                "SELECT post_id FROM {$wpdb->postmeta} 
+                 WHERE meta_key = '_poi_external_id' AND meta_value = %s 
+                 LIMIT 1",
+                $external_id
+            ));
+            if ($post_id) {
+                return (int) $post_id;
+            }
+        }
+        
+        // Zkusit podle GPS + jméno (50m, 80% podobnost)
+        $candidates = $wpdb->get_results($wpdb->prepare(
+            "SELECT p.ID, 
+                    pm_lat.meta_value+0 AS lat,
+                    pm_lng.meta_value+0 AS lon,
+                    p.post_title
+             FROM {$wpdb->posts} p
+             INNER JOIN {$wpdb->postmeta} pm_lat ON pm_lat.post_id = p.ID AND pm_lat.meta_key = '_poi_lat'
+             INNER JOIN {$wpdb->postmeta} pm_lng ON pm_lng.post_id = p.ID AND pm_lng.meta_key = '_poi_lng'
+             WHERE p.post_type = 'poi' 
+             AND p.post_status = 'publish'
+             AND (
+                 6371 * ACOS(
+                     COS(RADIANS(%f)) * COS(RADIANS(pm_lat.meta_value+0)) *
+                     COS(RADIANS(pm_lng.meta_value+0) - RADIANS(%f)) +
+                     SIN(RADIANS(%f)) * SIN(RADIANS(pm_lat.meta_value+0))
+                 )
+             ) <= 0.05
+             LIMIT 10",
+            $lat, $lng, $lat
+        ));
+        
+        foreach ($candidates as $candidate) {
+            $distance = $this->haversine_km($lat, $lng, (float) $candidate->lat, (float) $candidate->lon);
+            if ($distance <= 0.05) { // 50 metrů
+                $similarity = $this->name_similarity($name, $candidate->post_title);
+                if ($similarity > 0.8) { // 80% podobnost
+                    return (int) $candidate->ID;
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Aktualizovat POI post meta data
+     */
+    private function update_poi_post_meta($post_id, $poi) {
+        update_post_meta($post_id, '_poi_lat', (float) $poi['lat']);
+        update_post_meta($post_id, '_poi_lng', (float) $poi['lon']);
+        
+        if (isset($poi['category'])) {
+            wp_set_object_terms($post_id, array($poi['category']), 'poi_type', false);
+        }
+        
+        if (isset($poi['rating'])) {
+            update_post_meta($post_id, '_poi_rating', (float) $poi['rating']);
+        }
+        
+        if (isset($poi['rating_source'])) {
+            update_post_meta($post_id, '_poi_rating_source', sanitize_text_field($poi['rating_source']));
+        }
+        
+        if (isset($poi['address'])) {
+            update_post_meta($post_id, '_poi_address', sanitize_text_field($poi['address']));
+        }
+        
+        // External ID pro deduplikaci
+        if (isset($poi['source']) && isset($poi['source_id'])) {
+            update_post_meta($post_id, '_poi_external_id', $poi['source'] . ':' . $poi['source_id']);
+        }
+        
+        // Source IDs
+        if (isset($poi['source'])) {
+            $source_ids = array($poi['source'] => $poi['source_id'] ?? null);
+            update_post_meta($post_id, '_poi_source_ids', $source_ids);
+        }
+    }
+    
+    /**
+     * Haversine vzdálenost v km (helper pro POI deduplikaci)
+     */
+    private function haversine_km($lat1, $lon1, $lat2, $lon2) {
+        $earth_km = 6371.0;
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLon = deg2rad($lon2 - $lon1);
+        $a = sin($dLat / 2) * sin($dLat / 2) +
+             cos(deg2rad($lat1)) * cos(deg2rad($lat2)) *
+             sin($dLon / 2) * sin($dLon / 2);
+        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        return $earth_km * $c;
+    }
+    
+    /**
+     * Podobnost jmen
+     */
+    private function name_similarity($name1, $name2) {
+        $name1 = mb_strtolower($name1, 'UTF-8');
+        $name2 = mb_strtolower($name2, 'UTF-8');
+        
+        // Odstranit diakritiku
+        $name1 = iconv('UTF-8', 'ASCII//TRANSLIT', $name1);
+        $name2 = iconv('UTF-8', 'ASCII//TRANSLIT', $name2);
+        
+        $len1 = mb_strlen($name1);
+        $len2 = mb_strlen($name2);
+        $max_len = max($len1, $len2);
+        
+        if ($max_len === 0) {
+            return 1.0;
+        }
+        
+        $distance = levenshtein($name1, $name2);
+        return 1.0 - ($distance / $max_len);
+    }
+    
+    /**
+     * Synchronizovat POIs z POI microservice (volitelné - DEPRECATED)
+     * 
+     * @deprecated Použijte fetch_pois_from_providers() místo toho
      */
     private function sync_pois_from_microservice($lat, $lng, $radiusMeters) {
         // Cache check - prevence race conditions a duplicitních API callů
