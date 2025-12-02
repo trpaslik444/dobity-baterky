@@ -1080,6 +1080,13 @@ if ( file_exists( __DIR__ . '/includes/Admin/POI_Service_Admin.php' ) ) {
     }
 }
 
+// WP-CLI příkazy
+if ( defined( 'WP_CLI' ) && WP_CLI ) {
+    if ( file_exists( __DIR__ . '/includes/CLI/Test_Wikidata_Command.php' ) ) {
+        require_once __DIR__ . '/includes/CLI/Test_Wikidata_Command.php';
+    }
+}
+
 // REST API pro synchronizaci POIs z POI microservice (volitelné - pro externí integrace)
 if ( file_exists( __DIR__ . '/includes/REST_POI_Sync.php' ) ) {
     require_once __DIR__ . '/includes/REST_POI_Sync.php';
