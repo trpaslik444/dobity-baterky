@@ -76,11 +76,25 @@ class Wikidata_Provider {
      * Vytvořit SPARQL query
      */
     private function build_query($lat, $lng, $radius) {
+        // Validace vstupů
+        $lat = (float) $lat;
+        $lng = (float) $lng;
+        $radius = (int) $radius;
+        
+        if ($lat < -90 || $lat > 90 || $lng < -180 || $lng > 180) {
+            throw new \InvalidArgumentException('Invalid GPS coordinates');
+        }
+        
+        if ($radius < 100 || $radius > 50000) {
+            throw new \InvalidArgumentException('Invalid radius (100-50000 meters)');
+        }
+        
         // Převést radius z metrů na kilometry pro Wikidata
         $radius_km = $radius / 1000;
         
         // Wikidata SPARQL query s geografickým filtrem
         // Používáme SERVICE wikibase:around pro geografické vyhledávání
+        // Pro extrakci souřadnic používáme geof:distance a geof:globe
         $query = "
         SELECT ?item ?itemLabel ?lat ?lon WHERE {
           SERVICE wikibase:around {
@@ -103,12 +117,12 @@ class Wikidata_Provider {
               wd:Q483551   # Cultural heritage
             }
           }
-          # Extrahovat souřadnice
-          BIND(SUBSTR(STR(?location), 32) AS ?coordStr)
-          BIND(REPLACE(?coordStr, ' ', '') AS ?cleanCoord)
-          BIND(SUBSTR(?cleanCoord, 1, STRLEN(?cleanCoord)-1) AS ?coordWithoutParen)
-          BIND(STRBEFORE(?coordWithoutParen, ',') AS ?lonStr)
-          BIND(STRAFTER(?coordWithoutParen, ',') AS ?latStr)
+          # Extrahovat souřadnice pomocí geof:globe a geof:latitude/geof:longitude
+          # Alternativně použijeme jednodušší metodu s REGEX
+          BIND(STR(?location) AS ?locationStr)
+          BIND(REPLACE(REPLACE(?locationStr, 'Point\\(', ''), '\\)', '') AS ?coords)
+          BIND(STRBEFORE(?coords, ' ') AS ?lonStr)
+          BIND(STRAFTER(?coords, ' ') AS ?latStr)
           BIND(xsd:float(?latStr) AS ?lat)
           BIND(xsd:float(?lonStr) AS ?lon)
           SERVICE wikibase:label { 
