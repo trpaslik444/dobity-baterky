@@ -1860,6 +1860,14 @@ class REST_Map {
         }
 
         if ( is_array( $response ) && isset( $response['enriched'] ) && $response['enriched'] === false ) {
+            // Preserve HTTP 429 when quota is exceeded
+            if ( isset( $response['reason'] ) && $response['reason'] === 'quota_exceeded' ) {
+                return new \WP_Error(
+                    'places_quota_exceeded',
+                    'Denní limit Google Places byl vyčerpán.',
+                    array( 'status' => 429 )
+                );
+            }
             return $response;
         }
 
@@ -2136,6 +2144,14 @@ class REST_Map {
         }
 
         if ( is_array( $response ) && empty( $response['enriched'] ) ) {
+            // Preserve HTTP 429 when quota is exceeded
+            if ( isset( $response['reason'] ) && $response['reason'] === 'quota_exceeded' ) {
+                return new \WP_Error(
+                    'places_quota_exceeded',
+                    'Denní limit Google Places byl vyčerpán.',
+                    array( 'status' => 429 )
+                );
+            }
             return $response;
         }
 
@@ -2319,11 +2335,24 @@ class REST_Map {
             }
 
             if ( is_wp_error( $data ) ) {
+                // Preserve HTTP 429 when quota is exceeded
+                $error_data = $data->get_error_data();
+                if ( isset( $error_data['status'] ) && $error_data['status'] === 429 ) {
+                    return $data;
+                }
                 $errors[ $service ] = $data->get_error_message();
                 continue;
             }
 
             if ( is_array( $data ) && isset( $data['enriched'] ) && $data['enriched'] === false ) {
+                // Preserve HTTP 429 when quota is exceeded
+                if ( isset( $data['reason'] ) && $data['reason'] === 'quota_exceeded' ) {
+                    return new \WP_Error(
+                        'places_quota_exceeded',
+                        'Denní limit Google Places byl vyčerpán.',
+                        array( 'status' => 429 )
+                    );
+                }
                 $payload = array(
                     'provider' => $service,
                     'data' => null,
