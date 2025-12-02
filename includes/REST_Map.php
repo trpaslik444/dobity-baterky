@@ -6,8 +6,12 @@
 
 namespace DB;
 
+require_once __DIR__ . '/Util/Places_Enrichment_Service.php';
+use DB\Util\Places_Enrichment_Service;
+
 class REST_Map {
     private static $instance = null;
+    private $enrichment_service;
 
     const GOOGLE_CACHE_TTL = DAY_IN_SECONDS * 30; // Google Places Service Terms allow storing Place Details for max 30 dní
     const TRIPADVISOR_CACHE_TTL = DAY_IN_SECONDS; // Tripadvisor Content API vyžaduje refresh do 24 hodin
@@ -25,6 +29,7 @@ class REST_Map {
     public function __construct() {
         add_action( 'wp_ajax_google_places_nearby', array( $this, 'ajax_google_places_nearby' ) );
         add_action( 'wp_ajax_google_place_details', array( $this, 'ajax_google_place_details' ) );
+        $this->enrichment_service = Places_Enrichment_Service::get_instance();
     }
 
     public function register() {
@@ -1846,103 +1851,19 @@ class REST_Map {
     }
 
     private function fetch_google_place_details_raw( $place_id ) {
-        $api_key = get_option('db_google_api_key');
-        if (!$api_key) {
-            return new \WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 500));
+        $response = $this->enrichment_service->request_place_details( $place_id, array(
+            'endpoint' => 'places_details',
+        ) );
+
+        if ( is_wp_error( $response ) ) {
+            return $response;
         }
 
-        $url = 'https://maps.googleapis.com/maps/api/place/details/json';
-        $args = array(
-            'place_id' => $place_id,
-            'fields' => 'name,formatted_address,geometry,types,place_id,formatted_phone_number,international_phone_number,website,rating,user_ratings_total,price_level,opening_hours,photos,icon,icon_background_color,icon_mask_base_uri,editorial_summary,url,vicinity,utc_offset,business_status,reviews,delivery,dine_in,takeout,serves_beer,serves_wine,serves_breakfast,serves_lunch,serves_dinner,wheelchair_accessible_entrance,curbside_pickup,reservable',
-            'key' => $api_key,
-            'language' => 'cs'
-        );
-
-        $url = add_query_arg($args, $url);
-
-        $response = wp_remote_get($url, array(
-            'timeout' => 30
-        ));
-
-        if (is_wp_error($response)) {
-            return new \WP_Error('google_api_error', 'Chyba při volání Google API: ' . $response->get_error_message(), array('status' => 500));
+        if ( is_array( $response ) && isset( $response['enriched'] ) && $response['enriched'] === false ) {
+            return $response;
         }
 
-        $status_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        $data = json_decode($body, true);
-
-        // Log pro debugging
-        error_log('Google Place Details API Response: ' . $body);
-
-        if ($status_code !== 200) {
-            return new \WP_Error('google_api_error', 'Google API chyba: HTTP ' . $status_code, array('status' => 500));
-        }
-
-        if (isset($data['error_message'])) {
-            return new \WP_Error('google_api_error', 'Google API chyba: ' . $data['error_message'], array('status' => 500));
-        }
-
-        if (($data['status'] ?? '') !== 'OK') {
-            return new \WP_Error('google_api_error', 'Google API chyba: ' . ($data['status'] ?? 'UNKNOWN_ERROR'), array('status' => 500));
-        }
-
-        $result = $data['result'];
-
-        // Předej všechny fotky z Places Details (FE si vybere, kolik zobrazí)
-        $photos_all = array();
-        if (isset($result['photos']) && is_array($result['photos']) && count($result['photos']) > 0) {
-            foreach ($result['photos'] as $ph) {
-                $photos_all[] = array(
-                    'photoReference' => $ph['photo_reference'] ?? '',
-                    'width' => $ph['width'] ?? 0,
-                    'height' => $ph['height'] ?? 0,
-                    'htmlAttributions' => $ph['html_attributions'] ?? array()
-                );
-            }
-        }
-
-        return array(
-            'placeId' => $result['place_id'],
-            'displayName' => array('text' => $result['name']),
-            'formattedAddress' => $result['formatted_address'] ?? '',
-            'location' => array(
-                'latitude' => $result['geometry']['location']['lat'],
-                'longitude' => $result['geometry']['location']['lng']
-            ),
-            'types' => $result['types'] ?? array(),
-            'nationalPhoneNumber' => $result['formatted_phone_number'] ?? '',
-            'internationalPhoneNumber' => $result['international_phone_number'] ?? '',
-            'websiteUri' => $result['website'] ?? '',
-            'rating' => $result['rating'] ?? 0,
-            'userRatingCount' => $result['user_ratings_total'] ?? 0,
-            'priceLevel' => $result['price_level'] ?? '',
-            'regularOpeningHours' => $result['opening_hours'] ?? null,
-            // Vrátíme všechny fotky (bez přímé URL – ty generujeme v normalize_google_payload)
-            'photos' => $photos_all,
-            'iconUri' => $result['icon'] ?? '',
-            'iconBackgroundColor' => $result['icon_background_color'] ?? '',
-            'iconMaskUri' => $result['icon_mask_base_uri'] ?? '',
-            'editorialSummary' => $result['editorial_summary'] ?? null,
-            'url' => $result['url'] ?? '',
-            'vicinity' => $result['vicinity'] ?? '',
-            'utcOffset' => $result['utc_offset'] ?? '',
-            'businessStatus' => $result['business_status'] ?? '',
-            'reviews' => $result['reviews'] ?? array(),
-            'delivery' => $result['delivery'] ?? false,
-            'dineIn' => $result['dine_in'] ?? false,
-            'takeout' => $result['takeout'] ?? false,
-            'servesBeer' => $result['serves_beer'] ?? false,
-            'servesWine' => $result['serves_wine'] ?? false,
-            'servesBreakfast' => $result['serves_breakfast'] ?? false,
-            'servesLunch' => $result['serves_lunch'] ?? false,
-            'servesDinner' => $result['serves_dinner'] ?? false,
-            'wheelchairAccessibleEntrance' => $result['wheelchair_accessible_entrance'] ?? false,
-            'curbsidePickup' => $result['curbside_pickup'] ?? false,
-            'reservable' => $result['reservable'] ?? false,
-            'rawData' => $result
-        );
+        return $response['data'] ?? $response;
     }
 
     private function normalize_google_payload( $place_data ) {
@@ -2166,7 +2087,7 @@ class REST_Map {
         return get_post_meta( $post_id, '_poi_tripadvisor_location_id', true );
     }
 
-    private function maybe_fetch_google_place_data( $post_id ) {
+    private function maybe_fetch_google_place_data( $post_id, $force = false ) {
         $place_id = $this->get_google_place_id( $post_id );
         if ( ! $place_id ) {
             return null;
@@ -2176,6 +2097,7 @@ class REST_Map {
         $cache_exp_key = '_poi_google_cache_expires';
         $cached_payload = get_post_meta( $post_id, $cache_key, true );
         $cached_expires = intval( get_post_meta( $post_id, $cache_exp_key, true ) );
+        $last_enriched = get_post_meta( $post_id, '_poi_last_enriched_at', true );
         $now = current_time( 'timestamp' );
 
         if ( $cached_payload && $cached_expires > $now ) {
@@ -2185,20 +2107,47 @@ class REST_Map {
             }
         }
 
-        if ( ! $this->consume_quota( 'google_places' ) ) {
-            return new \WP_Error( 'quota_exceeded', 'Denní limit Google Places API byl vyčerpán.', array( 'status' => 429 ) );
+        $recent_window = $this->enrichment_service->get_recent_days() * DAY_IN_SECONDS;
+        if ( ! $force && $last_enriched ) {
+            $last_ts = strtotime( $last_enriched );
+            if ( $last_ts && ( $now - $last_ts ) < $recent_window ) {
+                if ( $cached_payload ) {
+                    $decoded = json_decode( $cached_payload, true );
+                    if ( is_array( $decoded ) ) {
+                        return $decoded;
+                    }
+                }
+
+                return array(
+                    'enriched' => false,
+                    'reason'   => 'recently_enriched',
+                );
+            }
         }
 
-        $raw = $this->fetch_google_place_details_raw( $place_id );
-        if ( is_wp_error( $raw ) ) {
-            return $raw;
+        $response = $this->enrichment_service->request_place_details( $place_id, array(
+            'post_id'  => $post_id,
+            'force'    => $force,
+            'endpoint' => 'places_details',
+        ) );
+
+        if ( is_wp_error( $response ) ) {
+            return $response;
         }
+
+        if ( is_array( $response ) && empty( $response['enriched'] ) ) {
+            return $response;
+        }
+
+        $raw = $response['data'] ?? $response;
 
         $normalized = $this->normalize_google_payload( $raw );
         $normalized['fetchedAt'] = gmdate( 'c', current_time( 'timestamp', true ) );
 
         update_post_meta( $post_id, $cache_key, wp_json_encode( $normalized ) );
         update_post_meta( $post_id, $cache_exp_key, $now + self::GOOGLE_CACHE_TTL );
+        update_post_meta( $post_id, '_poi_last_enriched_at', current_time( 'mysql' ) );
+        update_post_meta( $post_id, '_poi_enriched', '1' );
 
         $this->persist_enriched_fields( $post_id, $normalized );
 
@@ -2372,6 +2321,20 @@ class REST_Map {
             if ( is_wp_error( $data ) ) {
                 $errors[ $service ] = $data->get_error_message();
                 continue;
+            }
+
+            if ( is_array( $data ) && isset( $data['enriched'] ) && $data['enriched'] === false ) {
+                $payload = array(
+                    'provider' => $service,
+                    'data' => null,
+                    'status' => $data['reason'] ?? 'blocked',
+                    'meta' => array(
+                        'google_place_id' => $this->get_google_place_id( $post_id ),
+                        'tripadvisor_location_id' => $this->get_tripadvisor_location_id( $post_id ),
+                    ),
+                );
+
+                return rest_ensure_response( $payload );
             }
 
             if ( $data ) {
