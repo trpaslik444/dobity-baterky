@@ -58,6 +58,7 @@ class Charging_Discovery {
         $discoveredOcm = null; // OCM disabled
 
         // Try to discover Google Place ID when missing or forced.
+        // DŮLEŽITÉ: Použít Places_Enrichment_Service pro správu kvót a atomické operace
         if ($useGoogle && ($force || !$discoveredGoogle)) {
             $discoveredGoogle = $this->discoverGooglePlaceId($title, $hasCoords ? $lat : null, $hasCoords ? $lng : null);
         }
@@ -347,64 +348,47 @@ class Charging_Discovery {
     }
 
     private function discoverGooglePlaceId(string $title, ?float $lat, ?float $lng): ?string {
-        $apiKey = (string) get_option('db_google_api_key');
-        if ($apiKey === '') {
-            return null;
-        }
-
+        $enrichment_service = Places_Enrichment_Service::get_instance();
+        
         // Use new searchNearby API for GPS-based discovery
         if ($lat !== null && $lng !== null) {
-            return $this->discoverGooglePlaceIdNearby($title, $lat, $lng, $apiKey);
+            return $this->discoverGooglePlaceIdNearby($title, $lat, $lng, $enrichment_service);
         }
 
         // Fallback to text search if no GPS coordinates
-        return $this->discoverGooglePlaceIdTextSearch($title, $apiKey);
+        return $this->discoverGooglePlaceIdTextSearch($title, $enrichment_service);
     }
 
     /**
      * Discover Google Place ID using searchNearby API (GPS-based)
+     * Používá Places_Enrichment_Service pro správu kvót
      */
-    private function discoverGooglePlaceIdNearby(string $title, float $lat, float $lng, string $apiKey): ?string {
-        $url = 'https://places.googleapis.com/v1/places:searchNearby';
-        
-        $requestData = [
-            'includedTypes' => ['electric_vehicle_charging_station'],
-            'locationRestriction' => [
-                'circle' => [
-                    'center' => [
-                        'latitude' => $lat,
-                        'longitude' => $lng
-                    ],
-                    'radius' => 500.0 // 500 meters
-                ]
-            ]
-        ];
+    private function discoverGooglePlaceIdNearby(string $title, float $lat, float $lng, Places_Enrichment_Service $enrichment_service): ?string {
+        $result = $enrichment_service->request_place_search_nearby(
+            $lat,
+            $lng,
+            array('electric_vehicle_charging_station'),
+            500.0,
+            array('endpoint' => 'places_search_nearby')
+        );
 
-        $response = wp_remote_post($url, [
-            'timeout' => 15,
-            'headers' => [
-                'Content-Type' => 'application/json',
-                'X-Goog-Api-Key' => $apiKey,
-                'X-Goog-FieldMask' => 'places.id,places.displayName,places.location,places.formattedAddress,places.businessStatus'
-            ],
-            'body' => json_encode($requestData)
-        ]);
-
-        if (is_wp_error($response)) {
+        if (is_wp_error($result)) {
             return null;
         }
 
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code < 200 || $code >= 300) {
+        if (is_array($result) && isset($result['enriched']) && $result['enriched'] === false) {
+            // Quota exceeded or disabled
             return null;
         }
 
-        $data = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($data) || empty($data['places']) || !is_array($data['places'])) {
+        $data = $result['data'] ?? array();
+        $places = $data['places'] ?? array();
+
+        if (empty($places) || !is_array($places)) {
             return null;
         }
 
-        return $this->findBestMatch($title, $lat, $lng, $data['places']);
+        return $this->findBestMatch($title, $lat, $lng, $places);
     }
 
     /**
@@ -480,173 +464,149 @@ class Charging_Discovery {
 
     /**
      * Fallback: Discover Google Place ID using text search (legacy method)
+     * Používá Places_Enrichment_Service pro správu kvót
      */
-    private function discoverGooglePlaceIdTextSearch(string $title, string $apiKey): ?string {
-        $query = [
-            'query' => $title,
-            'type' => 'electric_vehicle_charging_station',
-            'language' => 'cs',
-            'key' => $apiKey,
-        ];
-        
-        $url = add_query_arg($query, self::GOOGLE_TEXTSEARCH_URL);
-        $response = wp_remote_get($url, [
-            'timeout' => 10,
-            'user-agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
-        ]);
-        
-        if (is_wp_error($response)) {
+    private function discoverGooglePlaceIdTextSearch(string $title, Places_Enrichment_Service $enrichment_service): ?string {
+        $result = $enrichment_service->request_place_text_search(
+            $title,
+            null,
+            null,
+            array('endpoint' => 'places_textsearch')
+        );
+
+        if (is_wp_error($result)) {
             return null;
         }
-        
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code < 200 || $code >= 300) {
+
+        if (is_array($result) && isset($result['enriched']) && $result['enriched'] === false) {
+            // Quota exceeded or disabled
             return null;
         }
-        
-        $data = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($data) || empty($data['results']) || !is_array($data['results'])) {
+
+        $data = $result['data'] ?? array();
+        $results = $data['results'] ?? array();
+
+        if (empty($results) || !is_array($results)) {
             return null;
         }
         
         // Return first result for text search (no GPS-based scoring)
-        return (string) ($data['results'][0]['place_id'] ?? '');
+        return (string) ($results[0]['place_id'] ?? '');
     }
 
     // OCM discovery method removed - no longer supported
 
     private function fetchGooglePlaceDetails(string $placeId, int $postId = 0): ?array {
-        $apiKey = (string) get_option('db_google_api_key');
-        if ($apiKey === '' || $placeId === '') {
+        if ($placeId === '') {
             return null;
         }
         
-        // Použít nové Places API v1 pro data o konektorech
-        $url = "https://places.googleapis.com/v1/places/$placeId";
-        $fields = [
-            'displayName',
-            'formattedAddress', 
-            'location',
-            'photos',
-            'currentOpeningHours',
-            'internationalPhoneNumber',
-            'websiteUri',
-            'rating',
-            'userRatingCount',
-            'businessStatus',
-            'utcOffsetMinutes',
-            'evChargeOptions' // Nové pole pro data o konektorech
-        ];
-        
-        $url .= '?fields=' . implode(',', $fields) . '&key=' . $apiKey;
-        
-        $response = wp_remote_get($url, [
-            'timeout' => 12,
-            'user-agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
-            'headers' => [
-                'Content-Type' => 'application/json',
-            ],
-        ]);
-        if (is_wp_error($response)) {
+        // Použít Places_Enrichment_Service pro správu kvót
+        $enrichment_service = Places_Enrichment_Service::get_instance();
+        $result = $enrichment_service->request_place_details($placeId, array(
+            'post_id' => $postId,
+            'endpoint' => 'places_details'
+        ));
+
+        if (is_wp_error($result)) {
             return null;
         }
-        $code = (int) wp_remote_retrieve_response_code($response);
-        if ($code < 200 || $code >= 300) {
+
+        if (is_array($result) && isset($result['enriched']) && $result['enriched'] === false) {
+            // Quota exceeded or disabled
             return null;
         }
-        $data = json_decode((string) wp_remote_retrieve_body($response), true);
-        if (!is_array($data)) {
+
+        $data = $result['data'] ?? null;
+        if (!$data) {
             return null;
         }
-        
-        // Nové API v1 má jinou strukturu - data jsou přímo v root objektu
-        $photos = [];
+
+        // Normalizovat data z Places_Enrichment_Service (staré API formát)
+        // Places_Enrichment_Service vrací data ve formátu starého API
+        $payload = array(
+            'name' => $data['displayName']['text'] ?? '',
+            'formatted_address' => $data['formattedAddress'] ?? '',
+            'latitude' => $data['location']['latitude'] ?? null,
+            'longitude' => $data['location']['longitude'] ?? null,
+            'photos' => array(),
+            'rating' => $data['rating'] ?? null,
+            'user_ratings_total' => $data['userRatingCount'] ?? null,
+            'phone' => $data['nationalPhoneNumber'] ?? '',
+            'website' => $data['websiteUri'] ?? '',
+            'maps_url' => $data['url'] ?? '',
+            'business_status' => $data['businessStatus'] ?? '',
+            'connectors' => array(),
+        );
+
+        // Normalizovat fotky ze starého formátu
         if (!empty($data['photos']) && is_array($data['photos'])) {
             foreach ($data['photos'] as $photo) {
-                if (!isset($photo['name'])) {
-                    continue;
-                }
-                
-                // Filtrovat fotky, které nesouvisí s nabíječkou
-                $width = isset($photo['widthPx']) ? (int) $photo['widthPx'] : 0;
-                $height = isset($photo['heightPx']) ? (int) $photo['heightPx'] : 0;
-                
-                // Přeskočit fotky s podezřelými rozměry (např. velmi úzké nebo velmi široké)
-                if ($width > 0 && $height > 0) {
-                    $ratio = $width / $height;
-                    if ($ratio < 0.5 || $ratio > 3.0) {
-                        continue; // Přeskočit podezřelé poměry stran
-                    }
-                }
-                
-                $photos[] = [
-                    'photo_reference' => (string) $photo['name'], // Nové API používá 'name' místo 'photo_reference'
-                    'width' => $width,
-                    'height' => $height,
-                ];
+                $payload['photos'][] = array(
+                    'photo_reference' => $photo['photoReference'] ?? '',
+                    'width' => $photo['width'] ?? 0,
+                    'height' => $photo['height'] ?? 0,
+                );
             }
         }
-        
-        // Zpracování dat o konektorech
-        $connectors = [];
-        if (!empty($data['evChargeOptions']['connectorAggregation']) && is_array($data['evChargeOptions']['connectorAggregation'])) {
-            foreach ($data['evChargeOptions']['connectorAggregation'] as $connector) {
-                $connectors[] = [
-                    'type' => (string) ($connector['type'] ?? ''),
-                    'maxChargeRateKw' => isset($connector['maxChargeRateKw']) ? (int) $connector['maxChargeRateKw'] : null,
-                    'count' => isset($connector['count']) ? (int) $connector['count'] : null,
-                    'availableCount' => isset($connector['availableCount']) ? (int) $connector['availableCount'] : null,
-                    'outOfServiceCount' => isset($connector['outOfServiceCount']) ? (int) $connector['outOfServiceCount'] : null,
-                ];
+
+        // Pro nové Places API v1 potřebujeme získat data o konektorech zvlášť
+        // POZNÁMKA: Toto volání NEPOUŽÍVÁ kvótu, protože už jsme ji použili pro Place Details
+        // Ale měli bychom to přesunout do Places_Enrichment_Service pro konzistenci
+        $apiKey = (string) get_option('db_google_api_key');
+        if ($apiKey !== '') {
+            $url = "https://places.googleapis.com/v1/places/$placeId";
+            $fields = ['evChargeOptions'];
+            $url .= '?fields=' . implode(',', $fields) . '&key=' . $apiKey;
+            
+            $response = wp_remote_get($url, array(
+                'timeout' => 12,
+                'user-agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
+                'headers' => array(
+                    'Content-Type' => 'application/json',
+                ),
+            ));
+            
+            if (!is_wp_error($response)) {
+                $code = (int) wp_remote_retrieve_response_code($response);
+                if ($code >= 200 && $code < 300) {
+                    $evData = json_decode((string) wp_remote_retrieve_body($response), true);
+                    if (is_array($evData) && !empty($evData['evChargeOptions']['connectorAggregation'])) {
+                        foreach ($evData['evChargeOptions']['connectorAggregation'] as $connector) {
+                            $payload['connectors'][] = array(
+                                'type' => (string) ($connector['type'] ?? ''),
+                                'maxChargeRateKw' => isset($connector['maxChargeRateKw']) ? (int) $connector['maxChargeRateKw'] : null,
+                                'count' => isset($connector['count']) ? (int) $connector['count'] : null,
+                                'availableCount' => isset($connector['availableCount']) ? (int) $connector['availableCount'] : null,
+                                'outOfServiceCount' => isset($connector['outOfServiceCount']) ? (int) $connector['outOfServiceCount'] : null,
+                            );
+                        }
+                        $payload['connectorCount'] = isset($evData['evChargeOptions']['connectorCount']) ? (int) $evData['evChargeOptions']['connectorCount'] : null;
+                    }
+                }
             }
         }
 
         // Pokud nejsou fotky, přidat Street View jako fallback
-        if (empty($photos)) {
+        if (empty($payload['photos']) && $postId > 0) {
             $streetViewUrl = null;
-            
-            // Zkusit nejdříve s adresou z databáze (pokud máme post ID)
-            if ($postId > 0) {
-                $address = get_post_meta($postId, '_db_address', true);
-                if (!empty($address)) {
-                    $streetViewUrl = $this->generateStreetViewUrlFromAddress($address);
-                }
+            $address = get_post_meta($postId, '_db_address', true);
+            if (!empty($address)) {
+                $streetViewUrl = $this->generateStreetViewUrlFromAddress($address);
             }
-            
-            // Pokud adresa nefunguje, zkusit GPS souřadnice
-            if (!$streetViewUrl && isset($data['location']['latitude'], $data['location']['longitude'])) {
-                $streetViewUrl = $this->generateStreetViewUrl(
-                    (float) $data['location']['latitude'], 
-                    (float) $data['location']['longitude']
-                );
+            if (!$streetViewUrl && $payload['latitude'] !== null && $payload['longitude'] !== null) {
+                $streetViewUrl = $this->generateStreetViewUrl($payload['latitude'], $payload['longitude']);
             }
-            
             if ($streetViewUrl) {
-                $photos[] = [
+                $payload['photos'][] = array(
                     'photo_reference' => 'streetview',
                     'street_view_url' => $streetViewUrl,
                     'width' => 640,
                     'height' => 480,
-                ];
+                );
             }
         }
 
-        $payload = [
-            'name' => (string) ($data['displayName']['text'] ?? ''),
-            'formatted_address' => (string) ($data['formattedAddress'] ?? ''),
-            'latitude' => isset($data['location']['latitude']) ? (float) $data['location']['latitude'] : null,
-            'longitude' => isset($data['location']['longitude']) ? (float) $data['location']['longitude'] : null,
-            'opening_hours' => $data['currentOpeningHours'] ?? null,
-            'photos' => $photos,
-            'rating' => isset($data['rating']) ? (float) $data['rating'] : null,
-            'user_ratings_total' => isset($data['userRatingCount']) ? (int) $data['userRatingCount'] : null,
-            'phone' => (string) ($data['internationalPhoneNumber'] ?? ''),
-            'website' => (string) ($data['websiteUri'] ?? ''),
-            'maps_url' => '', // Nové API neposkytuje maps_url přímo
-            'business_status' => (string) ($data['businessStatus'] ?? ''),
-            'connectorCount' => isset($data['evChargeOptions']['connectorCount']) ? (int) $data['evChargeOptions']['connectorCount'] : null,
-            'connectors' => $connectors,
-        ];
         return $payload;
     }
 

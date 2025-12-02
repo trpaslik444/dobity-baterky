@@ -815,10 +815,99 @@ class Nearby_Recompute_Job {
     }
     
     /**
+     * Synchronizovat POIs z POI microservice
+     */
+    private function sync_pois_from_microservice($lat, $lng, $radiusMeters) {
+        // Cache check - prevence race conditions a duplicitních API callů
+        $cache_key = 'poi_sync_' . md5($lat . '_' . $lng . '_' . $radiusMeters);
+        $cache_duration = 300; // 5 minut
+        
+        $cached = get_transient($cache_key);
+        if ($cached !== false) {
+            $this->debug_log('[POI Sync] Using cached sync result', array(
+                'lat' => $lat,
+                'lng' => $lng,
+                'radius' => $radiusMeters,
+            ));
+            return; // Již synchronizováno nedávno
+        }
+        
+        if (!class_exists('DB\\Services\\POI_Microservice_Client')) {
+            $client_file = dirname(dirname(__FILE__)) . '/Services/POI_Microservice_Client.php';
+            if (file_exists($client_file)) {
+                require_once $client_file;
+            } else {
+                $this->debug_log('[POI Sync] Client file not found', array(
+                    'file' => $client_file,
+                ));
+                return; // Client není k dispozici
+            }
+        }
+
+        try {
+            $client = \DB\Services\POI_Microservice_Client::get_instance();
+            $result = $client->sync_nearby_pois_to_wordpress($lat, $lng, $radiusMeters, false);
+            
+            if ($result['success']) {
+                $this->debug_log('[POI Sync] Synced POIs from microservice', array(
+                    'lat' => $lat,
+                    'lng' => $lng,
+                    'radius' => $radiusMeters,
+                    'synced' => $result['synced'],
+                    'failed' => $result['failed'],
+                    'providers' => $result['providers_used'] ?? array(),
+                ));
+                
+                // Aktualizovat statistiky
+                $this->update_sync_statistics($result);
+            } else {
+                $this->debug_log('[POI Sync] Failed to sync POIs', array(
+                    'error' => $result['error'] ?? 'Unknown error',
+                    'lat' => $lat,
+                    'lng' => $lng,
+                ));
+            }
+            
+            // Nastavit cache i při chybě (prevence opakovaných pokusů)
+            set_transient($cache_key, true, $cache_duration);
+        } catch (\Exception $e) {
+            $this->debug_log('[POI Sync] Exception', array(
+                'error' => $e->getMessage(),
+                'lat' => $lat,
+                'lng' => $lng,
+            ));
+            // Nastavit cache i při exception
+            set_transient($cache_key, true, $cache_duration);
+        }
+    }
+    
+    /**
+     * Aktualizovat statistiky synchronizace
+     */
+    private function update_sync_statistics($result) {
+        $stats = get_option('db_poi_sync_stats', array(
+            'total_synced' => 0,
+            'total_failed' => 0,
+            'last_sync' => null,
+        ));
+        
+        $stats['total_synced'] += $result['synced'] ?? 0;
+        $stats['total_failed'] += $result['failed'] ?? 0;
+        $stats['last_sync'] = current_time('mysql');
+        
+        update_option('db_poi_sync_stats', $stats);
+    }
+
+    /**
      * Získat kandidáty pomocí Haversine SQL dotazu
      */
     public function get_candidates($lat, $lng, $type, $radiusKm, $limit) {
         global $wpdb;
+
+        // Pokud hledáme POIs, nejdříve zkusit synchronizovat z POI microservice
+        if ($type === 'poi') {
+            $this->sync_pois_from_microservice($lat, $lng, $radiusKm * 1000); // radiusKm -> metry
+        }
 
         $matrix_limit = max(1, API_Quota_Manager::ORS_MATRIX_MAX_LOCATIONS - 1);
         $limit = max(1, min((int)$limit, $matrix_limit));

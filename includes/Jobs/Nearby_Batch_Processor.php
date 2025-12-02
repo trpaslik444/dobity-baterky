@@ -152,16 +152,19 @@ class Nearby_Batch_Processor {
             return array('success' => true, 'message' => 'Data už existují');
         }
 
-        // Získat kandidáty
-        $candidates = $this->recompute_job->get_candidates(
+        // DŮLEŽITÉ: ORS API se NEPOUŽÍVÁ v batch processoru
+        // ORS API se volá pouze on-demand při kliknutí na bod na mapě
+        // Batch processor pouze kontroluje cache a detekuje, zda přibylo nové POI
+        
+        // Zkontrolovat, zda přibylo nové POI v okolí (bez volání ORS API)
+        $candidates_count = $this->count_candidates_without_ors(
             $lat, 
             $lng, 
             $item->origin_type, 
-            $this->get_radius_km($item->origin_type),
-            $this->config['max_candidates'] ?? 24
+            $this->get_radius_km($item->origin_type)
         );
         
-        if (empty($candidates)) {
+        if ($candidates_count === 0) {
             // Žádní kandidáti, označit jako dokončené s prázdnými daty
             $this->save_empty_cache($item->origin_id, $item->origin_type);
             Nearby_Logger::log('BATCH', 'No candidates - saved empty cache', [
@@ -171,54 +174,17 @@ class Nearby_Batch_Processor {
             return array('success' => true, 'message' => 'Žádní kandidáti');
         }
 
-        $max_retries = 3;
-        $attempt = 0;
-        $last_error = null;
-
-        while ($attempt < $max_retries) {
-            $attempt++;
-            $result = $this->recompute_job->process_nearby_data(
-                $item->origin_id,
-                $item->origin_type,
-                $candidates
-            );
-
-            if (!empty($result['success'])) {
-                Nearby_Logger::log('BATCH', 'Recompute completed', [
-                    'origin_id' => $item->origin_id,
-                    'origin_type' => $item->origin_type,
-                    'items' => $result['items_count'] ?? null,
-                    'api_calls' => $result['api_calls'] ?? null,
-                    'attempt' => $attempt
-                ]);
-                return array('success' => true, 'message' => 'Nearby data zpracována');
-            }
-
-            $last_error = $result['error'] ?? 'Neznámá chyba';
-            $retry_after = isset($result['retry_after_s']) ? (int)$result['retry_after_s'] : null;
-
-            if ($retry_after !== null && $retry_after > 0 && $attempt < $max_retries) {
-                $sleep_for = max(1, min(60, $retry_after));
-                Nearby_Logger::log('BATCH', 'Token bucket wait before retry', [
-                    'origin_id' => $item->origin_id,
-                    'origin_type' => $item->origin_type,
-                    'retry_after_s' => $sleep_for,
-                    'attempt' => $attempt
-                ]);
-                sleep($sleep_for);
-                continue;
-            }
-
-            break;
-        }
-
-        Nearby_Logger::log('BATCH', 'Recompute failed', [
+        // Pokud cache není fresh a jsou kandidáti, označit jako "potřebuje zpracování"
+        // ORS API se zavolá až při kliknutí na bod na mapě přes on-demand processor
+        Nearby_Logger::log('BATCH', 'Marked for on-demand processing', [
             'origin_id' => $item->origin_id,
             'origin_type' => $item->origin_type,
-            'error' => $last_error,
-            'attempts' => $attempt
+            'candidates_count' => $candidates_count,
+            'note' => 'ORS API will be called on-demand when user clicks on point'
         ]);
-        return array('success' => false, 'error' => $last_error);
+        
+        // Označit jako dokončené ve frontě (data se zpracují on-demand)
+        return array('success' => true, 'message' => 'Označeno pro on-demand zpracování');
     }
     
     /**
@@ -325,6 +291,50 @@ class Nearby_Batch_Processor {
         }
 
         return false;
+    }
+    
+    /**
+     * Spočítat kandidáty bez volání ORS API (pouze databázový dotaz)
+     */
+    private function count_candidates_without_ors($lat, $lng, $target_type, $radius_km) {
+        global $wpdb;
+        
+        // Určit meta keys podle target typu
+        $lat_key = ($target_type === 'poi') ? '_poi_lat' : 
+                   (($target_type === 'rv_spot') ? '_rv_lat' : '_db_lat');
+        $lng_key = ($target_type === 'poi') ? '_poi_lng' : 
+                   (($target_type === 'rv_spot') ? '_rv_lng' : '_db_lng');
+        
+        // Použít subquery pro správný výpočet vzdálenosti
+        $sql = $wpdb->prepare("
+            SELECT COUNT(*) as count
+            FROM (
+                SELECT p.ID,
+                       lat_pm.meta_value+0 AS lat,
+                       lng_pm.meta_value+0 AS lng,
+                       (6371 * ACOS(
+                           COS(RADIANS(%f)) * COS(RADIANS(lat_pm.meta_value+0)) *
+                           COS(RADIANS(lng_pm.meta_value+0) - RADIANS(%f)) +
+                           SIN(RADIANS(%f)) * SIN(RADIANS(lat_pm.meta_value+0))
+                       )) AS dist_km
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} lat_pm ON lat_pm.post_id = p.ID AND lat_pm.meta_key = %s
+                INNER JOIN {$wpdb->postmeta} lng_pm ON lng_pm.post_id = p.ID AND lng_pm.meta_key = %s
+                WHERE p.post_type = %s 
+                AND p.post_status = 'publish'
+                AND lat_pm.meta_value != '' 
+                AND lng_pm.meta_value != ''
+                AND lat_pm.meta_value+0 BETWEEN %f AND %f
+                AND lng_pm.meta_value+0 BETWEEN %f AND %f
+            ) AS candidates
+            WHERE dist_km <= %f
+        ", $lat, $lng, $lat, $lat_key, $lng_key, $target_type,
+            $lat - ($radius_km / 111.0), $lat + ($radius_km / 111.0),
+            $lng - ($radius_km / (111.0 * cos(deg2rad($lat)))), $lng + ($radius_km / (111.0 * cos(deg2rad($lat)))),
+            $radius_km);
+        
+        $result = $wpdb->get_var($sql);
+        return (int)($result ?? 0);
     }
     
     /**

@@ -2,7 +2,7 @@ import { Poi } from '@prisma/client';
 import { ALLOWED_CATEGORIES } from './categories';
 import { CONFIG } from './config';
 import { prisma } from './prisma';
-import { GooglePlacesProvider } from './providers/googlePlaces';
+// GooglePlacesProvider removed - Google API calls removed to prevent quota exhaustion
 import { ManualProvider } from './providers/manual';
 import { OpenTripMapProvider } from './providers/openTripMap';
 import { WikidataProvider } from './providers/wikidata';
@@ -14,7 +14,7 @@ import {
   passesRatingFilter,
 } from './poiUtils';
 import { haversineDistanceMeters } from './utils/geo';
-import { reserveGoogleQuota } from './quota';
+// reserveGoogleQuota removed - Google API calls removed
 
 const CACHE_EPSILON = 0.0001;
 
@@ -61,20 +61,9 @@ export async function getNearbyPois(
     providersUsed.push('opentripmap', 'wikidata');
   }
 
-  const googleThreshold = Math.max(minCount, CONFIG.MIN_POIS_BEFORE_GOOGLE);
-  if (merged.length < googleThreshold && CONFIG.PLACES_ENRICHMENT_ENABLED) {
-    // Atomicky rezervovat kvótu PŘED voláním API (prevence race condition)
-    const quotaReserved = await reserveGoogleQuota();
-    if (quotaReserved) {
-      const googleProvider = new GooglePlacesProvider();
-      const google = await googleProvider.searchAround(lat, lon, radiusMeters, normalizedCategories);
-      if (google.length) {
-        merged = await persistIncoming([...mergedToNormalized(merged), ...google], lat, lon, radiusMeters);
-        providersUsed.push('google');
-      }
-      // Poznámka: Kvóta už byla rezervována v reserveGoogleQuota()
-    }
-  }
+  // Google API REMOVED - používáme pouze free zdroje (OpenTripMap, Wikidata)
+  // Důvod: Riziko vyčerpání Google API kvót
+  // Pokud free zdroje nedají dostatek POIs, vrátíme co máme
 
   await saveCache(lat, lon, radiusMeters, merged, providersUsed);
   return { pois: merged, providersUsed };
@@ -134,6 +123,8 @@ async function persistIncoming(
   const existing = await prisma.poi.findMany({});
   const result: Poi[] = [];
 
+  const newPois: Poi[] = []; // Nové POIs pro synchronizaci s WordPressem
+
   for (const poi of filtered) {
     const duplicate = existing.find((item) => isDuplicatePoi(item, poi));
     if (duplicate) {
@@ -145,8 +136,12 @@ async function persistIncoming(
       const created = await prisma.poi.create({ data: normalizedToPoiData(poi) });
       existing.push(created);
       result.push(created);
+      newPois.push(created); // Přidat do seznamu nových POIs
     }
   }
+
+  // WordPress sám volá POI microservice API a vytváří posty
+  // POI microservice nemusí mít přístup k WordPress databázi
 
   const nearby = result.filter(
     (poi) => haversineDistanceMeters(lat, lon, poi.lat, poi.lon) <= radiusMeters
@@ -162,8 +157,8 @@ function updateArray(list: Poi[], updated: Poi) {
 function mergedToNormalized(pois: Poi[]): NormalizedPoi[] {
   return pois.map((poi) => ({
     name: poi.name,
-    lat: poi.lat,
-    lon: poi.lon,
+    lat: poi.lat,  // Originální GPS, nezaokrouhlené
+    lon: poi.lon,  // Originální GPS, nezaokrouhlené
     address: poi.address ?? undefined,
     city: poi.city ?? undefined,
     country: poi.country ?? undefined,
@@ -175,10 +170,27 @@ function mergedToNormalized(pois: Poi[]): NormalizedPoi[] {
     phone: poi.phone ?? undefined,
     openingHoursRaw: poi.opening_hours ?? undefined,
     photoUrl: poi.photo_url ?? undefined,
+    photoFilename: poi.photo_filename ?? undefined,
+    photoLicense: poi.photo_license ?? undefined,
     source: 'manual',
     sourceId: (poi.source_ids as any)?.manual,
     raw: poi.raw_payload ?? undefined,
   }));
+}
+
+/**
+ * Zkontroluje, zda POI má dostatek informací (fotka, název, GPS)
+ * Pokud máme z free zdrojů dostatek kompletních POIs, nemusíme volat Google API
+ */
+function hasCompleteInfo(poi: Poi | NormalizedPoi): boolean {
+  const hasName = !!(poi.name && poi.name.trim() !== '');
+  const hasGps = typeof poi.lat === 'number' && typeof poi.lon === 'number' && 
+                 !isNaN(poi.lat) && !isNaN(poi.lon) &&
+                 poi.lat !== 0 && poi.lon !== 0;
+  const hasPhoto = !!(poi.photo_url || (poi as any).photoUrl);
+  
+  // Minimálně název + GPS jsou povinné, fotka je bonus
+  return hasName && hasGps;
 }
 
 async function saveCache(
