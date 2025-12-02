@@ -2265,13 +2265,12 @@ class REST_Map {
         $errors = array();
         $payload = null;
 
-        // If neither Google nor Tripadvisor ID is available, attempt on-demand discovery
-        if (empty($services)) {
+        // If Google Places ID is not available, attempt on-demand discovery
+        if (empty($services) || !in_array('google_places', $services)) {
             $google_id = $this->get_google_place_id($post_id);
-            $ta_id = $this->get_tripadvisor_location_id($post_id);
             $quota = new \DB\Jobs\POI_Quota_Manager();
             $errors['on_demand'] = array();
-            // Try Google discovery first if quota allows and no existing ID
+            // Try Google discovery if quota allows and no existing ID
             if (!$google_id && $quota->can_use_google()) {
                 // Reuse POI_Discovery service to find IDs
                 if (class_exists('DB\POI_Discovery')) {
@@ -2281,19 +2280,11 @@ class REST_Map {
                     if (!empty($res['google_place_id'])) { $google_id = $res['google_place_id']; }
                 }
             }
-            // Try Tripadvisor if still missing and quota allows
-            if (!$ta_id && $quota->can_use_tripadvisor()) {
-                if (class_exists('DB\POI_Discovery')) {
-                    $svc = new \DB\POI_Discovery();
-                    $res = $svc->discoverForPoi($post_id, true, true, false);
-                    $quota->record_tripadvisor(1); // Record quota usage for all API calls
-                    if (!empty($res['tripadvisor_location_id'])) { $ta_id = $res['tripadvisor_location_id']; }
-                }
-            }
-            // Recompute available services list
+            // Recompute available services list (only Google Places)
             $services = array();
-            if ($google_id) $services[] = 'google_places';
-            if ($ta_id) $services[] = 'tripadvisor';
+            if ($google_id) {
+                $services[] = 'google_places';
+            }
             if (empty($services)) {
                 $status = $quota->get_status();
                 // Try to prepare review candidates
@@ -2301,10 +2292,6 @@ class REST_Map {
                 if ($quota->can_use_google()) { 
                     $candidates = array_merge($candidates, $this->find_google_candidates_for_post($post_id)); 
                     $quota->record_google(1); // Record quota usage for candidate search
-                }
-                if ($quota->can_use_tripadvisor()) { 
-                    $candidates = array_merge($candidates, $this->find_tripadvisor_candidates_for_post($post_id)); 
-                    $quota->record_tripadvisor(1); // Record quota usage for candidate search
                 }
                 if (!empty($candidates)) {
                     update_post_meta($post_id, '_poi_review_candidates', wp_json_encode($candidates));
@@ -2325,11 +2312,14 @@ class REST_Map {
             }
         }
 
+        // Filter out Tripadvisor from services
+        $services = array_filter($services, function($service) {
+            return $service === 'google_places';
+        });
+
         foreach ( $services as $service ) {
             if ( $service === 'google_places' ) {
                 $data = $this->maybe_fetch_google_place_data( $post_id );
-            } elseif ( $service === 'tripadvisor' ) {
-                $data = $this->maybe_fetch_tripadvisor_data( $post_id );
             } else {
                 continue;
             }
@@ -2353,17 +2343,17 @@ class REST_Map {
                         array( 'status' => 429 )
                     );
                 }
-                $payload = array(
-                    'provider' => $service,
+                // For non-quota blocks (e.g., feature flag disabled, recently enriched), 
+                // return error response instead of continuing to next service
+                return rest_ensure_response(array(
+                    'provider' => null,
                     'data' => null,
                     'status' => $data['reason'] ?? 'blocked',
+                    'errors' => $errors,
                     'meta' => array(
                         'google_place_id' => $this->get_google_place_id( $post_id ),
-                        'tripadvisor_location_id' => $this->get_tripadvisor_location_id( $post_id ),
                     ),
-                );
-
-                return rest_ensure_response( $payload );
+                ));
             }
 
             if ( $data ) {
@@ -2373,7 +2363,6 @@ class REST_Map {
                     'expiresAt' => $this->get_service_expiration( $post_id, $service ),
                     'meta' => array(
                         'google_place_id' => $this->get_google_place_id( $post_id ),
-                        'tripadvisor_location_id' => $this->get_tripadvisor_location_id( $post_id ),
                     ),
                 );
                 break;
