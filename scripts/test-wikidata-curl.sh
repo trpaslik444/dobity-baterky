@@ -15,7 +15,7 @@ echo "Radius: ${RADIUS_KM} km"
 echo ""
 
 # SPARQL query
-QUERY="SELECT ?item ?itemLabel ?lat ?lon WHERE {
+QUERY="SELECT ?item ?itemLabel ?location ?lat ?lon WHERE {
   SERVICE wikibase:around {
     ?item wdt:P625 ?location .
     bd:serviceParam wikibase:center \"Point(${LNG} ${LAT})\"^^geo:wktLiteral .
@@ -31,13 +31,8 @@ QUERY="SELECT ?item ?itemLabel ?lat ?lon WHERE {
       wd:Q22698    # Park
     }
   }
-  BIND(SUBSTR(STR(?location), 32) AS ?coordStr)
-  BIND(REPLACE(?coordStr, ' ', '') AS ?cleanCoord)
-  BIND(SUBSTR(?cleanCoord, 1, STRLEN(?cleanCoord)-1) AS ?coordWithoutParen)
-  BIND(STRBEFORE(?coordWithoutParen, ',') AS ?lonStr)
-  BIND(STRAFTER(?coordWithoutParen, ',') AS ?latStr)
-  BIND(xsd:float(?latStr) AS ?lat)
-  BIND(xsd:float(?lonStr) AS ?lon)
+  BIND(geof:latitude(?location) AS ?lat)
+  BIND(geof:longitude(?location) AS ?lon)
   SERVICE wikibase:label { 
     bd:serviceParam wikibase:language \"cs,en\" . 
   }

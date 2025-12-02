@@ -94,9 +94,9 @@ class Wikidata_Provider {
         
         // Wikidata SPARQL query s geografickým filtrem
         // Používáme SERVICE wikibase:around pro geografické vyhledávání
-        // Pro extrakci souřadnic používáme geof:distance a geof:globe
+        // Pro extrakci souřadnic používáme geof:latitude a geof:longitude
         $query = "
-        SELECT ?item ?itemLabel ?lat ?lon WHERE {
+        SELECT ?item ?itemLabel ?location ?lat ?lon WHERE {
           SERVICE wikibase:around {
             ?item wdt:P625 ?location .
             bd:serviceParam wikibase:center \"Point($lng $lat)\"^^geo:wktLiteral .
@@ -117,14 +117,9 @@ class Wikidata_Provider {
               wd:Q483551   # Cultural heritage
             }
           }
-          # Extrahovat souřadnice pomocí geof:globe a geof:latitude/geof:longitude
-          # Alternativně použijeme jednodušší metodu s REGEX
-          BIND(STR(?location) AS ?locationStr)
-          BIND(REPLACE(REPLACE(?locationStr, 'Point\\(', ''), '\\)', '') AS ?coords)
-          BIND(STRBEFORE(?coords, ' ') AS ?lonStr)
-          BIND(STRAFTER(?coords, ' ') AS ?latStr)
-          BIND(xsd:float(?latStr) AS ?lat)
-          BIND(xsd:float(?lonStr) AS ?lon)
+          # Extrahovat souřadnice pomocí geof:latitude a geof:longitude
+          BIND(geof:latitude(?location) AS ?lat)
+          BIND(geof:longitude(?location) AS ?lon)
           SERVICE wikibase:label { 
             bd:serviceParam wikibase:language \"cs,en\" . 
           }
