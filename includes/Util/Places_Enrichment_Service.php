@@ -116,6 +116,8 @@ class Places_Enrichment_Service {
         $this->maybe_create_table();
 
         $wpdb->query('START TRANSACTION');
+        
+        // Read current count with lock to check limit before incrementing
         $row = $wpdb->get_row(
             $wpdb->prepare(
                 "SELECT request_count FROM {$table} WHERE usage_date = %s AND api_name = %s FOR UPDATE",
@@ -125,35 +127,28 @@ class Places_Enrichment_Service {
             ARRAY_A
         );
 
-        if (!$row) {
-            $wpdb->insert(
-                $table,
-                array(
-                    'usage_date' => $today,
-                    'api_name' => $apiName,
-                    'request_count' => 0,
-                ),
-                array('%s', '%s', '%d')
-            );
-            $row = array('request_count' => 0);
-        }
-
-        $count = intval($row['request_count']);
-        if ($count >= $limit) {
+        $current_count = $row ? intval($row['request_count']) : 0;
+        
+        // Check limit before incrementing
+        if ($current_count >= $limit) {
             $wpdb->query('ROLLBACK');
             return new WP_Error('places_quota_exceeded', 'Denní limit Google Places byl vyčerpán.');
         }
 
-        $wpdb->update(
-            $table,
-            array('request_count' => $count + 1),
-            array('usage_date' => $today, 'api_name' => $apiName),
-            array('%d'),
-            array('%s', '%s')
-        );
+        // Use atomic INSERT ... ON DUPLICATE KEY UPDATE to avoid race conditions
+        // This ensures concurrent first requests of the day are counted correctly
+        $wpdb->query($wpdb->prepare(
+            "INSERT INTO {$table} (usage_date, api_name, request_count) 
+             VALUES (%s, %s, 1)
+             ON DUPLICATE KEY UPDATE request_count = request_count + 1",
+            $today,
+            $apiName
+        ));
+
         $wpdb->query('COMMIT');
 
-        $this->maybe_notify_threshold($count + 1, $limit, $apiName);
+        $new_count = $current_count + 1;
+        $this->maybe_notify_threshold($new_count, $limit, $apiName);
         return true;
     }
 
