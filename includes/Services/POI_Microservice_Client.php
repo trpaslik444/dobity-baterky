@@ -57,25 +57,20 @@ class POI_Microservice_Client {
         // Detekce prostředí
         $site_url = get_site_url();
         
-        // Staging/produkce: POI microservice běží na stejném serveru
-        // Předpokládáme, že POI microservice běží na stejném hostu, ale jiném portu nebo subdoméně
-        if (strpos($site_url, 'localhost') === false && strpos($site_url, '127.0.0.1') === false) {
-            // Produkce/staging - použít stejný host, ale port 3333 nebo subdoménu
-            $parsed = parse_url($site_url);
-            $host = $parsed['host'] ?? '';
-            $scheme = $parsed['scheme'] ?? 'https';
-            
-            // Možnost 1: POI microservice na stejném hostu, port 3333
-            // Možnost 2: POI microservice na subdoméně (např. poi-api.dobitybaterky.cz)
-            // Možnost 3: POI microservice na stejném hostu, jiná cesta (např. /poi-api)
-            
-            // Prozatím použijeme stejný host s portem 3333
-            // V produkci by mělo být nastaveno explicitně v wp-config.php
-            return $scheme . '://' . $host . ':3333';
+        // Development: localhost s portem 3333 (vývojový default)
+        if (strpos($site_url, 'localhost') !== false || strpos($site_url, '127.0.0.1') !== false) {
+            return 'http://localhost:3333';
         }
         
-        // Development: localhost
-        return 'http://localhost:3333';
+        // Staging/produkce: NEPOUŽÍVAT auto-detekci!
+        // POI microservice může běžet:
+        // 1. Na stejné doméně přes reverse proxy (např. /api/pois)
+        // 2. Na subdoméně (např. poi-api.dobitybaterky.cz)
+        // 3. Na jiném serveru
+        // 4. Na stejném serveru, ale jiném portu (jen pokud je to explicitně nastaveno)
+        // 
+        // Proto NEPOUŽÍVÁME auto-detekci a vyžadujeme explicitní konfiguraci!
+        return ''; // Prázdné - musí být explicitně nastaveno
     }
     
     /**

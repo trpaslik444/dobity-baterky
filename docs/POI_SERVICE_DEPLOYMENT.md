@@ -12,11 +12,13 @@ POI microservice musí běžet na serveru a být dostupný pro WordPress. Tento 
 
 #### 1. Na stejném serveru jako WordPress (doporučeno)
 
-POI microservice běží na stejném serveru, ale na jiném portu nebo jako subdoména.
+POI microservice běží na stejném serveru, přístupný přes reverse proxy nebo subdoménu.
 
 **Příklad**:
 - WordPress: `https://dobitybaterky.cz`
-- POI microservice: `https://dobitybaterky.cz:3333` nebo `https://poi-api.dobitybaterky.cz`
+- POI microservice: `https://poi-api.dobitybaterky.cz` (subdoména) nebo `https://dobitybaterky.cz/api/pois` (reverse proxy)
+
+**⚠️ DŮLEŽITÉ**: Na produkci NEPOUŽÍVEJTE port 3333! Pouze pro lokální vývoj.
 
 #### 2. Na jiném serveru
 
@@ -58,15 +60,13 @@ define('DB_POI_SERVICE_URL', 'https://dobitybaterky.cz:3333');
 
 ---
 
-### Možnost 3: Auto-detekce (fallback)
+### Možnost 3: Development default
 
-Pokud není nastavena konstanta ani option, WordPress zkusí auto-detekci:
+Pouze pro lokální vývoj:
 
-- **Staging/produkce**: Použije stejný host jako WordPress + port 3333
-  - Např. WordPress: `https://dobitybaterky.cz` → POI service: `https://dobitybaterky.cz:3333`
-- **Development**: `http://localhost:3333`
+- **Development**: `http://localhost:3333` (automaticky, pokud není nastaveno)
 
-**⚠️ POZOR**: Auto-detekce je pouze fallback. Pro produkci vždy nastavte explicitně!
+**⚠️ DŮLEŽITÉ**: Pro staging/produkci MUSÍ být URL explicitně nastaveno! Auto-detekce se nepoužívá.
 
 ---
 
@@ -87,10 +87,14 @@ define('DB_POI_SERVICE_URL', 'http://localhost:3333');
 
 **wp-config.php**:
 ```php
-define('DB_POI_SERVICE_URL', 'https://staging-f576-dobitybaterky.wpcomstaging.com:3333');
+// Možnost 1: Subdoména
+define('DB_POI_SERVICE_URL', 'https://poi-api.staging-f576-dobitybaterky.wpcomstaging.com');
+
+// Možnost 2: Stejná doména, jiná cesta (přes reverse proxy)
+define('DB_POI_SERVICE_URL', 'https://staging-f576-dobitybaterky.wpcomstaging.com/api/pois');
 ```
 
-**Nebo admin rozhraní**: `https://staging-f576-dobitybaterky.wpcomstaging.com:3333`
+**Nebo admin rozhraní**: Nastavit odpovídající URL
 
 ---
 
@@ -98,10 +102,14 @@ define('DB_POI_SERVICE_URL', 'https://staging-f576-dobitybaterky.wpcomstaging.co
 
 **wp-config.php**:
 ```php
-define('DB_POI_SERVICE_URL', 'https://dobitybaterky.cz:3333');
+// Možnost 1: Subdoména (doporučeno)
+define('DB_POI_SERVICE_URL', 'https://poi-api.dobitybaterky.cz');
+
+// Možnost 2: Stejná doména, jiná cesta (přes reverse proxy)
+define('DB_POI_SERVICE_URL', 'https://dobitybaterky.cz/api/pois');
 ```
 
-**Nebo admin rozhraní**: `https://dobitybaterky.cz:3333`
+**⚠️ DŮLEŽITÉ**: Nepoužívejte port 3333 na produkci! Pouze pro lokální vývoj.
 
 ---
 

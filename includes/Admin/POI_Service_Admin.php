@@ -59,18 +59,13 @@ class POI_Service_Admin {
     public function sanitize_url($url) {
         $url = trim($url);
         
-        // Pokud je prázdné a není konstanta, použít auto-detekci
+        // Development: default localhost
         if (empty($url) && !defined('DB_POI_SERVICE_URL')) {
-            // Zkusit auto-detekci
             $site_url = get_site_url();
-            if (strpos($site_url, 'localhost') === false && strpos($site_url, '127.0.0.1') === false) {
-                $parsed = parse_url($site_url);
-                $host = $parsed['host'] ?? '';
-                $scheme = $parsed['scheme'] ?? 'https';
-                $url = $scheme . '://' . $host . ':3333';
-            } else {
+            if (strpos($site_url, 'localhost') !== false || strpos($site_url, '127.0.0.1') !== false) {
                 $url = 'http://localhost:3333';
             }
+            // Pro staging/produkci: NEPOUŽÍVAT auto-detekci, musí být explicitně nastaveno
         }
         
         $url = esc_url_raw($url);
@@ -161,15 +156,10 @@ class POI_Service_Admin {
                                 $is_constant = true;
                             } else {
                                 $is_constant = false;
-                                // Auto-detekce pro staging/produkci
+                                // Development: default localhost
                                 if (empty($current_url)) {
                                     $site_url = get_site_url();
-                                    if (strpos($site_url, 'localhost') === false && strpos($site_url, '127.0.0.1') === false) {
-                                        $parsed = parse_url($site_url);
-                                        $host = $parsed['host'] ?? '';
-                                        $scheme = $parsed['scheme'] ?? 'https';
-                                        $current_url = $scheme . '://' . $host . ':3333';
-                                    } else {
+                                    if (strpos($site_url, 'localhost') !== false || strpos($site_url, '127.0.0.1') !== false) {
                                         $current_url = 'http://localhost:3333';
                                     }
                                 }
@@ -180,14 +170,22 @@ class POI_Service_Admin {
                                    name="db_poi_service_url" 
                                    value="<?php echo esc_attr($current_url); ?>" 
                                    class="regular-text"
-                                   placeholder="https://your-site.com:3333 nebo http://localhost:3333"
+                                   placeholder="<?php echo esc_attr($is_constant ? '' : (strpos(get_site_url(), 'localhost') !== false ? 'http://localhost:3333' : 'https://poi-api.your-site.com nebo https://your-site.com/api/pois')); ?>"
                                    <?php echo $is_constant ? 'readonly' : ''; ?> />
                             <p class="description">
                                 URL POI microservice API. 
                                 <?php if ($is_constant): ?>
                                     <strong>Nastaveno pomocí konstanty <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.</strong>
                                 <?php else: ?>
-                                    Pro staging/produkci použijte URL ve formátu <code>https://your-site.com:3333</code> nebo nastavte konstantu <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.
+                                    <strong>Pro staging/produkci musí být URL explicitně nastaveno!</strong><br>
+                                    Možnosti:
+                                    <ul style="margin-left: 20px; margin-top: 5px;">
+                                        <li>Subdoména: <code>https://poi-api.your-site.com</code></li>
+                                        <li>Stejná doména, jiná cesta: <code>https://your-site.com/api/pois</code> (přes reverse proxy)</li>
+                                        <li>Jiný server: <code>https://poi-service.your-site.com</code></li>
+                                        <li>Konstanta v <code>wp-config.php</code>: <code>define('DB_POI_SERVICE_URL', '...');</code></li>
+                                    </ul>
+                                    <strong>⚠️ Nepoužívejte port 3333 na produkci!</strong> Pouze pro lokální vývoj.
                                 <?php endif; ?>
                             </p>
                         </td>
