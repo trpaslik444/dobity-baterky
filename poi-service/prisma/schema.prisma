@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Poi {
+  id             String   @id @default(cuid())
+  lat            Float
+  lon            Float
+  name           String
+  address        String?
+  city           String?
+  country        String?
+  category       String
+  rating         Float?
+  rating_source  String?
+  price_level    Int?
+  website        String?
+  phone          String?
+  opening_hours  Json?
+  photo_url      String?
+  photo_filename String?
+  photo_license  String?
+  source_ids     Json?
+  raw_payload    Json?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+}
+
+model PoiCache {
+  id             String   @id @default(cuid())
+  lat            Float
+  lon            Float
+  radius_m       Int
+  poi_ids        Json
+  providers_used Json?
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+}
+
+model ApiUsage {
+  provider String
+  date     DateTime
+  count    Int      @default(0)
+
+  @@id([provider, date])
+}
