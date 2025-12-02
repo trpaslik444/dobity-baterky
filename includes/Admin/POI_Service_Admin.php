@@ -45,13 +45,13 @@ class POI_Service_Admin {
 
         register_setting('db_poi_service_settings', 'db_poi_service_timeout', array(
             'type' => 'integer',
-            'sanitize_callback' => 'absint',
+            'sanitize_callback' => array($this, 'sanitize_timeout'),
             'default' => 30,
         ));
 
         register_setting('db_poi_service_settings', 'db_poi_service_max_retries', array(
             'type' => 'integer',
-            'sanitize_callback' => 'absint',
+            'sanitize_callback' => array($this, 'sanitize_max_retries'),
             'default' => 3,
         ));
     }
@@ -69,6 +69,54 @@ class POI_Service_Admin {
             return get_option('db_poi_service_url', '');
         }
         return rtrim($url, '/');
+    }
+
+    /**
+     * P2: Sanitizace timeout hodnoty (5-300 sekund)
+     */
+    public function sanitize_timeout($timeout) {
+        $timeout = (int) $timeout;
+        if ($timeout < 5) {
+            add_settings_error(
+                'db_poi_service_timeout',
+                'invalid_timeout',
+                'Timeout musí být minimálně 5 sekund'
+            );
+            return 5;
+        }
+        if ($timeout > 300) {
+            add_settings_error(
+                'db_poi_service_timeout',
+                'invalid_timeout',
+                'Timeout musí být maximálně 300 sekund'
+            );
+            return 300;
+        }
+        return $timeout;
+    }
+
+    /**
+     * P2: Sanitizace max_retries hodnoty (1-10)
+     */
+    public function sanitize_max_retries($max_retries) {
+        $max_retries = (int) $max_retries;
+        if ($max_retries < 1) {
+            add_settings_error(
+                'db_poi_service_max_retries',
+                'invalid_max_retries',
+                'Maximální počet pokusů musí být minimálně 1'
+            );
+            return 1;
+        }
+        if ($max_retries > 10) {
+            add_settings_error(
+                'db_poi_service_max_retries',
+                'invalid_max_retries',
+                'Maximální počet pokusů musí být maximálně 10'
+            );
+            return 10;
+        }
+        return $max_retries;
     }
 
     public function handle_test_connection() {

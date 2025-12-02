@@ -876,6 +876,14 @@ class Nearby_Recompute_Job {
                     'lat' => $lat,
                     'lng' => $lng,
                 ));
+                
+                // P3: Monitoring/alerting pro selhání
+                do_action('db_poi_sync_failed', array(
+                    'error' => $result['error'] ?? 'Unknown error',
+                    'lat' => $lat,
+                    'lng' => $lng,
+                    'radius' => $radiusMeters,
+                ));
             }
             
             // Nastavit cache i při chybě (prevence opakovaných pokusů)
