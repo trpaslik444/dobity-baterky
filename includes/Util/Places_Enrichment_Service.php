@@ -21,6 +21,7 @@ class Places_Enrichment_Service {
     private $usageTable;
     private $inFlight = array();
     private $tableChecked = false;
+    private const MAX_INFLIGHT_CACHE = 1000; // Limit in-flight cache to prevent memory leaks
 
     private function __construct() {
         global $wpdb;
@@ -53,6 +54,11 @@ class Places_Enrichment_Service {
     }
 
     public function request_place_details(string $placeId, array $context = array()) {
+        // Validate placeId
+        if (empty($placeId) || !is_string($placeId) || strlen($placeId) > 255) {
+            return new WP_Error('invalid_place_id', 'Neplatné Place ID', array('status' => 400));
+        }
+
         $context = wp_parse_args($context, array(
             'post_id' => null,
             'force' => false,
@@ -97,6 +103,11 @@ class Places_Enrichment_Service {
             'data' => $response,
         );
 
+        // Limit in-flight cache size to prevent memory leaks
+        if (count($this->inFlight) >= self::MAX_INFLIGHT_CACHE) {
+            // Remove oldest entry (simple FIFO)
+            array_shift($this->inFlight);
+        }
         $this->inFlight[$key] = $payload;
         return $payload;
     }
@@ -137,13 +148,18 @@ class Places_Enrichment_Service {
 
         // Use atomic INSERT ... ON DUPLICATE KEY UPDATE to avoid race conditions
         // This ensures concurrent first requests of the day are counted correctly
-        $wpdb->query($wpdb->prepare(
+        $result = $wpdb->query($wpdb->prepare(
             "INSERT INTO {$table} (usage_date, api_name, request_count) 
              VALUES (%s, %s, 1)
              ON DUPLICATE KEY UPDATE request_count = request_count + 1",
             $today,
             $apiName
         ));
+
+        if ($result === false) {
+            $wpdb->query('ROLLBACK');
+            return new WP_Error('quota_error', 'Chyba při rezervaci kvóty: ' . $wpdb->last_error, array('status' => 500));
+        }
 
         $wpdb->query('COMMIT');
 
@@ -177,7 +193,10 @@ class Places_Enrichment_Service {
         $body = wp_remote_retrieve_body($response);
         $data = json_decode($body, true);
 
-        error_log('[PLACES_ENRICHMENT] Google Place Details API Response: ' . $body);
+        // Log only status and errors, not full response (may contain sensitive data)
+        if (isset($data['error_message']) || ($data['status'] ?? '') !== 'OK') {
+            error_log('[PLACES_ENRICHMENT] Google Place Details API Error: ' . ($data['error_message'] ?? $data['status'] ?? 'UNKNOWN'));
+        }
 
         if ($status_code !== 200) {
             return new WP_Error('google_api_error', 'Google API chyba: HTTP ' . $status_code, array('status' => 500));
@@ -189,6 +208,10 @@ class Places_Enrichment_Service {
 
         if (($data['status'] ?? '') !== 'OK') {
             return new WP_Error('google_api_error', 'Google API chyba: ' . ($data['status'] ?? 'UNKNOWN_ERROR'), array('status' => 500));
+        }
+
+        if (!isset($data['result']) || !is_array($data['result'])) {
+            return new WP_Error('google_api_error', 'Neplatná odpověď Google API: chybí result', array('status' => 500));
         }
 
         $result = $data['result'];
