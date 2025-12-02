@@ -922,9 +922,9 @@ class Nearby_Recompute_Job {
     public function get_candidates($lat, $lng, $type, $radiusKm, $limit) {
         global $wpdb;
 
-        // Pokud hledáme POIs, nejdříve zkusit synchronizovat z POI microservice
+        // Pokud hledáme POIs, zkusit stáhnout z free zdrojů (OpenTripMap, Wikidata)
         if ($type === 'poi') {
-            $this->sync_pois_from_microservice($lat, $lng, $radiusKm * 1000); // radiusKm -> metry
+            $this->fetch_pois_from_providers($lat, $lng, $radiusKm * 1000); // radiusKm -> metry
         }
 
         $matrix_limit = max(1, API_Quota_Manager::ORS_MATRIX_MAX_LOCATIONS - 1);

@@ -185,7 +185,25 @@ class POI_Service_Admin {
                 <table class="form-table">
                     <tr>
                         <th scope="row">
-                            <label for="db_poi_service_url">POI Microservice URL</label>
+                            <label for="opentripmap_api_key">OpenTripMap API Key</label>
+                        </th>
+                        <td>
+                            <input type="text" 
+                                   id="opentripmap_api_key" 
+                                   name="opentripmap_api_key" 
+                                   value="<?php echo esc_attr(get_option('opentripmap_api_key', '')); ?>" 
+                                   class="regular-text"
+                                   placeholder="Zadejte OpenTripMap API key" />
+                            <p class="description">
+                                <strong>Doporučeno pro automatické stahování POIs!</strong><br>
+                                Získejte zdarma na <a href="https://opentripmap.io/docs" target="_blank">opentripmap.io</a>.<br>
+                                WordPress automaticky stáhne POIs z OpenTripMap a Wikidata při hledání nearby POIs.
+                            </p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="db_poi_service_url">POI Microservice URL (volitelné)</label>
                         </th>
                         <td>
                             <?php
@@ -200,17 +218,13 @@ class POI_Service_Admin {
                                    name="db_poi_service_url" 
                                    value="<?php echo esc_attr($current_url); ?>" 
                                    class="regular-text"
-                                   placeholder="https://poi-api.your-site.com nebo http://localhost:3333"
+                                   placeholder="https://poi-api.your-site.com (volitelné)"
                                    <?php echo $is_constant ? 'readonly' : ''; ?> />
                             <p class="description">
-                                URL POI microservice API. 
+                                <strong>Pouze pokud používáte samostatný Node.js POI microservice.</strong><br>
+                                Pokud máte nastavený OpenTripMap API key výše, <strong>není potřeba</strong> - WordPress stáhne POIs přímo z free zdrojů.<br>
                                 <?php if ($is_constant): ?>
                                     <strong>Nastaveno pomocí konstanty <code>DB_POI_SERVICE_URL</code> v <code>wp-config.php</code>.</strong>
-                                <?php else: ?>
-                                    <strong>POI microservice je VOLITELNÝ!</strong> WordPress funguje normálně i bez něj.<br>
-                                    Pokud POI microservice nemáte nasazený, <strong>nechte pole prázdné</strong> - WordPress bude používat pouze POIs z vlastní databáze.<br>
-                                    Pokud máte POI microservice nasazený, nastavte jeho URL:<br>
-                                    Příklady: <code>https://poi-api.your-site.com</code>, <code>http://localhost:3333</code> (pouze pro lokální vývoj), <code>https://your-site.com/api/pois</code>
                                 <?php endif; ?>
                             </p>
                         </td>
