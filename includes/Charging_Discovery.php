@@ -553,14 +553,18 @@ class Charging_Discovery {
         // Pro nové Places API v1 potřebujeme získat data o konektorech zvlášť
         // POZNÁMKA: Toto volání potřebuje kvótu - rezervujeme ji
         $apiKey = (string) get_option('db_google_api_key');
-        if ($apiKey !== '') {
-            // Kontrola kvóty před voláním
-            $quota = new \DB\Jobs\Google_Quota_Manager();
-            $quota_check = $quota->reserve_quota(1);
-            if (is_wp_error($quota_check)) {
-                // Pokud došla kvóta, vrátit data bez konektorů
-                return $payload;
-            }
+        if ($apiKey === '') {
+            // Pokud není API klíč, vrátit data bez konektorů
+            return $payload;
+        }
+        
+        // Kontrola kvóty před voláním
+        $quota = new \DB\Jobs\Google_Quota_Manager();
+        $quota_check = $quota->reserve_quota(1);
+        if (is_wp_error($quota_check)) {
+            // Pokud došla kvóta, vrátit data bez konektorů
+            return $payload;
+        }
             
             $url = "https://places.googleapis.com/v1/places/$placeId";
             $fields = ['evChargeOptions'];

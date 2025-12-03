@@ -178,26 +178,81 @@ class Google_Quota_Manager {
     }
 
     /**
-     * Zkontroluje a rezervuje kvótu (atomická operace)
+     * Zkontroluje a rezervuje kvótu (atomická operace s ochranou proti race condition)
      * Vrací true pokud je kvóta dostupná a byla rezervována, jinak WP_Error
+     * 
+     * Používá WordPress transients pro synchronizaci při souběžných requestech
      */
     public function reserve_quota(int $count = 1): \WP_Error|bool {
-        if (!$this->can_use_google()) {
-            $status = $this->get_status();
-            $this->log_quota_rejection('google', $count, $status);
-            return new \WP_Error(
-                'quota_exceeded',
-                'Google API kvóta byla vyčerpána',
-                array(
-                    'status' => 429,
-                    'quota_status' => $status,
-                )
-            );
+        $count = max(1, $count);
+        $lock_key = 'db_google_quota_lock_' . get_current_blog_id();
+        $max_attempts = 5;
+        $attempt = 0;
+        
+        // Pokus o získání locku s retry logikou
+        while ($attempt < $max_attempts) {
+            $lock = get_transient($lock_key);
+            if ($lock === false) {
+                // Lock získán - nastavit ho na 1 sekundu
+                set_transient($lock_key, time(), 1);
+                break;
+            }
+            
+            // Lock je aktivní, počkat chvíli a zkusit znovu
+            $attempt++;
+            if ($attempt >= $max_attempts) {
+                // Po vyčerpání pokusů vrátit chybu
+                return new \WP_Error(
+                    'quota_locked',
+                    'Kvóta je právě kontrolována, zkuste to prosím znovu',
+                    array('status' => 429)
+                );
+            }
+            usleep(100000); // 100ms
         }
         
-        // Rezervovat kvótu
-        $this->record_google($count);
-        return true;
+        try {
+            // Atomická kontrola a rezervace
+            $status = $this->get_status();
+            $monthly_remaining = $status['google']['monthly']['remaining'] ?? 0;
+            $daily_remaining = $status['google']['daily']['remaining'];
+            $buffer = $status['buffer_abs'] ?? 0;
+            
+            // Kontrola měsíčního limitu
+            if ($monthly_remaining <= $buffer || ($monthly_remaining - $count) < $buffer) {
+                $this->log_quota_rejection('google', $count, $status);
+                return new \WP_Error(
+                    'quota_exceeded',
+                    'Google API kvóta byla vyčerpána',
+                    array(
+                        'status' => 429,
+                        'quota_status' => $status,
+                    )
+                );
+            }
+            
+            // Kontrola denního limitu (pokud je nastaven)
+            if ($daily_remaining !== null) {
+                if ($daily_remaining <= $buffer || ($daily_remaining - $count) < $buffer) {
+                    $this->log_quota_rejection('google', $count, $status);
+                    return new \WP_Error(
+                        'quota_exceeded',
+                        'Denní Google API kvóta byla vyčerpána',
+                        array(
+                            'status' => 429,
+                            'quota_status' => $status,
+                        )
+                    );
+                }
+            }
+            
+            // Rezervovat kvótu (atomická operace)
+            $this->record_google($count);
+            return true;
+        } finally {
+            // Vždy uvolnit lock
+            delete_transient($lock_key);
+        }
     }
 
     /**

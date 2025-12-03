@@ -426,14 +426,22 @@ class Icon_Admin {
                     $monthly_total = max(0, intval($_POST['google_monthly_total'] ?? 10000));
                     $daily_total = max(0, intval($_POST['google_daily_total'] ?? 0));
                     $buffer_abs = max(0, intval($_POST['buffer_abs'] ?? 300));
-                    $quota->set_totals($monthly_total, $daily_total, $buffer_abs);
-                    echo '<div class="notice notice-success"><p>Google kvóty byly uloženy.</p></div>';
-                    // Obnovit status
-                    $status = $quota->get_status();
-                    $monthly = $status['google']['monthly'];
-                    $daily = $status['google']['daily'];
-                    $buffer = $status['buffer_abs'];
-                    $can_use = $quota->can_use_google();
+                    
+                    // Validace: denní limit nemůže být větší než měsíční
+                    if ($daily_total > 0 && $daily_total > $monthly_total) {
+                        echo '<div class="notice notice-error"><p>Denní limit nemůže být větší než měsíční limit. Nastavení nebylo uloženo.</p></div>';
+                    } elseif ($buffer_abs >= $monthly_total) {
+                        echo '<div class="notice notice-error"><p>Bezpečnostní buffer nemůže být větší nebo roven měsíčnímu limitu. Nastavení nebylo uloženo.</p></div>';
+                    } else {
+                        $quota->set_totals($monthly_total, $daily_total, $buffer_abs);
+                        echo '<div class="notice notice-success"><p>Google kvóty byly uloženy.</p></div>';
+                        // Obnovit status
+                        $status = $quota->get_status();
+                        $monthly = $status['google']['monthly'];
+                        $daily = $status['google']['daily'];
+                        $buffer = $status['buffer_abs'];
+                        $can_use = $quota->can_use_google();
+                    }
                 }
             }
             ?>
