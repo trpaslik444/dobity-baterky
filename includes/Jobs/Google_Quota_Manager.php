@@ -154,7 +154,7 @@ class Google_Quota_Manager {
     /**
      * Nastaví použité hodnoty (pro reset/manuální nastavení)
      */
-    public function set_used(int $monthlyUsed, int $dailyUsed = null): void {
+    public function set_used(int $monthlyUsed, ?int $dailyUsed = null): void {
         $usage = $this->get_usage();
         $mk = $this->month_key();
         $dk = $this->day_key();
