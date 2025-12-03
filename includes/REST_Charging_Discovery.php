@@ -33,13 +33,24 @@ class REST_Charging_Discovery {
             register_rest_route('db/v1', '/charging-discovery/worker', [
                 'methods' => 'POST',
                 'callback' => [$this, 'handle_worker_run'],
-                'permission_callback' => '__return_true',
+                'permission_callback' => function ($request) {
+                    // Worker endpoint vyžaduje token, který je ověřen v handle_worker_run
+                    // Ale přidáme základní kontrolu, že request má token
+                    $token = $request->get_param('token') ?? '';
+                    return !empty($token);
+                },
             ]);
 
             register_rest_route('db/v1', '/charging-external/(?P<id>\d+)', [
                 'methods' => 'GET',
                 'callback' => [$this, 'handle_external_details'],
-                'permission_callback' => '__return_true', // Dočasně povolíme pro testování
+                'permission_callback' => function ($request) {
+                    // Kontrola nonce a přístupu
+                    if (!wp_verify_nonce($request->get_header('X-WP-Nonce'), 'wp_rest')) {
+                        return false;
+                    }
+                    return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+                },
             ]);
         });
     }

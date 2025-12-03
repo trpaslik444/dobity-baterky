@@ -551,38 +551,48 @@ class Charging_Discovery {
         }
 
         // Pro nové Places API v1 potřebujeme získat data o konektorech zvlášť
-        // POZNÁMKA: Toto volání NEPOUŽÍVÁ kvótu, protože už jsme ji použili pro Place Details
-        // Ale měli bychom to přesunout do Places_Enrichment_Service pro konzistenci
+        // POZNÁMKA: Toto volání potřebuje kvótu - rezervujeme ji
         $apiKey = (string) get_option('db_google_api_key');
-        if ($apiKey !== '') {
-            $url = "https://places.googleapis.com/v1/places/$placeId";
-            $fields = ['evChargeOptions'];
-            $url .= '?fields=' . implode(',', $fields) . '&key=' . $apiKey;
-            
-            $response = wp_remote_get($url, array(
-                'timeout' => 12,
-                'user-agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
-                'headers' => array(
-                    'Content-Type' => 'application/json',
-                ),
-            ));
-            
-            if (!is_wp_error($response)) {
-                $code = (int) wp_remote_retrieve_response_code($response);
-                if ($code >= 200 && $code < 300) {
-                    $evData = json_decode((string) wp_remote_retrieve_body($response), true);
-                    if (is_array($evData) && !empty($evData['evChargeOptions']['connectorAggregation'])) {
-                        foreach ($evData['evChargeOptions']['connectorAggregation'] as $connector) {
-                            $payload['connectors'][] = array(
-                                'type' => (string) ($connector['type'] ?? ''),
-                                'maxChargeRateKw' => isset($connector['maxChargeRateKw']) ? (int) $connector['maxChargeRateKw'] : null,
-                                'count' => isset($connector['count']) ? (int) $connector['count'] : null,
-                                'availableCount' => isset($connector['availableCount']) ? (int) $connector['availableCount'] : null,
-                                'outOfServiceCount' => isset($connector['outOfServiceCount']) ? (int) $connector['outOfServiceCount'] : null,
-                            );
-                        }
-                        $payload['connectorCount'] = isset($evData['evChargeOptions']['connectorCount']) ? (int) $evData['evChargeOptions']['connectorCount'] : null;
+        if ($apiKey === '') {
+            // Pokud není API klíč, vrátit data bez konektorů
+            return $payload;
+        }
+        
+        // Kontrola kvóty před voláním
+        $quota = new \DB\Jobs\Google_Quota_Manager();
+        $quota_check = $quota->reserve_quota(1);
+        if (is_wp_error($quota_check)) {
+            // Pokud došla kvóta, vrátit data bez konektorů
+            return $payload;
+        }
+        
+        $url = "https://places.googleapis.com/v1/places/$placeId";
+        $fields = ['evChargeOptions'];
+        $url .= '?fields=' . implode(',', $fields) . '&key=' . $apiKey;
+        
+        $response = wp_remote_get($url, array(
+            'timeout' => 12,
+            'user-agent' => 'DobityBaterky/charging-discovery (+https://dobitybaterky.cz)',
+            'headers' => array(
+                'Content-Type' => 'application/json',
+            ),
+        ));
+        
+        if (!is_wp_error($response)) {
+            $code = (int) wp_remote_retrieve_response_code($response);
+            if ($code >= 200 && $code < 300) {
+                $evData = json_decode((string) wp_remote_retrieve_body($response), true);
+                if (is_array($evData) && !empty($evData['evChargeOptions']['connectorAggregation'])) {
+                    foreach ($evData['evChargeOptions']['connectorAggregation'] as $connector) {
+                        $payload['connectors'][] = array(
+                            'type' => (string) ($connector['type'] ?? ''),
+                            'maxChargeRateKw' => isset($connector['maxChargeRateKw']) ? (int) $connector['maxChargeRateKw'] : null,
+                            'count' => isset($connector['count']) ? (int) $connector['count'] : null,
+                            'availableCount' => isset($connector['availableCount']) ? (int) $connector['availableCount'] : null,
+                            'outOfServiceCount' => isset($connector['outOfServiceCount']) ? (int) $connector['outOfServiceCount'] : null,
+                        );
                     }
+                    $payload['connectorCount'] = isset($evData['evChargeOptions']['connectorCount']) ? (int) $evData['evChargeOptions']['connectorCount'] : null;
                 }
             }
         }
