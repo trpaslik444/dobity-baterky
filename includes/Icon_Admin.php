@@ -365,6 +365,108 @@ class Icon_Admin {
                     </td>
                 </tr>
             </table>
+            
+            <?php
+            // Zobrazení stavu Google kvót
+            $quota = new \DB\Jobs\Google_Quota_Manager();
+            $status = $quota->get_status();
+            $monthly = $status['google']['monthly'];
+            $daily = $status['google']['daily'];
+            $buffer = $status['buffer_abs'];
+            $can_use = $quota->can_use_google();
+            ?>
+            <h3>Stav Google API kvót</h3>
+            <table class="form-table">
+                <tr>
+                    <th scope="row">Měsíční limit</th>
+                    <td>
+                        <strong><?php echo esc_html(number_format($monthly['used'], 0, ',', ' ')); ?></strong> / 
+                        <?php echo esc_html(number_format($monthly['total'], 0, ',', ' ')); ?> 
+                        (zbývá: <strong><?php echo esc_html(number_format($monthly['remaining'], 0, ',', ' ')); ?></strong>)
+                        <div style="width: 300px; background: #f0f0f0; height: 20px; margin-top: 5px; border-radius: 3px; overflow: hidden;">
+                            <div style="width: <?php echo esc_attr(min(100, ($monthly['used'] / max(1, $monthly['total'])) * 100)); ?>%; background: <?php echo $can_use ? '#46b450' : '#dc3232'; ?>; height: 100%;"></div>
+                        </div>
+                    </td>
+                </tr>
+                <?php if ($daily['total'] > 0): ?>
+                <tr>
+                    <th scope="row">Denní limit</th>
+                    <td>
+                        <strong><?php echo esc_html(number_format($daily['used'], 0, ',', ' ')); ?></strong> / 
+                        <?php echo esc_html(number_format($daily['total'], 0, ',', ' ')); ?> 
+                        (zbývá: <strong><?php echo esc_html(number_format($daily['remaining'], 0, ',', ' ')); ?></strong>)
+                        <div style="width: 300px; background: #f0f0f0; height: 20px; margin-top: 5px; border-radius: 3px; overflow: hidden;">
+                            <div style="width: <?php echo esc_attr(min(100, ($daily['used'] / max(1, $daily['total'])) * 100)); ?>%; background: <?php echo ($daily['remaining'] > $buffer) ? '#46b450' : '#dc3232'; ?>; height: 100%;"></div>
+                        </div>
+                    </td>
+                </tr>
+                <?php else: ?>
+                <tr>
+                    <th scope="row">Denní limit</th>
+                    <td>Nenastaven (bez limitu)</td>
+                </tr>
+                <?php endif; ?>
+                <tr>
+                    <th scope="row">Bezpečnostní buffer</th>
+                    <td><?php echo esc_html(number_format($buffer, 0, ',', ' ')); ?> volání</td>
+                </tr>
+                <tr>
+                    <th scope="row">Stav</th>
+                    <td>
+                        <strong style="color: <?php echo $can_use ? '#46b450' : '#dc3232'; ?>;">
+                            <?php echo $can_use ? '✓ Dostupné' : '✗ Vyčerpáno'; ?>
+                        </strong>
+                    </td>
+                </tr>
+            </table>
+            <?php
+            // Formulář pro úpravu kvót
+            if (isset($_POST['save_google_quota_settings'])) {
+                if (wp_verify_nonce($_POST['quota_nonce'], 'save_quota_settings')) {
+                    $monthly_total = max(0, intval($_POST['google_monthly_total'] ?? 10000));
+                    $daily_total = max(0, intval($_POST['google_daily_total'] ?? 0));
+                    $buffer_abs = max(0, intval($_POST['buffer_abs'] ?? 300));
+                    $quota->set_totals($monthly_total, $daily_total, $buffer_abs);
+                    echo '<div class="notice notice-success"><p>Google kvóty byly uloženy.</p></div>';
+                    // Obnovit status
+                    $status = $quota->get_status();
+                    $monthly = $status['google']['monthly'];
+                    $daily = $status['google']['daily'];
+                    $buffer = $status['buffer_abs'];
+                    $can_use = $quota->can_use_google();
+                }
+            }
+            ?>
+            <h3>Nastavení kvót</h3>
+            <form method="post" action="">
+                <?php wp_nonce_field('save_quota_settings', 'quota_nonce'); ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row"><label for="google_monthly_total">Měsíční limit</label></th>
+                        <td>
+                            <input type="number" id="google_monthly_total" name="google_monthly_total" value="<?php echo esc_attr($monthly['total']); ?>" min="0" step="1" class="small-text" />
+                            <p class="description">Celkový měsíční limit Google Places API volání</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="google_daily_total">Denní limit</label></th>
+                        <td>
+                            <input type="number" id="google_daily_total" name="google_daily_total" value="<?php echo esc_attr($daily['total']); ?>" min="0" step="1" class="small-text" />
+                            <p class="description">Denní limit (0 = bez limitu). Volitelné.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><label for="buffer_abs">Bezpečnostní buffer</label></th>
+                        <td>
+                            <input type="number" id="buffer_abs" name="buffer_abs" value="<?php echo esc_attr($buffer); ?>" min="0" step="1" class="small-text" />
+                            <p class="description">Počet volání ponechaných v záloze</p>
+                        </td>
+                    </tr>
+                </table>
+                <p>
+                    <input type="submit" name="save_google_quota_settings" class="button-primary" value="Uložit kvóty" />
+                </p>
+            </form>
         </div>
 
         <div class="card">

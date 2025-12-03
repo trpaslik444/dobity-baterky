@@ -8,10 +8,12 @@ class POI_Discovery_Batch_Processor {
 
 	private $queue;
 	private $quota;
+	private $google_quota;
 
 	public function __construct() {
 		$this->queue = new POI_Discovery_Queue_Manager();
 		$this->quota = new POI_Quota_Manager();
+		$this->google_quota = new Google_Quota_Manager();
 	}
 
 	/**
@@ -25,7 +27,8 @@ class POI_Discovery_Batch_Processor {
 			$id = (int)$row->id; $poi_id = (int)$row->poi_id;
 			$this->queue->mark_processing($id);
 			try {
-			$useGoogle = $this->quota->can_use_google();
+			// Použít centralizovaný Google_Quota_Manager pro Google
+			$useGoogle = $this->google_quota->can_use_google();
 			$useTA = $this->quota->can_use_tripadvisor();
 			
 			// If both quotas are exhausted, skip this item without consuming attempts
@@ -46,7 +49,8 @@ class POI_Discovery_Batch_Processor {
 			$withTA = $useTA; // Only use Tripadvisor when quota allows
 			$res = $svc->discoverForPoi($poi_id, false, $withTA, $useGoogle);
                 // Record quota usage for all API calls, not just successful matches
-                if ($useGoogle) { $this->quota->record_google(1); $usedG++; }
+                // POI_Discovery už rezervuje kvótu interně, ale zaznamenáme to zde pro statistiky
+                if ($useGoogle) { $usedG++; }
                 if ($withTA) { $this->quota->record_tripadvisor(1); $usedTA++; }
 
 				$matched = $res['google_place_id'] ?? ($res['tripadvisor_location_id'] ?? null);

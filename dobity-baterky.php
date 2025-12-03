@@ -610,8 +610,7 @@ add_action('wp_enqueue_scripts', function() {
         'ajaxUrl' => admin_url('admin-ajax.php'),
         'adminNonce' => wp_create_nonce('db_admin_actions'),
         'adminUrl' => admin_url(),
-        // Google Places Photos API vyžaduje klíč i na frontendu (URL redirect). Klíč by měl být omezen refererem.
-        'googleApiKey' => get_option('db_google_api_key') ?: '',
+        // Google API klíč se už neposílá na frontend - používá se pouze backend proxy s kvótou
         'chargerColors' => array(
             'ac' => get_option('db_charger_ac_color', '#049FE8'),
             'dc' => get_option('db_charger_dc_color', '#FFACC4'),

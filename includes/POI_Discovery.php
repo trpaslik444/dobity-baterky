@@ -134,6 +134,13 @@ class POI_Discovery {
 		if ($apiKey === '') {
 			return null;
 		}
+		
+		// Kontrola kvóty před voláním
+		$quota = new \DB\Jobs\Google_Quota_Manager();
+		$quota_check = $quota->reserve_quota(1);
+		if (is_wp_error($quota_check)) {
+			return null;
+		}
 
 		$queryArgs = [
 			'query' => $title,
@@ -197,6 +204,14 @@ class POI_Discovery {
         if ($apiKey === '' || $placeId === '') {
             return null;
         }
+        
+        // Kontrola kvóty před voláním
+        $quota = new \DB\Jobs\Google_Quota_Manager();
+        $quota_check = $quota->reserve_quota(1);
+        if (is_wp_error($quota_check)) {
+            return null;
+        }
+        
         $url = add_query_arg(array(
             'place_id' => $placeId,
             'fields'   => 'geometry',

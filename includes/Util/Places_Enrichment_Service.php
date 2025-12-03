@@ -82,7 +82,9 @@ class Places_Enrichment_Service {
             return $this->inFlight[$key];
         }
 
-        $quotaCheck = $this->reserve_quota($endpoint);
+        // Použít centralizovaný Google_Quota_Manager
+        $google_quota = new \DB\Jobs\Google_Quota_Manager();
+        $quotaCheck = $google_quota->reserve_quota(1);
         if (is_wp_error($quotaCheck)) {
             $this->log_usage($placeId, $endpoint, 'quota_blocked');
             return array(
@@ -198,7 +200,9 @@ class Places_Enrichment_Service {
             );
         }
 
-        $quotaCheck = $this->reserve_quota($endpoint);
+        // Použít centralizovaný Google_Quota_Manager
+        $google_quota = new \DB\Jobs\Google_Quota_Manager();
+        $quotaCheck = $google_quota->reserve_quota(1);
         if (is_wp_error($quotaCheck)) {
             $this->log_usage($query, $endpoint, 'quota_blocked');
             return array(
@@ -247,7 +251,9 @@ class Places_Enrichment_Service {
             );
         }
 
-        $quotaCheck = $this->reserve_quota($endpoint);
+        // Použít centralizovaný Google_Quota_Manager
+        $google_quota = new \DB\Jobs\Google_Quota_Manager();
+        $quotaCheck = $google_quota->reserve_quota(1);
         if (is_wp_error($quotaCheck)) {
             $this->log_usage("nearby:{$lat},{$lng}", $endpoint, 'quota_blocked');
             return array(

@@ -23,7 +23,12 @@ class REST_POI_Discovery {
 			register_rest_route('db/v1', '/poi-discovery/worker', [
 				'methods' => 'POST',
 				'callback' => [$this, 'handle_worker_run'],
-				'permission_callback' => '__return_true',
+				'permission_callback' => function ($request) {
+					// Worker endpoint vyžaduje token, který je ověřen v handle_worker_run
+					// Ale přidáme základní kontrolu, že request má token
+					$token = $request->get_param('token') ?? '';
+					return !empty($token);
+				},
 			]);
 		});
 	}

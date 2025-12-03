@@ -1593,10 +1593,18 @@ class REST_Map {
         if (!$lat || !$lng) {
             return new \WP_Error('missing_coords', 'Chybí souřadnice', array('status' => 400));
         }
-        $api_key = get_option('db_google_api_key'); // Uložte API klíč v WordPress options
+        $api_key = get_option('db_google_api_key');
         if (!$api_key) {
-            return new \WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 500));
+            return new \WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 503));
         }
+        
+        // Kontrola kvóty
+        $quota = new \DB\Jobs\Google_Quota_Manager();
+        $quota_check = $quota->reserve_quota(1);
+        if (is_wp_error($quota_check)) {
+            return $quota_check;
+        }
+        
         $url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json?location={$lat},{$lng}&radius={$radius}&key={$api_key}&language=cs";
         $response = wp_remote_get($url);
         if (is_wp_error($response)) {
@@ -1624,13 +1632,23 @@ class REST_Map {
         
         $api_key = get_option('db_google_api_key');
         if (!$api_key) {
-            return new \WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 500));
+            return new \WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 503));
         }
         
+        // Kontrola kvóty
+        $quota = new \DB\Jobs\Google_Quota_Manager();
         $places = array();
+        $quota_used = 0;
         
         // Pokud máme GPS souřadnice, použijeme Nearby Search
         if ($lat && $lng) {
+            // Rezervovat kvótu před voláním
+            $quota_check = $quota->reserve_quota(1);
+            if (is_wp_error($quota_check)) {
+                return $quota_check;
+            }
+            $quota_used++;
+            
             $nearby_url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
             $nearby_args = array(
                 'location' => $lat . ',' . $lng,
@@ -1703,6 +1721,14 @@ class REST_Map {
         
         // Pro každou variantu zkusíme Text Search
         foreach ($search_variants as $variant) {
+            // Rezervovat kvótu před každým voláním
+            $quota_check = $quota->reserve_quota(1);
+            if (is_wp_error($quota_check)) {
+                // Pokud došla kvóta, vrátit co máme
+                break;
+            }
+            $quota_used++;
+            
             $text_url = 'https://maps.googleapis.com/maps/api/place/textsearch/json';
             $text_args = array(
                 'query' => $variant,
@@ -1770,7 +1796,14 @@ class REST_Map {
         
         $api_key = get_option('db_google_api_key');
         if (!$api_key) {
-            return new \WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 500));
+            return new \WP_Error('no_api_key', 'Google API klíč není nastaven', array('status' => 503));
+        }
+        
+        // Kontrola kvóty
+        $quota = new \DB\Jobs\Google_Quota_Manager();
+        $quota_check = $quota->reserve_quota(1);
+        if (is_wp_error($quota_check)) {
+            return $quota_check;
         }
         
         // Použijeme starší verzi Google Places API (Nearby Search)
@@ -2269,24 +2302,29 @@ class REST_Map {
         if (empty($services)) {
             $google_id = $this->get_google_place_id($post_id);
             $ta_id = $this->get_tripadvisor_location_id($post_id);
-            $quota = new \DB\Jobs\POI_Quota_Manager();
+            // Použít centralizovaný Google_Quota_Manager
+            $quota = new \DB\Jobs\Google_Quota_Manager();
             $errors['on_demand'] = array();
             // Try Google discovery first if quota allows and no existing ID
             if (!$google_id && $quota->can_use_google()) {
-                // Reuse POI_Discovery service to find IDs
-                if (class_exists('DB\POI_Discovery')) {
-                    $svc = new \DB\POI_Discovery();
-                    $res = $svc->discoverForPoi($post_id, true, false, true);
-                    $quota->record_google(1); // Record quota usage for all API calls
-                    if (!empty($res['google_place_id'])) { $google_id = $res['google_place_id']; }
+                // Rezervovat kvótu před voláním
+                $quota_check = $quota->reserve_quota(1);
+                if (!is_wp_error($quota_check)) {
+                    // Reuse POI_Discovery service to find IDs
+                    if (class_exists('DB\POI_Discovery')) {
+                        $svc = new \DB\POI_Discovery();
+                        $res = $svc->discoverForPoi($post_id, true, false, true);
+                        if (!empty($res['google_place_id'])) { $google_id = $res['google_place_id']; }
+                    }
                 }
             }
             // Try Tripadvisor if still missing and quota allows
-            if (!$ta_id && $quota->can_use_tripadvisor()) {
+            $poi_quota = new \DB\Jobs\POI_Quota_Manager();
+            if (!$ta_id && $poi_quota->can_use_tripadvisor()) {
                 if (class_exists('DB\POI_Discovery')) {
                     $svc = new \DB\POI_Discovery();
                     $res = $svc->discoverForPoi($post_id, true, true, false);
-                    $quota->record_tripadvisor(1); // Record quota usage for all API calls
+                    $poi_quota->record_tripadvisor(1); // Record quota usage for all API calls
                     if (!empty($res['tripadvisor_location_id'])) { $ta_id = $res['tripadvisor_location_id']; }
                 }
             }
@@ -2298,13 +2336,13 @@ class REST_Map {
                 $status = $quota->get_status();
                 // Try to prepare review candidates
                 $candidates = array();
-                if ($quota->can_use_google()) { 
-                    $candidates = array_merge($candidates, $this->find_google_candidates_for_post($post_id)); 
-                    $quota->record_google(1); // Record quota usage for candidate search
+                if ($quota->can_use_google()) {
+                    // find_google_candidates_for_post už rezervuje kvótu interně
+                    $candidates = array_merge($candidates, $this->find_google_candidates_for_post($post_id));
                 }
-                if ($quota->can_use_tripadvisor()) { 
+                if ($poi_quota->can_use_tripadvisor()) { 
                     $candidates = array_merge($candidates, $this->find_tripadvisor_candidates_for_post($post_id)); 
-                    $quota->record_tripadvisor(1); // Record quota usage for candidate search
+                    $poi_quota->record_tripadvisor(1); // Record quota usage for candidate search
                 }
                 if (!empty($candidates)) {
                     update_post_meta($post_id, '_poi_review_candidates', wp_json_encode($candidates));
@@ -2434,6 +2472,14 @@ class REST_Map {
         if (!$api_key) return array();
         $post = get_post($post_id);
         if (!$post) return array();
+        
+        // Kontrola kvóty
+        $quota = new \DB\Jobs\Google_Quota_Manager();
+        $quota_check = $quota->reserve_quota(1);
+        if (is_wp_error($quota_check)) {
+            return array();
+        }
+        
         $title = trim((string)$post->post_title);
         $lat = (float) get_post_meta($post_id, '_poi_lat', true);
         $lng = (float) get_post_meta($post_id, '_poi_lng', true);
@@ -2556,6 +2602,16 @@ class REST_Map {
             wp_send_json_error('Google API klíč není nastaven');
         }
         
+        // Kontrola kvóty
+        $quota = new \DB\Jobs\Google_Quota_Manager();
+        $quota_check = $quota->reserve_quota(1);
+        if (is_wp_error($quota_check)) {
+            wp_send_json_error(array(
+                'message' => $quota_check->get_error_message(),
+                'quota_status' => $quota_check->get_error_data('quota_status'),
+            ));
+        }
+        
         // Nearby Search (New API) - POST request
         $url = 'https://places.googleapis.com/v1/places:searchNearby';
         $body = array(
@@ -2613,6 +2669,16 @@ class REST_Map {
         $api_key = get_option('db_google_api_key');
         if (!$api_key) {
             wp_send_json_error('Google API klíč není nastaven');
+        }
+        
+        // Kontrola kvóty
+        $quota = new \DB\Jobs\Google_Quota_Manager();
+        $quota_check = $quota->reserve_quota(1);
+        if (is_wp_error($quota_check)) {
+            wp_send_json_error(array(
+                'message' => $quota_check->get_error_message(),
+                'quota_status' => $quota_check->get_error_data('quota_status'),
+            ));
         }
         
         // Place Details (New API) - GET request
