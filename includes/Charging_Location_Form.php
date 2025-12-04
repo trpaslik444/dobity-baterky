@@ -43,6 +43,7 @@ class Charging_Location_Form {
         // Meta boxy se přidávají s vysokou prioritou, aby se přidaly po registraci post type
         add_action('add_meta_boxes', array($this, 'add_meta_boxes'), 999);
         add_action('save_post', array($this, 'save_meta_boxes'));
+        add_action('save_post_charging_location', array($this, 'enqueue_nearby_on_save'), 10, 2);
         
         // AJAX handlery se registrují v admin_init hooku
         add_action('admin_init', array($this, 'register_ajax_handlers'));
@@ -4061,5 +4062,36 @@ class Charging_Location_Form {
         });
         </script>
         <?php
+    }
+    
+    /**
+     * Zařadí charging_location do nearby fronty při uložení
+     * 
+     * @param int $post_id ID charging_location postu
+     * @param WP_Post $post Post objekt
+     */
+    public function enqueue_nearby_on_save($post_id, $post) {
+        // Přeskočit autosave a revisions
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
+            return;
+        }
+        if (wp_is_post_revision($post_id)) {
+            return;
+        }
+        
+        // Pouze pro publikované charging_location
+        if ($post->post_status !== 'publish') {
+            return;
+        }
+        
+        try {
+            if (file_exists(__DIR__ . '/Jobs/POI_Nearby_Queue_Manager.php')) {
+                require_once __DIR__ . '/Jobs/POI_Nearby_Queue_Manager.php';
+                $queue_manager = new \DB\Jobs\POI_Nearby_Queue_Manager();
+                $queue_manager->enqueue((int) $post_id, 'charging_location');
+            }
+        } catch (\Throwable $e) {
+            error_log('[Charging Nearby Queue] Chyba při zařazování do fronty: ' . $e->getMessage());
+        }
     }
 } 
