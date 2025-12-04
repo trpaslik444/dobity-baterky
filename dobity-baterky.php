@@ -1013,6 +1013,13 @@ if (is_admin()) {
                 new DB\Admin\Nearby_Queue_Admin();
             }
         }
+        
+        if ( file_exists( __DIR__ . '/includes/Admin/POI_Nearby_Queue_Admin.php' ) ) {
+            require_once __DIR__ . '/includes/Admin/POI_Nearby_Queue_Admin.php';
+            if ( class_exists( 'DB\Admin\POI_Nearby_Queue_Admin' ) ) {
+                new DB\Admin\POI_Nearby_Queue_Admin();
+            }
+        }
 
         // POI Discovery Admin (submenu pod POI)
         if ( file_exists( __DIR__ . '/includes/Admin/POI_Discovery_Admin.php' ) ) {
@@ -1104,6 +1111,14 @@ if ( file_exists( __DIR__ . '/includes/Jobs/Nearby_Recompute_Job.php' ) ) {
     }
 }
 
+// POI Nearby Cron - automatické zpracování fronty
+if ( file_exists( __DIR__ . '/includes/Jobs/POI_Nearby_Cron.php' ) ) {
+    require_once __DIR__ . '/includes/Jobs/POI_Nearby_Cron.php';
+    if ( class_exists( 'DB\Jobs\POI_Nearby_Cron' ) ) {
+        new DB\Jobs\POI_Nearby_Cron();
+    }
+}
+
 // Dočasná oprava termu "kavárna" - ZAKÁZÁNO kvůli "headers already sent" erroru
 // if ( file_exists( __DIR__ . '/fix_kavarna.php' ) ) {
 //     require_once __DIR__ . '/fix_kavarna.php';
@@ -1141,6 +1156,12 @@ if (defined('WP_CLI') && WP_CLI) {
         require_once __DIR__ . '/includes/CLI/Charging_Discovery_Command.php';
         if ( class_exists( 'DB\\CLI\\Charging_Discovery_Command' ) ) {
             \WP_CLI::add_command('db-charging', 'DB\\CLI\\Charging_Discovery_Command');
+        }
+    }
+    if ( file_exists( __DIR__ . '/includes/CLI/Nearby_Queue_Command.php' ) ) {
+        require_once __DIR__ . '/includes/CLI/Nearby_Queue_Command.php';
+        if ( class_exists( 'DB\\CLI\\Nearby_Queue_Command' ) ) {
+            \WP_CLI::add_command('db-nearby', 'DB\\CLI\\Nearby_Queue_Command');
         }
     }
 }

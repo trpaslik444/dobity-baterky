@@ -29,12 +29,30 @@ class Activation {
         self::create_nearby_queue_table();
         // Vytvoření tabulky pro POI discovery queue
         self::create_poi_discovery_queue_table();
+        // Vytvoření tabulky pro POI nearby queue
+        self::create_poi_nearby_queue_table();
 
         // Vytvoření tabulky pro sledování denní kvóty Places API
         self::create_places_usage_table();
         
         // Vypnout automatické zpracování při aktivaci
         update_option('db_nearby_auto_enabled', false);
+        
+        // Naplánovat POI nearby cron
+        self::schedule_poi_nearby_cron();
+    }
+    
+    /**
+     * Naplánuje POI nearby cron event
+     */
+    private static function schedule_poi_nearby_cron() {
+        if (file_exists(__DIR__ . '/Jobs/POI_Nearby_Cron.php')) {
+            require_once __DIR__ . '/Jobs/POI_Nearby_Cron.php';
+            if (class_exists('DB\Jobs\POI_Nearby_Cron')) {
+                $cron = new \DB\Jobs\POI_Nearby_Cron();
+                $cron->schedule_cron();
+            }
+        }
     }
 
     /**
@@ -43,6 +61,22 @@ class Activation {
     public static function deactivate() {
         // Flush rewrite rules
         flush_rewrite_rules();
+        
+        // Zrušit POI nearby cron
+        self::unschedule_poi_nearby_cron();
+    }
+    
+    /**
+     * Zruší POI nearby cron event
+     */
+    private static function unschedule_poi_nearby_cron() {
+        if (file_exists(__DIR__ . '/Jobs/POI_Nearby_Cron.php')) {
+            require_once __DIR__ . '/Jobs/POI_Nearby_Cron.php';
+            if (class_exists('DB\Jobs\POI_Nearby_Cron')) {
+                $cron = new \DB\Jobs\POI_Nearby_Cron();
+                $cron->unschedule_cron();
+            }
+        }
     }
 
     /**
@@ -108,6 +142,13 @@ class Activation {
         if ( $exists_usage !== $usage_table ) {
             self::create_places_usage_table();
         }
+        
+        // Zajistit existenci tabulky pro POI nearby queue
+        $poi_queue_table = $wpdb->prefix . 'db_nearby_queue';
+        $exists_poi_queue = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $poi_queue_table ) );
+        if ( $exists_poi_queue !== $poi_queue_table ) {
+            self::create_poi_nearby_queue_table();
+        }
     }
     
     /**
@@ -118,6 +159,19 @@ class Activation {
             require_once __DIR__ . '/Jobs/Nearby_Queue_Manager.php';
             if (class_exists('DB\Jobs\Nearby_Queue_Manager')) {
                 $queue_manager = new \DB\Jobs\Nearby_Queue_Manager();
+                $queue_manager->create_table();
+            }
+        }
+    }
+    
+    /**
+     * Vytvoří DB tabulku pro POI nearby queue
+     */
+    private static function create_poi_nearby_queue_table() {
+        if (file_exists(__DIR__ . '/Jobs/POI_Nearby_Queue_Manager.php')) {
+            require_once __DIR__ . '/Jobs/POI_Nearby_Queue_Manager.php';
+            if (class_exists('DB\Jobs\POI_Nearby_Queue_Manager')) {
+                $queue_manager = new \DB\Jobs\POI_Nearby_Queue_Manager();
                 $queue_manager->create_table();
             }
         }

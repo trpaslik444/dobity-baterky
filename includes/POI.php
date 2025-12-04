@@ -31,6 +31,8 @@ class POI {
         add_action( 'init', array( $this, 'register_taxonomy' ) );
         // Po publikaci POI -> zařadit do discovery fronty
         add_action( 'publish_poi', array( $this, 'enqueue_discovery_on_publish' ), 10, 1 );
+        // Po uložení POI -> zařadit do nearby fronty
+        add_action( 'save_post_poi', array( $this, 'enqueue_nearby_on_save' ), 10, 2 );
         // Sloupec a meta pro "DB doporučuje"
         add_filter( 'manage_poi_posts_columns', array( $this, 'add_recommended_column' ) );
         add_action( 'manage_poi_posts_custom_column', array( $this, 'render_recommended_column' ), 10, 2 );
@@ -50,6 +52,37 @@ class POI {
                 }
             }
         } catch ( \Throwable $__ ) {}
+    }
+    
+    /**
+     * Zařadí POI do nearby fronty při uložení
+     * 
+     * @param int $post_id ID POI postu
+     * @param WP_Post $post Post objekt
+     */
+    public function enqueue_nearby_on_save( $post_id, $post ) {
+        // Přeskočit autosave a revisions
+        if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+            return;
+        }
+        if ( wp_is_post_revision( $post_id ) ) {
+            return;
+        }
+        
+        // Pouze pro publikované POI
+        if ( $post->post_status !== 'publish' ) {
+            return;
+        }
+        
+        try {
+            if ( file_exists( __DIR__ . '/Jobs/POI_Nearby_Queue_Manager.php' ) ) {
+                require_once __DIR__ . '/Jobs/POI_Nearby_Queue_Manager.php';
+                $queue_manager = new \DB\Jobs\POI_Nearby_Queue_Manager();
+                $queue_manager->enqueue( (int) $post_id, 'poi' );
+            }
+        } catch ( \Throwable $e ) {
+            error_log( '[POI Nearby Queue] Chyba při zařazování do fronty: ' . $e->getMessage() );
+        }
     }
 
     /**
