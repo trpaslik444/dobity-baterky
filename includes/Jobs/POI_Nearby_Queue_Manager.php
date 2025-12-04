@@ -104,13 +104,15 @@ class POI_Nearby_Queue_Manager {
         
         // Zkontrolovat, zda už existuje záznam pro tento post_id
         $existing = $wpdb->get_row($wpdb->prepare(
-            "SELECT id, status FROM {$table_name} WHERE post_id = %d LIMIT 1",
+            "SELECT id, status, attempts, origin_type FROM {$table_name} WHERE post_id = %d LIMIT 1",
             $post_id
         ), ARRAY_A);
         
         if ($existing) {
             $existing_status = $existing['status'];
             $existing_id = (int) $existing['id'];
+            $existing_attempts = (int) ($existing['attempts'] ?? 0);
+            $existing_origin_type = isset($existing['origin_type']) ? $existing['origin_type'] : 'poi';
             
             // Pokud je pending nebo processing → vrať id, nic nevkládej
             if (in_array($existing_status, array('pending', 'processing'), true)) {
@@ -124,7 +126,7 @@ class POI_Nearby_Queue_Manager {
                     array(
                         'status' => 'pending',
                         'last_error' => null,
-                        'attempts' => $existing['attempts'] + 1,
+                        'attempts' => $existing_attempts + 1,
                         'origin_type' => $origin_type,
                         'dts' => current_time('mysql')
                     ),
@@ -163,7 +165,19 @@ class POI_Nearby_Queue_Manager {
                         }
                     }
                 }
-                // Cache není stale → přeskočit
+                // Cache není stale → aktualizovat origin_type pokud se změnil, pak přeskočit
+                if ($existing_origin_type !== $origin_type) {
+                    $wpdb->update(
+                        $table_name,
+                        array(
+                            'origin_type' => $origin_type,
+                            'dts' => current_time('mysql')
+                        ),
+                        array('id' => $existing_id),
+                        array('%s', '%s'),
+                        array('%d')
+                    );
+                }
                 return false;
             }
         }
@@ -308,12 +322,18 @@ class POI_Nearby_Queue_Manager {
         global $wpdb;
         $table_name = $wpdb->prefix . 'db_nearby_queue';
         
+        // Získat aktuální attempts před update
+        $current_attempts = (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT attempts FROM {$table_name} WHERE id = %d",
+            $id
+        ));
+        
         return $wpdb->update(
             $table_name,
             array(
                 'status' => 'failed',
                 'last_error' => $error,
-                'attempts' => $wpdb->get_var($wpdb->prepare("SELECT attempts FROM {$table_name} WHERE id = %d", $id)) + 1,
+                'attempts' => $current_attempts + 1,
                 'dts' => current_time('mysql')
             ),
             array('id' => $id),
