@@ -188,15 +188,6 @@ class POI_Nearby_Cron {
     }
     
     /**
-     * Získá počet zpracovaných záznamů za poslední hodinu
-     */
-    private function get_processed_last_hour(): int {
-        $queue_manager = new POI_Nearby_Queue_Manager();
-        $stats = $queue_manager->get_stats();
-        return $stats['processed_last_hour'];
-    }
-    
-    /**
      * Aktualizuje progress option
      */
     private function update_progress(int $processed_ok, int $processed_failed, int $last_id, int $limit_per_hour, int $processed_last_hour): void {
@@ -215,42 +206,6 @@ class POI_Nearby_Cron {
             'last_limit_reached' => false,
             'limit_per_hour' => $limit_per_hour,
             'processed_last_hour' => $processed_last_hour,
-        );
-        
-        update_option('db_nearby_progress', $progress, false);
-    }
-    
-    /**
-     * Získá počet zpracovaných záznamů za poslední hodinu
-     */
-    private function get_processed_last_hour(): int {
-        global $wpdb;
-        $table_name = $wpdb->prefix . 'db_nearby_queue';
-        
-        return (int) $wpdb->get_var(
-            "SELECT COUNT(*) FROM {$table_name} 
-             WHERE status = 'done' 
-             AND done_at >= DATE_SUB(NOW(), INTERVAL 1 HOUR)"
-        );
-    }
-    
-    /**
-     * Aktualizuje progress option
-     */
-    private function update_progress(int $processed_ok, int $processed_failed, int $last_id): void {
-        $queue_manager = new POI_Nearby_Queue_Manager();
-        $stats = $queue_manager->get_stats();
-        
-        $progress = array(
-            'pending' => $stats['pending'],
-            'processing' => $stats['processing'],
-            'done_today' => $stats['done_today'],
-            'failed' => $stats['failed'],
-            'processed_ok' => $processed_ok,
-            'processed_failed' => $processed_failed,
-            'last_run' => current_time('mysql'),
-            'last_id' => $last_id,
-            'last_limit_reached' => false,
         );
         
         update_option('db_nearby_progress', $progress, false);
