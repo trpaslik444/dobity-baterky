@@ -3020,14 +3020,17 @@ document.addEventListener('DOMContentLoaded', async function() {
       const geo = await res.json();
       
       const incoming = Array.isArray(geo?.features) ? geo.features : [];
-      
+
       // Sloučit do cache
       for (let i = 0; i < incoming.length; i++) {
         const f = incoming[i];
         const id = f?.properties?.id;
         if (id != null) featureCache.set(id, f);
       }
-      
+
+      // Načíst všechny unikátní ikony paralelně před renderováním
+      await preloadIconsFromFeatures(incoming);
+
       // Nastavit lastSearchCenter a lastSearchRadiusKm PŘED nastavením features
       // aby checkIfOutsideLoadedArea fungoval správně
       lastSearchCenter = { lat: center.lat, lng: center.lng };
@@ -10460,7 +10463,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
               ${(() => {
-                // Použít cached SVG podle icon_slug (ikony se načítají paralelně před renderováním)
+                // PRIORITA 1: svg_content z properties (pokud je - fallback pokud není icon_slug)
+                if (p.svg_content && p.svg_content.trim() !== '') {
+                  return p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content;
+                }
+                
+                // PRIORITA 2: icon_slug z properties nebo featureCache (pro cache optimalizaci)
                 const iconSlug = p.icon_slug || (typeof featureCache !== 'undefined' ? featureCache.get(p.id)?.properties?.icon_slug : null);
                 
                 if (iconSlug && iconSlug.trim() !== '') {
@@ -10471,6 +10479,19 @@ document.addEventListener('DOMContentLoaded', async function() {
                   // Pokud ještě není v cache, použít fallback na obrázek (ikona se možná ještě načítá)
                   const iconUrl = getIconUrl(iconSlug);
                   return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="">` : '';
+                }
+                
+                // PRIORITA 3: svg_content z featureCache (jako nearby items - pro konzistenci)
+                const cachedFeature = typeof featureCache !== 'undefined' ? featureCache.get(p.id) : null;
+                if (cachedFeature && cachedFeature.properties) {
+                  const cachedProps = cachedFeature.properties;
+                  if (cachedProps.svg_content && cachedProps.svg_content.trim() !== '') {
+                    return p.post_type === 'charging_location' ? recolorChargerIcon(cachedProps.svg_content, p) : cachedProps.svg_content;
+                  }
+                  if (cachedProps.icon_slug && cachedProps.icon_slug.trim() !== '') {
+                    const iconUrl = getIconUrl(cachedProps.icon_slug);
+                    return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="">` : '';
+                  }
                 }
                 
                 // Fallback podle typu
@@ -13775,6 +13796,3 @@ document.addEventListener('DOMContentLoaded', async function() {
   });
   
 }); // Konec DOMContentLoaded handleru
-
-// Zrušeno: intervalové připínání listenerů není potřeba
-// Zrušeno: intervalové připínání listenerů není potřeba
