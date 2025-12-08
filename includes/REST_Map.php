@@ -3753,14 +3753,15 @@ class REST_Map {
         // Použít stejnou logiku jako v handle_map pro minimal payload
         $icon_registry = \DB\Icon_Registry::get_instance();
         $icon_data = $icon_registry->get_icon($post);
+        $icon_data = is_array($icon_data) ? $icon_data : array();
         
         $properties = [
             'id' => $post->ID,
             'post_type' => $post_type,
             'title' => get_the_title($post),
-            'icon_slug' => $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true),
-            'icon_color' => $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true),
-            'svg_content' => $icon_data['svg_content'] ?? '',
+            'icon_slug' => (!empty($icon_data['slug']) ? $icon_data['slug'] : get_post_meta($post->ID, '_icon_slug', true)),
+            'icon_color' => (!empty($icon_data['color']) ? $icon_data['color'] : get_post_meta($post->ID, '_icon_color', true)),
+            'svg_content' => (!empty($icon_data['svg_content']) ? $icon_data['svg_content'] : ''),
             'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
         ];
         
