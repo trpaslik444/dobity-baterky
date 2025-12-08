@@ -3738,13 +3738,17 @@ class REST_Map {
         // Vymazat všechny special cache klíče
         global $wpdb;
         $pattern = 'db_map_special_%';
+        $transient_pattern = '_transient_' . $pattern;
+        $timeout_pattern = '_transient_timeout_' . $pattern;
+        
+        // Použít esc_sql pro bezpečné escapování LIKE patternu
         $wpdb->query($wpdb->prepare(
             "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
-            '_transient_' . $pattern
+            $wpdb->esc_like($transient_pattern) . '%'
         ));
         $wpdb->query($wpdb->prepare(
             "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
-            '_transient_timeout_' . $pattern
+            $wpdb->esc_like($timeout_pattern) . '%'
         ));
     }
 
