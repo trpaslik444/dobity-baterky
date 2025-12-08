@@ -270,9 +270,11 @@ class REST_Map {
         $center = $request->get_param('center');
         
         // 1. Zkusit oddělené parametry lat/lng (preferované)
-        if (isset($request['lat']) && isset($request['lng'])) {
-            $lat = floatval($request['lat']);
-            $lng = floatval($request['lng']);
+        $lat_param = $request->get_param('lat');
+        $lng_param = $request->get_param('lng');
+        if ($lat_param !== null && $lng_param !== null) {
+            $lat = floatval($lat_param);
+            $lng = floatval($lng_param);
         }
         // 2. Fallback na center="lat,lng" (pro kompatibilitu)
         elseif (is_string($center) && strpos($center, ',') !== false) {
