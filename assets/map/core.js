@@ -2717,9 +2717,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     fullUrlObj.searchParams.set('limit', String(FULL_LIMIT));
     const fullUrlFinal = fullUrlObj.toString();
 
-    let quickCompleted = false;
-    let fullCompleted = false;
-
     // Mini-fetch: renderovat okamžitě po dokončení
     const quickPromise = (async () => {
       try {
@@ -2744,8 +2741,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         const geo = await res.json();
         const incoming = Array.isArray(geo?.features) ? geo.features : [];
 
-        // Pokud už plný fetch dokončil, přeskočit render mini-fetchu
-        if (fullCompleted) {
+        // Pokud už plný fetch dokončil a zrušil mini-fetch, přeskočit render
+        if (quickController.signal.aborted) {
           return;
         }
 
@@ -2774,10 +2771,14 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         window.features = features;
         lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
-        quickCompleted = true;
       } catch (err) {
         if (err.name !== 'AbortError') {
           // Silent fail - pokud selže mini-fetch, počkáme na plný
+        }
+      } finally {
+        // Cleanup controlleru při dokončení nebo chybě
+        if (window.__dbQuickController === quickController) {
+          window.__dbQuickController = null;
         }
       }
     })();
@@ -2845,7 +2846,13 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         window.features = features;
         lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
-        fullCompleted = true;
+
+        // Zrušit mini-fetch, pokud ještě běží (plný fetch dokončil první)
+        if (window.__dbQuickController && !window.__dbQuickController.signal.aborted) {
+          try {
+            window.__dbQuickController.abort();
+          } catch(_) {}
+        }
 
         // Pokud bylo tlačítko disable během fetchu (z loadNewAreaData), znovu ho aktivovat
         if (window.smartLoadingManager) {

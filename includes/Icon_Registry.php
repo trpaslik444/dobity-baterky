@@ -63,12 +63,13 @@ class Icon_Registry {
         $svg_content = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg_content);
         $svg_content = preg_replace('/<svg /', '<svg width="100%" height="100%" style="display:block;" ', $svg_content, 1);
         
-        // Nastavit barvu podle option
-        $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_color . '"', $svg_content);
-        $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_color . '"', $svg_content);
+        // Nastavit barvu podle option (icon_color je již validován regexem, ale použijeme escape pro bezpečnost)
+        $icon_color_escaped = htmlspecialchars($icon_color, ENT_QUOTES, 'UTF-8');
+        $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_color_escaped . '"', $svg_content);
+        $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_color_escaped . '"', $svg_content);
         // Pokud SVG nemá fill/stroke atributy, přidáme je
         if (strpos($svg_content, 'fill=') === false) {
-            $svg_content = preg_replace('/<svg([^>]*)>/', '<svg$1 fill="' . $icon_color . '">', $svg_content);
+            $svg_content = preg_replace('/<svg([^>]*)>/', '<svg$1 fill="' . $icon_color_escaped . '">', $svg_content);
         }
         
         // Uložit do cache

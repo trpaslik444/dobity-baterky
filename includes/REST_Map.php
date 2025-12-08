@@ -564,58 +564,11 @@ class REST_Map {
             // error_log('DB Map REST: WP_Query pro ' . $pt . ' - nalezeno postů: ' . $q->post_count);
             
             // OPTIMALIZACE 1: Batch loading meta hodnot - načíst všechny meta najednou před loopem
+            // update_postmeta_cache() načte všechny meta klíče pro dané posty najednou,
+            // což eliminuje N+1 problém s get_post_meta() v hlavním loopu
             if (!empty($q->posts)) {
                 $post_ids = wp_list_pluck($q->posts, 'ID');
-                // Načíst všechny potřebné meta klíče najednou
-                $meta_keys_to_cache = [
-                    $keys['lat'],
-                    $keys['lng'],
-                    '_icon_slug',
-                    '_icon_color',
-                    '_db_recommended',
-                ];
-                // Pro charging_location přidat další meta
-                if ($pt === 'charging_location') {
-                    $meta_keys_to_cache = array_merge($meta_keys_to_cache, [
-                        '_db_provider',
-                        '_db_speed',
-                        '_db_connectors',
-                        '_db_konektory',
-                        '_charging_business_status',
-                        '_charging_live_available',
-                        '_charging_live_total',
-                        '_charging_live_source',
-                        '_charging_live_updated',
-                        '_charging_live_data_available',
-                        '_db_image',
-                        '_db_address',
-                        '_db_phone',
-                        '_db_website',
-                        '_db_rating',
-                        '_db_description',
-                    ]);
-                }
-                // Pro POI přidat další meta
-                if ($pt === 'poi') {
-                    $meta_keys_to_cache = array_merge($meta_keys_to_cache, [
-                        '_db_image',
-                        '_db_address',
-                        '_db_phone',
-                        '_db_website',
-                        '_db_rating',
-                        '_db_description',
-                    ]);
-                }
-                // Pro RV přidat další meta
-                if ($pt === 'rv_spot') {
-                    $meta_keys_to_cache = array_merge($meta_keys_to_cache, [
-                        '_rv_type',
-                        '_rv_address',
-                        '_rv_phone',
-                        '_rv_website',
-                    ]);
-                }
-                // Načíst všechny meta hodnoty najednou
+                // Načíst všechny meta hodnoty najednou (WordPress načte všechny klíče automaticky)
                 update_postmeta_cache($post_ids);
                 
                 // OPTIMALIZACE 3: Batch loading taxonomy - načíst všechny termy najednou
