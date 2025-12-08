@@ -29,6 +29,8 @@ class REST_Map {
     public function __construct() {
         add_action( 'wp_ajax_google_places_nearby', array( $this, 'ajax_google_places_nearby' ) );
         add_action( 'wp_ajax_google_place_details', array( $this, 'ajax_google_place_details' ) );
+        // Hook pro invalidaci cache při změně/uložení postu
+        add_action( 'save_post', array( $this, 'invalidate_special_cache' ), 10, 2 );
         $this->enrichment_service = Places_Enrichment_Service::get_instance();
     }
 
@@ -79,7 +81,8 @@ class REST_Map {
             'permission_callback' => function() { return current_user_can('upload_files'); },
         ) );
         
-        // Map data endpoint
+        // Map data endpoint - striktní endpoint vyžadující lat/lng/radius_km
+        // Fetch je on-demand podle středu mapy, s minimálním payloadem
         register_rest_route( 'db/v1', '/map', array(
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_map' ),
@@ -101,12 +104,38 @@ class REST_Map {
             },
         ) );
 
+        // Detail endpoint pro full data - volá se při kliknutí na pin
+        register_rest_route( 'db/v1', '/map-detail/(?P<type>[a-z_]+)/(?P<id>\d+)', array(
+            'methods'  => 'GET',
+            'callback' => array( $this, 'handle_map_detail' ),
+            'permission_callback' => function ( $request ) {
+                $nonce = $request->get_header( 'X-WP-Nonce' );
+                if ( $nonce && ! wp_verify_nonce( $nonce, 'wp_rest' ) ) {
+                    return false;
+                }
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
+        ) );
+
         // Providers endpoint
         register_rest_route( 'db/v1', '/providers', array(
             'methods'  => 'GET',
             'callback' => array( $this, 'handle_providers' ),
             'permission_callback' => function ( $request ) {
                 if ( ! wp_verify_nonce( $request->get_header( 'X-WP-Nonce' ), 'wp_rest' ) ) {
+                    return false;
+                }
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
+            },
+        ) );
+
+        // Filter options endpoint - globální katalog filtrů z celé DB
+        register_rest_route( 'db/v1', '/filter-options', array(
+            'methods'  => 'GET',
+            'callback' => array( $this, 'handle_filter_options' ),
+            'permission_callback' => function ( $request ) {
+                $nonce = $request->get_header( 'X-WP-Nonce' );
+                if ( $nonce && ! wp_verify_nonce( $nonce, 'wp_rest' ) ) {
                     return false;
                 }
                 return function_exists('db_user_can_see_map') ? db_user_can_see_map() : false;
@@ -233,153 +262,14 @@ class REST_Map {
     }
 
     public function handle_map( $request ) {
-        // --- vstupy
-        $included  = $request->get_param('included');  // např. "charging_location,rv_spot,poi"
-        $post_types = $request->get_param('post_types'); // alternativní parametr pro kompatibilitu
-        $center    = $request->get_param('center');    // "50.08,14.42"
-        $radius_km = floatval($request->get_param('radius_km')); // např. 20
-        $limit     = max(1, intval($request->get_param('limit') ?: 5000));
-        $offset    = max(0, intval($request->get_param('offset') ?: 0));
-
-        // Filtry
-        $db_recommended = $request->get_param('db_recommended'); // '1' nebo null
-        $free_only = $request->get_param('free'); // '1' nebo null
-
-        $post_type_map = [
-            'charger' => 'charging_location',
-            'rv_spot' => 'rv_spot',
-            'poi'     => 'poi',
-            'charging_location' => 'charging_location',
-        ];
-        // Použij post_types pokud je k dispozici, jinak included
-        $types_param = $post_types ?: $included;
+        // STRICT MODE: Endpoint vyžaduje lat, lng, radius_km (max 50 km)
+        // Fetch je on-demand podle středu mapy, s minimálním payloadem
         
-        if ($types_param) {
-            $types = array_values(array_unique(array_map(function($t) use($post_type_map) {
-                $t = trim($t);
-                return $post_type_map[$t] ?? $t;
-            }, explode(',', $types_param))));
-        } else {
-            $types = ['charging_location','rv_spot','poi'];
-        }
-
-        $ids_param = $request->get_param('ids');
-        $ids_filter = [];
-        if (is_string($ids_param) && $ids_param !== '') {
-            $ids_filter = array_map('absint', explode(',', $ids_param));
-        } elseif (is_array($ids_param)) {
-            $ids_filter = array_map('absint', $ids_param);
-        }
-        $ids_filter = array_values(array_filter(array_unique($ids_filter)));
-        $has_ids_filter = !empty($ids_filter);
-
-        if ($has_ids_filter) {
-            $limit = max(1, count($ids_filter));
-            $offset = 0;
-        }
-
-        $ids_by_type = [];
-        if ($has_ids_filter) {
-            foreach ($ids_filter as $candidate_id) {
-                $ptype = get_post_type($candidate_id);
-                if (!$ptype) {
-                    continue;
-                }
-                if (!in_array($ptype, $types, true)) {
-                    continue;
-                }
-                if (!isset($ids_by_type[$ptype])) {
-                    $ids_by_type[$ptype] = [];
-                }
-                $ids_by_type[$ptype][] = $candidate_id;
-            }
-        }
-
-        $favorite_assignments = [];
-        $favorite_folders_index = [];
-        $current_user_id = get_current_user_id();
-        if ($current_user_id > 0 && class_exists('\\DB\\Favorites_Manager')) {
-            try {
-                $favorites_manager = \DB\Favorites_Manager::get_instance();
-                $state = $favorites_manager->get_state($current_user_id);
-                $favorite_assignments = $state['assignments'] ?? [];
-                $folders = $favorites_manager->get_folders($current_user_id);
-                foreach ($folders as $folder) {
-                    if (isset($folder['id'])) {
-                        $favorite_folders_index[(string) $folder['id']] = $folder;
-                    }
-                }
-            } catch ( \Throwable $e ) {
-                $favorite_assignments = [];
-                $favorite_folders_index = [];
-            }
-        }
-
-        error_log('DB Map REST: Post types ke zpracování: ' . print_r($types, true));
-
-        if (!$has_ids_filter) {
-            // DEBUG: Kontrola existence postů s danými post_types
-            foreach ($types as $pt) {
-                $count = wp_count_posts($pt);
-                error_log('DB Map REST: Post count pro ' . $pt . ': ' . print_r($count, true));
-
-                // DEBUG: Kontrola meta klíčů na prvním existujícím postu
-                if ($count->publish > 0) {
-                    $sample_post = get_posts([
-                        'post_type' => $pt,
-                        'post_status' => 'publish',
-                        'posts_per_page' => 1,
-                        'orderby' => 'ID',
-                        'order' => 'ASC'
-                    ]);
-                    if (!empty($sample_post)) {
-                        $sample = $sample_post[0];
-                        $keys = $this->get_latlng_keys_for_type($pt);
-                        $sample_lat = get_post_meta($sample->ID, $keys['lat'], true);
-                        $sample_lng = get_post_meta($sample->ID, $keys['lng'], true);
-                        error_log('DB Map REST: Vzorek post ' . $pt . ' ID ' . $sample->ID . ' - ' . $keys['lat'] . ': ' . $sample_lat . ', ' . $keys['lng'] . ': ' . $sample_lng);
-                    }
-
-                    // DEBUG: Kontrola rozsahu souřadnic
-                    $keys = $this->get_latlng_keys_for_type($pt);
-                    global $wpdb;
-                    $min_lat = $wpdb->get_var($wpdb->prepare(
-                        "SELECT MIN(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
-                         WHERE meta_key = %s AND post_id IN (
-                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                         )",
-                        $keys['lat'], $pt
-                    ));
-                    $max_lat = $wpdb->get_var($wpdb->prepare(
-                        "SELECT MAX(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
-                         WHERE meta_key = %s AND post_id IN (
-                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                         )",
-                        $keys['lat'], $pt
-                    ));
-                    $min_lng = $wpdb->get_var($wpdb->prepare(
-                        "SELECT MIN(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
-                         WHERE meta_key = %s AND post_id IN (
-                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                         )",
-                        $keys['lng'], $pt
-                    ));
-                    $max_lng = $wpdb->get_var($wpdb->prepare(
-                        "SELECT MAX(CAST(meta_value AS DECIMAL(10,8))) FROM {$wpdb->postmeta}
-                         WHERE meta_key = %s AND post_id IN (
-                             SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status = 'publish'
-                         )",
-                        $keys['lng'], $pt
-                    ));
-                    error_log('DB Map REST: Rozsah souřadnic pro ' . $pt . ' - lat: [' . $min_lat . ', ' . $max_lat . '], lng: [' . $min_lng . ', ' . $max_lng . ']');
-                }
-            }
-        }
-
         // Robustní příjem parametrů - nejprve zkusit oddělené lat/lng, pak center
         $lat = $lng = null;
+        $center = $request->get_param('center');
         
-        // 1. Zkusit oddělené parametry lat/lng (robustnější)
+        // 1. Zkusit oddělené parametry lat/lng (preferované)
         if (isset($request['lat']) && isset($request['lng'])) {
             $lat = floatval($request['lat']);
             $lng = floatval($request['lng']);
@@ -393,33 +283,142 @@ class REST_Map {
             }
         }
         
-        // Určení režimu načítání
-        $use_radius = false;
-        if ($lat !== null && $lng !== null && $radius_km > 0) {
-            $use_radius = true;
+        $radius_km = floatval($request->get_param('radius_km'));
+        $mode = $request->get_param('mode'); // 'special' pro special dataset bez radius
+        
+        // SPECIAL MODE: Pro db_recommended/free bez radius filtru
+        if ($mode === 'special') {
+            return $this->handle_map_special($request);
+        }
+        
+        // STRICT VALIDATION: Vyžadovat lat, lng, radius_km (pro radius mode)
+        if ($lat === null || $lng === null || $radius_km <= 0) {
+            return new \WP_Error(
+                'missing_required_params',
+                'Endpoint vyžaduje parametry: lat, lng, radius_km (max 50 km)',
+                array( 'status' => 400 )
+            );
+        }
+        
+        // Max radius 50 km
+        $max_radius_km = 50;
+        if ($radius_km > $max_radius_km) {
+            return new \WP_Error(
+                'radius_too_large',
+                sprintf('Radius nesmí být větší než %d km', $max_radius_km),
+                array( 'status' => 400 )
+            );
+        }
+        
+        // Types parametr: charger|poi|rv (nebo charging_location,rv_spot,poi)
+        $types_param = $request->get_param('types') ?: $request->get_param('included') ?: $request->get_param('post_types');
+        $post_type_map = [
+            'charger' => 'charging_location',
+            'rv_spot' => 'rv_spot',
+            'poi'     => 'poi',
+            'charging_location' => 'charging_location',
+        ];
+        
+        if ($types_param) {
+            $types = array_values(array_unique(array_map(function($t) use($post_type_map) {
+                $t = trim($t);
+                return $post_type_map[$t] ?? $t;
+            }, explode(',', $types_param))));
+        } else {
+            $types = ['charging_location','rv_spot','poi'];
+        }
+        
+        // Fields parametr: minimal|full (default minimal)
+        $fields_mode = $request->get_param('fields') ?: 'minimal';
+        if (!in_array($fields_mode, ['minimal', 'full'], true)) {
+            $fields_mode = 'minimal';
+        }
+        
+        // Limit výsledků (max 300)
+        $limit = max(1, min(300, intval($request->get_param('limit') ?: 300)));
+
+        // Filtry: providers, poi_types, amenities, connector_types, db_recommended, free
+        $db_recommended = $request->get_param('db_recommended'); // '1' nebo null
+        $free_only = $request->get_param('free'); // '1' nebo null
+        
+        // Taxonomy filtry
+        $providers_param = $request->get_param('providers'); // csv
+        $poi_types_param = $request->get_param('poi_types'); // csv
+        $amenities_param = $request->get_param('amenities'); // csv
+        $connector_types_param = $request->get_param('connector_types'); // csv
+        
+        $providers_filter = [];
+        if ($providers_param) {
+            $providers_filter = array_map('trim', explode(',', $providers_param));
+            $providers_filter = array_filter($providers_filter);
+        }
+        
+        $poi_types_filter = [];
+        if ($poi_types_param) {
+            $poi_types_filter = array_map('trim', explode(',', $poi_types_param));
+            $poi_types_filter = array_filter($poi_types_filter);
+        }
+        
+        $amenities_filter = [];
+        if ($amenities_param) {
+            $amenities_filter = array_map('trim', explode(',', $amenities_param));
+            $amenities_filter = array_filter($amenities_filter);
+        }
+        
+        $connector_types_filter = [];
+        if ($connector_types_param) {
+            $connector_types_filter = array_map('trim', explode(',', $connector_types_param));
+            $connector_types_filter = array_filter($connector_types_filter);
+        }
+        
+        // Cache podle hash(lat,lng,radius,types,fields,filters)
+        $filters_hash = md5(sprintf('%s_%s_%s_%s_%s_%s', 
+            implode(',', $providers_filter),
+            implode(',', $poi_types_filter),
+            implode(',', $amenities_filter),
+            implode(',', $connector_types_filter),
+            $db_recommended ? '1' : '0',
+            $free_only ? '1' : '0'
+        ));
+        $cache_key = 'db_map_' . md5(sprintf('%.6f_%.6f_%.2f_%s_%s_%s', $lat, $lng, $radius_km, implode(',', $types), $fields_mode, $filters_hash));
+        $cache_ttl = 45; // 45 sekund
+        
+        $cached_result = get_transient($cache_key);
+        if ($cached_result !== false) {
+            return $cached_result;
         }
 
-        if ($has_ids_filter) {
-            $use_radius = false;
-        }
-
-        // Pro režim "all" necháme $use_radius = false a pokračujeme
-        if (!$use_radius) {
-        }
-
-        if ($use_radius) {
-            // cca převod km -> stupně (zvětšeno o 20% pro jistotu)
-            $dLat  = ($radius_km * 1.2) / 111.0;
-            $dLng  = ($radius_km * 1.2) / (111.0 * max(cos(deg2rad($lat)), 0.000001));
-            $minLa = $lat - $dLat; $maxLa = $lat + $dLat;
-            $minLo = $lng - $dLng; $maxLo = $lng + $dLng;
-            
-            // error_log('DB Map REST: Bbox parametry - lat: ' . $lat . ', lng: ' . $lng . ', radius: ' . $radius_km . 'km');
-            // error_log('DB Map REST: Bbox hranice - lat: [' . $minLa . ', ' . $maxLa . '], lng: [' . $minLo . ', ' . $maxLo . ']');
-        }
+        // Vždy používáme radius režim (striktní endpoint)
+        $use_radius = true;
+        
+        // cca převod km -> stupně (zvětšeno o 20% pro jistotu)
+        $dLat  = ($radius_km * 1.2) / 111.0;
+        $dLng  = ($radius_km * 1.2) / (111.0 * max(cos(deg2rad($lat)), 0.000001));
+        $minLa = $lat - $dLat; $maxLa = $lat + $dLat;
+        $minLo = $lng - $dLng; $maxLo = $lng + $dLng;
 
         $features = [];
         $debug_stats = [ 'per_type' => [], 'totals' => [ 'found' => 0, 'bbox' => 0, 'kept' => 0 ] ];
+        
+        // Inicializovat favorite_assignments před smyčkou přes typy
+        $favorite_assignments = [];
+        $favorite_folders_index = [];
+        $current_user_id = get_current_user_id();
+        if ($current_user_id > 0 && class_exists('\\DB\\Favorites_Manager')) {
+            try {
+                $favorites_manager = \DB\Favorites_Manager::get_instance();
+                $state = $favorites_manager->get_state($current_user_id);
+                $favorite_assignments = $state['assignments'] ?? [];
+                $folders = $favorites_manager->get_folders($current_user_id);
+                foreach ($folders as $folder) {
+                    if (isset($folder['id'])) {
+                        $favorite_folders_index[(string)$folder['id']] = $folder;
+                    }
+                }
+            } catch (\Exception $e) {
+                // Silent fail
+            }
+        }
 
         foreach ($types as $pt) {
             $keys = $this->get_latlng_keys_for_type($pt);
@@ -430,21 +429,10 @@ class REST_Map {
                 'post_status'    => 'publish',
                 'no_found_rows'  => true,
                 // V radius větvi necháme vyšší strop (prefilter), následně ořízneme až po Haversine
-                'posts_per_page' => $use_radius ? 5000 : $limit, // Zvýšíme limit pro lepší pokrytí
+                'posts_per_page' => 5000, // Zvýšíme limit pro lepší pokrytí před Haversine filtrem
                 'orderby'        => 'date', // Seřadit podle data pro lepší pokrytí
                 'order'          => 'DESC',
             ];
-
-            if ($has_ids_filter) {
-                $ids_for_type = $ids_by_type[$pt] ?? [];
-                if (empty($ids_for_type)) {
-                    continue;
-                }
-                $args['post__in'] = $ids_for_type;
-                $args['orderby'] = 'post__in';
-                $args['order'] = 'ASC';
-                $args['posts_per_page'] = count($ids_for_type);
-            }
             
             // Přidat meta_query pro filtry
             $meta_query = array();
@@ -469,6 +457,56 @@ class REST_Map {
             
             if (!empty($meta_query)) {
                 $args['meta_query'] = $meta_query;
+            }
+            
+            // Přidat tax_query pro taxonomy filtry
+            $tax_query = array();
+            
+            // Provider filtr - pouze pro charging_location
+            if (!empty($providers_filter) && $pt === 'charging_location') {
+                $tax_query[] = array(
+                    'taxonomy' => 'provider',
+                    'field'    => 'slug',
+                    'terms'    => $providers_filter,
+                    'operator' => 'IN',
+                );
+            }
+            
+            // POI types filtr - pouze pro poi
+            if (!empty($poi_types_filter) && $pt === 'poi') {
+                $tax_query[] = array(
+                    'taxonomy' => 'poi_type',
+                    'field'    => 'slug',
+                    'terms'    => $poi_types_filter,
+                    'operator' => 'IN',
+                );
+            }
+            
+            // Connector types filtr - pouze pro charging_location (přes charger_type taxonomii)
+            if (!empty($connector_types_filter) && $pt === 'charging_location') {
+                $tax_query[] = array(
+                    'taxonomy' => 'charger_type',
+                    'field'    => 'slug',
+                    'terms'    => $connector_types_filter,
+                    'operator' => 'IN',
+                );
+            }
+            
+            // Amenities filtr - pro všechny typy
+            if (!empty($amenities_filter)) {
+                $tax_query[] = array(
+                    'taxonomy' => 'amenity',
+                    'field'    => 'slug',
+                    'terms'    => $amenities_filter,
+                    'operator' => 'IN',
+                );
+            }
+            
+            if (!empty($tax_query)) {
+                if (count($tax_query) > 1) {
+                    $tax_query['relation'] = 'AND';
+                }
+                $args['tax_query'] = $tax_query;
             }
 
             // Dočasně vypneme meta query - necháme všechno na Haversine
@@ -526,106 +564,117 @@ class REST_Map {
                 $laF = (float)$laV; $loF = (float)$loV;
                 $bbox_count++;
 
-                // přesný dořez - pouze v radius režimu
-                $distance_km = 0;
-                if ($use_radius) {
-                    // Ochrana před edge-case: pokud je některá meta NULL/0/nesmysl, přeskoč před Haversinem
-                    if (abs($laF) < 0.000001 && abs($loF) < 0.000001) {
-                        continue;
-                    }
-                    $d = $this->haversine_km($lat, $lng, $laF, $loF);
-                    if ($d > $radius_km) {
-                        continue;
-                    }
-                    $distance_km = $d;
-                    $haversine_count++;
-                } else {
-                    // V režimu "all" počítáme všechny body
-                    $haversine_count++;
+                // Vždy používáme radius režim - výpočet vzdálenosti
+                // Ochrana před edge-case: pokud je některá meta NULL/0/nesmysl, přeskoč před Haversinem
+                if (abs($laF) < 0.000001 && abs($loF) < 0.000001) {
+                    continue;
                 }
+                $distance_km = $this->haversine_km($lat, $lng, $laF, $loF);
+                if ($distance_km > $radius_km) {
+                    continue;
+                }
+                $haversine_count++;
 
                 // Načtení ikon a barev pomocí Icon_Registry
                 $icon_registry = \DB\Icon_Registry::get_instance();
                 $icon_data = $icon_registry->get_icon($post);
                 
-                // Debug pro ikony
-                // if ($pt === 'poi') {
-                //     error_log('[REST DEBUG] POI ID: ' . $post->ID . ', Title: ' . get_the_title($post));
-                //     error_log('[REST DEBUG] Icon data: ' . print_r($icon_data, true));
-                // }
-                
-                // Základní properties
-                $properties = [
-                    'id' => $post->ID,
-                    'post_type' => $pt,
-                    'title' => get_the_title($post),
-                    'distance_km' => $distance_km,
-                    // Přidání všech potřebných metadat pro ikony a barvy
-                    'icon_slug' => $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true),
-                    'icon_color' => $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true),
-                    'svg_content' => $icon_data['svg_content'] ?? '',
-                    'provider' => get_post_meta($post->ID, '_db_provider', true),
-                    'speed' => get_post_meta($post->ID, '_db_speed', true),
-                    'connectors' => get_post_meta($post->ID, '_db_connectors', true),
-                    'konektory' => get_post_meta($post->ID, '_db_konektory', true),
-                    'db_connectors' => get_post_meta($post->ID, '_db_connectors', true),
-                    'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
-                    // Metadata o stavu a dostupnosti z externích API
-                    'business_status' => get_post_meta($post->ID, '_charging_business_status', true),
-                    'charging_live_available' => get_post_meta($post->ID, '_charging_live_available', true),
-                    'charging_live_total' => get_post_meta($post->ID, '_charging_live_total', true),
-                    'charging_live_source' => get_post_meta($post->ID, '_charging_live_source', true),
-                    'charging_live_updated' => get_post_meta($post->ID, '_charging_live_updated', true),
-                    'charging_live_data_available' => get_post_meta($post->ID, '_charging_live_data_available', true),
-                    'image' => get_post_meta($post->ID, '_db_image', true),
-                    'address' => get_post_meta($post->ID, '_db_address', true),
-                    'phone' => get_post_meta($post->ID, '_db_phone', true),
-                    'website' => get_post_meta($post->ID, '_db_website', true),
-                    'rating' => get_post_meta($post->ID, '_db_rating', true),
-                    'description' => get_post_meta($post->ID, '_db_description', true),
-                    // RV spot specific metadata
-                    'rv_type' => get_post_meta($post->ID, '_rv_type', true),
-                    'rv_address' => get_post_meta($post->ID, '_rv_address', true),
-                    'rv_phone' => get_post_meta($post->ID, '_rv_phone', true),
-                    'rv_website' => get_post_meta($post->ID, '_rv_website', true),
-                    'rv_rating' => get_post_meta($post->ID, '_rv_rating', true),
-                    'rv_description' => get_post_meta($post->ID, '_rv_description', true),
-                    // POI specific metadata
-                    'poi_type' => get_post_meta($post->ID, '_poi_type', true),
-                    'poi_address' => get_post_meta($post->ID, '_poi_address', true),
-                    'poi_phone' => get_post_meta($post->ID, '_poi_phone', true),
-                    'poi_website' => get_post_meta($post->ID, '_poi_website', true),
-                    'poi_rating' => get_post_meta($post->ID, '_poi_rating', true),
-                    'poi_user_rating_count' => get_post_meta($post->ID, '_poi_user_rating_count', true),
-                    'poi_price_level' => get_post_meta($post->ID, '_poi_price_level', true),
-                    'poi_opening_hours' => get_post_meta($post->ID, '_poi_opening_hours', true),
-                    'poi_reviews' => get_post_meta($post->ID, '_poi_reviews', true),
-                    'poi_photos' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_photos', true)),
-                    'poi_photo_url' => get_post_meta($post->ID, '_poi_photo_url', true),
-                    'poi_photo_license' => get_post_meta($post->ID, '_poi_photo_license', true),
-                    'poi_photo_author' => get_post_meta($post->ID, '_poi_photo_author', true),
-                    'poi_google_place_id' => get_post_meta($post->ID, '_poi_google_place_id', true) ?: get_post_meta($post->ID, '_poi_place_id', true),
-                    'poi_tripadvisor_location_id' => get_post_meta($post->ID, '_poi_tripadvisor_location_id', true),
-                    'poi_primary_external_source' => get_post_meta($post->ID, '_poi_primary_external_source', true) ?: 'google_places',
-                    'poi_social_links' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_social_links', true)),
-                    'poi_external_cached_until' => array(
-                        'google_places' => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_google_cache_expires', true))),
-                        'tripadvisor'   => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_tripadvisor_cache_expires', true))),
-                    ),
-                    'poi_description' => get_post_meta($post->ID, '_poi_description', true),
-                    // Univerzální metadata pro všechny typy
-                    'content' => $post->post_content,
-                    'excerpt' => $post->post_excerpt,
-                    'date' => $post->post_date,
-                    'modified' => $post->post_modified,
-                    'author' => $post->post_author,
-                    'status' => $post->post_status,
-                    // URL pro otevření detailu
-                    'permalink' => get_permalink($post->ID),
-                    'link' => get_permalink($post->ID),
-                ];
+                // MINIMAL PAYLOAD: pouze základní data pro zobrazení markerů
+                if ($fields_mode === 'minimal') {
+                    $properties = [
+                        'id' => $post->ID,
+                        'post_type' => $pt,
+                        'lat' => $laF,
+                        'lng' => $loF,
+                        'title' => get_the_title($post),
+                        'distance_km' => round($distance_km, 2),
+                        'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
+                    ];
+                    
+                    // Ikony a barvy pro zobrazení
+                    $properties['icon_slug'] = $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true);
+                    $properties['icon_color'] = $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true);
+                    
+                    // Pro charging_location: provider/charger_type pro barvu
+                    if ($pt === 'charging_location') {
+                        $provider_terms = wp_get_post_terms($post->ID, 'provider');
+                        if (!empty($provider_terms) && !is_wp_error($provider_terms)) {
+                            $properties['provider'] = $provider_terms[0]->name;
+                            $properties['provider_slug'] = $provider_terms[0]->slug;
+                        }
+                        $charger_terms = wp_get_post_terms($post->ID, 'charger_type');
+                        if (!empty($charger_terms) && !is_wp_error($charger_terms)) {
+                            $properties['charger_type'] = $charger_terms[0]->name;
+                            $properties['charger_type_slug'] = $charger_terms[0]->slug;
+                        }
+                    }
+                } else {
+                    // FULL PAYLOAD: všechna data (pro kompatibilitu nebo explicitní požadavek)
+                    $properties = [
+                        'id' => $post->ID,
+                        'post_type' => $pt,
+                        'title' => get_the_title($post),
+                        'distance_km' => round($distance_km, 2),
+                        'icon_slug' => $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true),
+                        'icon_color' => $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true),
+                        'svg_content' => $icon_data['svg_content'] ?? '',
+                        'provider' => get_post_meta($post->ID, '_db_provider', true),
+                        'speed' => get_post_meta($post->ID, '_db_speed', true),
+                        'connectors' => get_post_meta($post->ID, '_db_connectors', true),
+                        'konektory' => get_post_meta($post->ID, '_db_konektory', true),
+                        'db_connectors' => get_post_meta($post->ID, '_db_connectors', true),
+                        'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
+                        'business_status' => get_post_meta($post->ID, '_charging_business_status', true),
+                        'charging_live_available' => get_post_meta($post->ID, '_charging_live_available', true),
+                        'charging_live_total' => get_post_meta($post->ID, '_charging_live_total', true),
+                        'charging_live_source' => get_post_meta($post->ID, '_charging_live_source', true),
+                        'charging_live_updated' => get_post_meta($post->ID, '_charging_live_updated', true),
+                        'charging_live_data_available' => get_post_meta($post->ID, '_charging_live_data_available', true),
+                        'image' => get_post_meta($post->ID, '_db_image', true),
+                        'address' => get_post_meta($post->ID, '_db_address', true),
+                        'phone' => get_post_meta($post->ID, '_db_phone', true),
+                        'website' => get_post_meta($post->ID, '_db_website', true),
+                        'rating' => get_post_meta($post->ID, '_db_rating', true),
+                        'description' => get_post_meta($post->ID, '_db_description', true),
+                        'rv_type' => get_post_meta($post->ID, '_rv_type', true),
+                        'rv_address' => get_post_meta($post->ID, '_rv_address', true),
+                        'rv_phone' => get_post_meta($post->ID, '_rv_phone', true),
+                        'rv_website' => get_post_meta($post->ID, '_rv_website', true),
+                        'rv_rating' => get_post_meta($post->ID, '_rv_rating', true),
+                        'rv_description' => get_post_meta($post->ID, '_rv_description', true),
+                        'poi_type' => get_post_meta($post->ID, '_poi_type', true),
+                        'poi_address' => get_post_meta($post->ID, '_poi_address', true),
+                        'poi_phone' => get_post_meta($post->ID, '_poi_phone', true),
+                        'poi_website' => get_post_meta($post->ID, '_poi_website', true),
+                        'poi_rating' => get_post_meta($post->ID, '_poi_rating', true),
+                        'poi_user_rating_count' => get_post_meta($post->ID, '_poi_user_rating_count', true),
+                        'poi_price_level' => get_post_meta($post->ID, '_poi_price_level', true),
+                        'poi_opening_hours' => get_post_meta($post->ID, '_poi_opening_hours', true),
+                        'poi_reviews' => get_post_meta($post->ID, '_poi_reviews', true),
+                        'poi_photos' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_photos', true)),
+                        'poi_photo_url' => get_post_meta($post->ID, '_poi_photo_url', true),
+                        'poi_photo_license' => get_post_meta($post->ID, '_poi_photo_license', true),
+                        'poi_photo_author' => get_post_meta($post->ID, '_poi_photo_author', true),
+                        'poi_google_place_id' => get_post_meta($post->ID, '_poi_google_place_id', true) ?: get_post_meta($post->ID, '_poi_place_id', true),
+                        'poi_tripadvisor_location_id' => get_post_meta($post->ID, '_poi_tripadvisor_location_id', true),
+                        'poi_primary_external_source' => get_post_meta($post->ID, '_poi_primary_external_source', true) ?: 'google_places',
+                        'poi_social_links' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_social_links', true)),
+                        'poi_external_cached_until' => array(
+                            'google_places' => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_google_cache_expires', true))),
+                            'tripadvisor'   => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_tripadvisor_cache_expires', true))),
+                        ),
+                        'poi_description' => get_post_meta($post->ID, '_poi_description', true),
+                        'content' => $post->post_content,
+                        'excerpt' => $post->post_excerpt,
+                        'date' => $post->post_date,
+                        'modified' => $post->post_modified,
+                        'author' => $post->post_author,
+                        'status' => $post->post_status,
+                        'permalink' => get_permalink($post->ID),
+                        'link' => get_permalink($post->ID),
+                    ];
 
-                if ($has_ids_filter || !empty($favorite_assignments)) {
+                if (!empty($favorite_assignments)) {
                     $fav_id = $favorite_assignments[$post->ID] ?? null;
                     if ($fav_id) {
                         $fav_id = (string) $fav_id;
@@ -936,39 +985,17 @@ class REST_Map {
             
         }
 
+        // Seřadit podle vzdálenosti (distance_km) a aplikovat limit
+        usort($features, function($a, $b) {
+            $aDist = $a['properties']['distance_km'] ?? PHP_INT_MAX;
+            $bDist = $b['properties']['distance_km'] ?? PHP_INT_MAX;
+            return $aDist <=> $bDist;
+        });
+        
+        // Aplikovat limit (max 300)
         $total_before_limit = count($features);
-        if ($has_ids_filter) {
-            $order_map = [];
-            foreach ($ids_filter as $order_idx => $order_id) {
-                $order_map[$order_id] = $order_idx;
-            }
-            usort($features, function($a, $b) use ($order_map) {
-                $aId = $a['properties']['id'] ?? 0;
-                $bId = $b['properties']['id'] ?? 0;
-                $aPos = $order_map[$aId] ?? PHP_INT_MAX;
-                $bPos = $order_map[$bId] ?? PHP_INT_MAX;
-                return $aPos <=> $bPos;
-            });
-        } elseif ($use_radius) {
-            usort($features, function($a,$b) use($lat,$lng){
-                [$alng,$alat] = $a['geometry']['coordinates'];
-                [$blng,$blat] = $b['geometry']['coordinates'];
-                $ad = ($alat-$lat)*($alat-$lat)+($alng-$lng)*($alng-$lng);
-                $bd = ($blat-$lat)*($blat-$lat)+($blng-$lng)*($blng-$lng);
-                return $ad <=> $bd;
-            });
-            // Aplikuj globální limit až po přesném dořezu a seřazení dle vzdálenosti
-            if ($limit && count($features) > $limit) {
-                $features = array_slice($features, 0, $limit);
-            }
-        } else {
-            // V režimu "all" řadíme podle ID (nejnovější první)
-            usort($features, function($a,$b){
-                return $b['properties']['id'] <=> $a['properties']['id'];
-            });
-        }
-
-        if (count($features) > 0) {
+        if (count($features) > $limit) {
+            $features = array_slice($features, 0, $limit);
         }
 
         // Přidání meta informací pro diagnostiku
@@ -976,22 +1003,350 @@ class REST_Map {
             'type' => 'FeatureCollection',
             'features' => $features,
             'meta' => [
-                'mode' => $use_radius ? 'radius' : 'all',
-                'center' => $use_radius ? [$lat, $lng] : null,
-                'radius_km' => $use_radius ? $radius_km : null,
+                'mode' => 'radius',
+                'center' => [$lat, $lng],
+                'radius_km' => $radius_km,
                 'count' => count($features),
                 'post_types' => $types,
-                'bbox_count' => $bbox_count ?? 0,
-                'haversine_count' => $haversine_count ?? 0,
-                'limit_used' => $use_radius ? $limit : null,
-                'total_before_limit' => $use_radius ? $total_before_limit : null,
-                'debug' => $debug_stats
+                'fields_mode' => $fields_mode,
+                'limit_used' => $limit,
+                'total_before_limit' => $total_before_limit,
             ]
         ];
         
+        // Uložit do cache
+        set_transient($cache_key, $response_data, $cache_ttl);
+        
         $resp = rest_ensure_response($response_data);
-        $resp->header('Cache-Control','public, max-age=60');
+        $resp->header('Cache-Control','public, max-age=' . $cache_ttl);
         return $resp;
+    }
+
+    /**
+     * Detail endpoint pro full data - volá se při kliknutí na pin
+     * Endpoint: db/v1/map-detail/<type>/<id>
+     */
+    public function handle_map_detail( $request ) {
+        $type = $request->get_param('type');
+        $id = intval($request->get_param('id'));
+        
+        // Mapování typů
+        $post_type_map = [
+            'charger' => 'charging_location',
+            'rv_spot' => 'rv_spot',
+            'poi' => 'poi',
+            'charging_location' => 'charging_location',
+        ];
+        
+        $post_type = $post_type_map[$type] ?? $type;
+        
+        if (!in_array($post_type, ['charging_location', 'rv_spot', 'poi'], true)) {
+            return new \WP_Error(
+                'invalid_type',
+                'Neplatný typ. Povolené typy: charger, poi, rv_spot',
+                array( 'status' => 400 )
+            );
+        }
+        
+        if ($id <= 0) {
+            return new \WP_Error(
+                'invalid_id',
+                'Neplatné ID',
+                array( 'status' => 400 )
+            );
+        }
+        
+        $post = get_post($id);
+        if (!$post || $post->post_type !== $post_type || $post->post_status !== 'publish') {
+            return new \WP_Error(
+                'not_found',
+                'Bod nebyl nalezen',
+                array( 'status' => 404 )
+            );
+        }
+        
+        // Použít stejnou logiku jako handle_map pro full payload
+        // Vytvořit dočasný request s fields=full
+        $temp_request = new \WP_REST_Request('GET', '/db/v1/map');
+        $temp_request->set_param('ids', (string)$id);
+        $temp_request->set_param('fields', 'full');
+        
+        // Získat souřadnice pro výpočet vzdálenosti (pokud je poslán center)
+        $center = $request->get_param('center');
+        $lat = $lng = null;
+        if ($center && is_string($center) && strpos($center, ',') !== false) {
+            list($la, $lo) = array_map('trim', explode(',', $center, 2));
+            if (is_numeric($la) && is_numeric($lo)) {
+                $lat = (float)$la;
+                $lng = (float)$lo;
+            }
+        }
+        
+        // Načíst data pomocí existující logiky
+        $keys = $this->get_latlng_keys_for_type($post_type);
+        $laV = get_post_meta($post->ID, $keys['lat'], true);
+        $loV = get_post_meta($post->ID, $keys['lng'], true);
+        
+        if (is_string($laV)) { $laV = str_replace(',', '.', trim($laV)); }
+        if (is_string($loV)) { $loV = str_replace(',', '.', trim($loV)); }
+        
+        if (!is_numeric($laV) || !is_numeric($loV)) {
+            return new \WP_Error(
+                'invalid_coordinates',
+                'Bod nemá platné souřadnice',
+                array( 'status' => 400 )
+            );
+        }
+        
+        $laF = (float)$laV;
+        $loF = (float)$loV;
+        
+        // Vytvořit feature s full payloadem
+        // Použít stejnou logiku jako v handle_map pro full mode
+        $icon_registry = \DB\Icon_Registry::get_instance();
+        $icon_data = $icon_registry->get_icon($post);
+        
+        $properties = [
+            'id' => $post->ID,
+            'post_type' => $post_type,
+            'title' => get_the_title($post),
+            'icon_slug' => $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true),
+            'icon_color' => $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true),
+            'svg_content' => $icon_data['svg_content'] ?? '',
+            'provider' => get_post_meta($post->ID, '_db_provider', true),
+            'speed' => get_post_meta($post->ID, '_db_speed', true),
+            'connectors' => get_post_meta($post->ID, '_db_connectors', true),
+            'konektory' => get_post_meta($post->ID, '_db_konektory', true),
+            'db_connectors' => get_post_meta($post->ID, '_db_connectors', true),
+            'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
+            'business_status' => get_post_meta($post->ID, '_charging_business_status', true),
+            'charging_live_available' => get_post_meta($post->ID, '_charging_live_available', true),
+            'charging_live_total' => get_post_meta($post->ID, '_charging_live_total', true),
+            'charging_live_source' => get_post_meta($post->ID, '_charging_live_source', true),
+            'charging_live_updated' => get_post_meta($post->ID, '_charging_live_updated', true),
+            'charging_live_data_available' => get_post_meta($post->ID, '_charging_live_data_available', true),
+            'image' => get_post_meta($post->ID, '_db_image', true),
+            'address' => get_post_meta($post->ID, '_db_address', true),
+            'phone' => get_post_meta($post->ID, '_db_phone', true),
+            'website' => get_post_meta($post->ID, '_db_website', true),
+            'rating' => get_post_meta($post->ID, '_db_rating', true),
+            'description' => get_post_meta($post->ID, '_db_description', true),
+            'rv_type' => get_post_meta($post->ID, '_rv_type', true),
+            'rv_address' => get_post_meta($post->ID, '_rv_address', true),
+            'rv_phone' => get_post_meta($post->ID, '_rv_phone', true),
+            'rv_website' => get_post_meta($post->ID, '_rv_website', true),
+            'rv_rating' => get_post_meta($post->ID, '_rv_rating', true),
+            'rv_description' => get_post_meta($post->ID, '_rv_description', true),
+            'poi_type' => get_post_meta($post->ID, '_poi_type', true),
+            'poi_address' => get_post_meta($post->ID, '_poi_address', true),
+            'poi_phone' => get_post_meta($post->ID, '_poi_phone', true),
+            'poi_website' => get_post_meta($post->ID, '_poi_website', true),
+            'poi_rating' => get_post_meta($post->ID, '_poi_rating', true),
+            'poi_user_rating_count' => get_post_meta($post->ID, '_poi_user_rating_count', true),
+            'poi_price_level' => get_post_meta($post->ID, '_poi_price_level', true),
+            'poi_opening_hours' => get_post_meta($post->ID, '_poi_opening_hours', true),
+            'poi_reviews' => get_post_meta($post->ID, '_poi_reviews', true),
+            'poi_photos' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_photos', true)),
+            'poi_photo_url' => get_post_meta($post->ID, '_poi_photo_url', true),
+            'poi_photo_license' => get_post_meta($post->ID, '_poi_photo_license', true),
+            'poi_photo_author' => get_post_meta($post->ID, '_poi_photo_author', true),
+            'poi_google_place_id' => get_post_meta($post->ID, '_poi_google_place_id', true) ?: get_post_meta($post->ID, '_poi_place_id', true),
+            'poi_tripadvisor_location_id' => get_post_meta($post->ID, '_poi_tripadvisor_location_id', true),
+            'poi_primary_external_source' => get_post_meta($post->ID, '_poi_primary_external_source', true) ?: 'google_places',
+            'poi_social_links' => $this->maybe_decode_json_meta(get_post_meta($post->ID, '_poi_social_links', true)),
+            'poi_external_cached_until' => array(
+                'google_places' => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_google_cache_expires', true))),
+                'tripadvisor'   => $this->format_timestamp_for_response(intval(get_post_meta($post->ID, '_poi_tripadvisor_cache_expires', true))),
+            ),
+            'poi_description' => get_post_meta($post->ID, '_poi_description', true),
+            'content' => $post->post_content,
+            'excerpt' => $post->post_excerpt,
+            'date' => $post->post_date,
+            'modified' => $post->post_modified,
+            'author' => $post->post_author,
+            'status' => $post->post_status,
+            'permalink' => get_permalink($post->ID),
+            'link' => get_permalink($post->ID),
+        ];
+        
+        // Výpočet vzdálenosti pokud je poslán center
+        if ($lat !== null && $lng !== null) {
+            $properties['distance_km'] = round($this->haversine_km($lat, $lng, $laF, $loF), 2);
+        }
+        
+        // Načíst term metadata (stejně jako v handle_map)
+        if ($post_type === 'poi') {
+            $poi_terms = wp_get_post_terms($post->ID, 'poi_type');
+            if (!empty($poi_terms) && !is_wp_error($poi_terms)) {
+                $term = $poi_terms[0];
+                $properties['poi_type'] = $term->name;
+                $properties['poi_type_slug'] = $term->slug;
+            }
+            
+            $amenity_terms = wp_get_post_terms($post->ID, 'amenity');
+            if (!empty($amenity_terms) && !is_wp_error($amenity_terms)) {
+                $amenities = [];
+                foreach ($amenity_terms as $amenity_term) {
+                    $amenities[] = [
+                        'name' => $amenity_term->name,
+                        'slug' => $amenity_term->slug,
+                        'icon' => get_term_meta($amenity_term->term_id, 'icon', true),
+                    ];
+                }
+                $properties['amenities'] = $amenities;
+            }
+            
+            $rating_terms = wp_get_post_terms($post->ID, 'rating');
+            if (!empty($rating_terms) && !is_wp_error($rating_terms)) {
+                $term = $rating_terms[0];
+                $properties['rating'] = $term->name;
+                $properties['rating_slug'] = $term->slug;
+            }
+        } elseif ($post_type === 'rv_spot') {
+            $rv_terms = wp_get_post_terms($post->ID, 'rv_type');
+            if (!empty($rv_terms) && !is_wp_error($rv_terms)) {
+                $term = $rv_terms[0];
+                $properties['rv_type'] = $term->name;
+                $properties['rv_type_slug'] = $term->slug;
+            }
+            
+            $amenity_terms = wp_get_post_terms($post->ID, 'amenity');
+            if (!empty($amenity_terms) && !is_wp_error($amenity_terms)) {
+                $amenities = [];
+                foreach ($amenity_terms as $amenity_term) {
+                    $amenities[] = [
+                        'name' => $amenity_term->name,
+                        'slug' => $amenity_term->slug,
+                        'icon' => get_term_meta($amenity_term->term_id, 'icon', true),
+                    ];
+                }
+                $properties['amenities'] = $amenities;
+            }
+            
+            $rating_terms = wp_get_post_terms($post->ID, 'rating');
+            if (!empty($rating_terms) && !is_wp_error($rating_terms)) {
+                $term = $rating_terms[0];
+                $properties['rating'] = $term->name;
+                $properties['rating_slug'] = $term->slug;
+            }
+        } elseif ($post_type === 'charging_location') {
+            $charger_terms = wp_get_post_terms($post->ID, 'charger_type');
+            if (!empty($charger_terms) && !is_wp_error($charger_terms)) {
+                $term = $charger_terms[0];
+                $properties['charger_type'] = $term->name;
+                $properties['charger_type_slug'] = $term->slug;
+            }
+            
+            $provider_terms = wp_get_post_terms($post->ID, 'provider');
+            if (!empty($provider_terms) && !is_wp_error($provider_terms)) {
+                $term = $provider_terms[0];
+                $properties['provider'] = $term->name;
+                $properties['provider_slug'] = $term->slug;
+            }
+            
+            // Načíst konektory (stejně jako v handle_map)
+            $charger_type_terms = wp_get_post_terms($post->ID, 'charger_type');
+            $charger_counts = get_post_meta($post->ID, '_db_charger_counts', true);
+            $charger_powers = get_post_meta($post->ID, '_db_charger_power', true);
+            
+            if (!empty($charger_type_terms) && !is_wp_error($charger_type_terms)) {
+                $connectors = [];
+                foreach ($charger_type_terms as $charger_term) {
+                    $quantity = 1;
+                    if (is_array($charger_counts) && isset($charger_counts[$charger_term->term_id])) {
+                        $quantity = intval($charger_counts[$charger_term->term_id]);
+                    } elseif (is_array($charger_counts) && isset($charger_counts[$charger_term->name])) {
+                        $quantity = intval($charger_counts[$charger_term->name]);
+                    }
+                    
+                    $power = 0;
+                    if (is_array($charger_powers) && isset($charger_powers[$charger_term->term_id])) {
+                        $power = floatval($charger_powers[$charger_term->term_id]);
+                    } elseif (is_array($charger_powers) && isset($charger_powers[$charger_term->name])) {
+                        $power = floatval($charger_powers[$charger_term->name]);
+                    }
+                    if ($power == 0) {
+                        $term_power = get_term_meta($charger_term->term_id, 'power', true);
+                        if ($term_power && is_numeric($term_power)) {
+                            $power = floatval($term_power);
+                        }
+                    }
+                    
+                    $connectors[] = [
+                        'name' => $charger_term->name,
+                        'slug' => $charger_term->slug,
+                        'icon' => get_term_meta($charger_term->term_id, 'charger_icon', true),
+                        'type' => get_term_meta($charger_term->term_id, 'charger_current_type', true),
+                        'power' => $power,
+                        'power_kw' => $power,
+                        'quantity' => $quantity,
+                    ];
+                }
+                $properties['connectors'] = $connectors;
+                $properties['konektory'] = $connectors;
+            }
+            
+            $amenity_terms = wp_get_post_terms($post->ID, 'amenity');
+            if (!empty($amenity_terms) && !is_wp_error($amenity_terms)) {
+                $amenities = [];
+                foreach ($amenity_terms as $amenity_term) {
+                    $amenities[] = [
+                        'name' => $amenity_term->name,
+                        'slug' => $amenity_term->slug,
+                        'icon' => get_term_meta($amenity_term->term_id, 'icon', true),
+                    ];
+                }
+                $properties['amenities'] = $amenities;
+            }
+            
+            $rating_terms = wp_get_post_terms($post->ID, 'rating');
+            if (!empty($rating_terms) && !is_wp_error($rating_terms)) {
+                $term = $rating_terms[0];
+                $properties['rating'] = $term->name;
+                $properties['rating_slug'] = $term->slug;
+            }
+        }
+        
+        // Favorites (pokud je uživatel přihlášen)
+        $current_user_id = get_current_user_id();
+        if ($current_user_id > 0 && class_exists('\\DB\\Favorites_Manager')) {
+            try {
+                $favorites_manager = \DB\Favorites_Manager::get_instance();
+                $state = $favorites_manager->get_state($current_user_id);
+                $favorite_assignments = $state['assignments'] ?? [];
+                $fav_id = $favorite_assignments[$post->ID] ?? null;
+                if ($fav_id) {
+                    $fav_id = (string) $fav_id;
+                    $properties['favorite_folder_id'] = $fav_id;
+                    $folders = $favorites_manager->get_folders($current_user_id);
+                    foreach ($folders as $folder) {
+                        if (isset($folder['id']) && (string)$folder['id'] === $fav_id) {
+                            $properties['favorite_folder'] = [
+                                'id' => $folder['id'] ?? $fav_id,
+                                'name' => $folder['name'] ?? '',
+                                'icon' => $folder['icon'] ?? '',
+                                'type' => $folder['type'] ?? 'custom',
+                                'limit' => $folder['limit'] ?? 0,
+                            ];
+                            break;
+                        }
+                    }
+                }
+            } catch ( \Throwable $e ) {
+                // Ignorovat chyby favorites
+            }
+        }
+        
+        $feature = [
+            'type' => 'Feature',
+            'geometry' => ['type' => 'Point', 'coordinates' => [$loF, $laF]],
+            'properties' => $properties,
+        ];
+        
+        return rest_ensure_response([
+            'type' => 'FeatureCollection',
+            'features' => [$feature],
+        ]);
     }
 
     public function handle_map_search( $request ) {
@@ -3088,5 +3443,356 @@ class REST_Map {
         return rest_ensure_response([
             'providers' => $providers_with_count
         ]);
+    }
+
+    /**
+     * Filter options endpoint - globální katalog filtrů z celé DB
+     * Vrací všechny dostupné možnosti pro filtry (providers, charger_types, poi_types, amenities, rating)
+     */
+    public function handle_filter_options( $request ) {
+        global $wpdb;
+        
+        $options = [
+            'providers' => [],
+            'charger_types' => [],
+            'poi_types' => [],
+            'amenities' => [],
+            'rating' => [],
+        ];
+        
+        // Providers - taxonomie provider
+        $provider_terms = get_terms(array(
+            'taxonomy' => 'provider',
+            'hide_empty' => false,
+        ));
+        if (!is_wp_error($provider_terms) && !empty($provider_terms)) {
+            foreach ($provider_terms as $term) {
+                $count = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->posts} p
+                     INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                     WHERE p.post_type = 'charging_location' AND p.post_status = 'publish'
+                     AND tr.term_taxonomy_id = %d",
+                    $term->term_taxonomy_id
+                ));
+                $options['providers'][] = [
+                    'id' => $term->term_id,
+                    'name' => $term->name,
+                    'slug' => $term->slug,
+                    'count' => (int)$count,
+                ];
+            }
+            usort($options['providers'], function($a, $b) {
+                return $b['count'] - $a['count'];
+            });
+        }
+        
+        // Charger types (connector types) - taxonomie charger_type
+        $charger_type_terms = get_terms(array(
+            'taxonomy' => 'charger_type',
+            'hide_empty' => false,
+        ));
+        if (!is_wp_error($charger_type_terms) && !empty($charger_type_terms)) {
+            foreach ($charger_type_terms as $term) {
+                $count = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->posts} p
+                     INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                     WHERE p.post_type = 'charging_location' AND p.post_status = 'publish'
+                     AND tr.term_taxonomy_id = %d",
+                    $term->term_taxonomy_id
+                ));
+                $options['charger_types'][] = [
+                    'id' => $term->term_id,
+                    'name' => $term->name,
+                    'slug' => $term->slug,
+                    'count' => (int)$count,
+                ];
+            }
+            usort($options['charger_types'], function($a, $b) {
+                return $b['count'] - $a['count'];
+            });
+        }
+        
+        // POI types - taxonomie poi_type
+        $poi_type_terms = get_terms(array(
+            'taxonomy' => 'poi_type',
+            'hide_empty' => false,
+        ));
+        if (!is_wp_error($poi_type_terms) && !empty($poi_type_terms)) {
+            foreach ($poi_type_terms as $term) {
+                $count = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->posts} p
+                     INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                     WHERE p.post_type = 'poi' AND p.post_status = 'publish'
+                     AND tr.term_taxonomy_id = %d",
+                    $term->term_taxonomy_id
+                ));
+                $options['poi_types'][] = [
+                    'id' => $term->term_id,
+                    'name' => $term->name,
+                    'slug' => $term->slug,
+                    'count' => (int)$count,
+                ];
+            }
+            usort($options['poi_types'], function($a, $b) {
+                return $b['count'] - $a['count'];
+            });
+        }
+        
+        // Amenities - taxonomie amenity
+        $amenity_terms = get_terms(array(
+            'taxonomy' => 'amenity',
+            'hide_empty' => false,
+        ));
+        if (!is_wp_error($amenity_terms) && !empty($amenity_terms)) {
+            foreach ($amenity_terms as $term) {
+                $count = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->posts} p
+                     INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                     WHERE p.post_type IN ('charging_location', 'rv_spot', 'poi') AND p.post_status = 'publish'
+                     AND tr.term_taxonomy_id = %d",
+                    $term->term_taxonomy_id
+                ));
+                $icon = get_term_meta($term->term_id, 'icon', true);
+                $options['amenities'][] = [
+                    'id' => $term->term_id,
+                    'name' => $term->name,
+                    'slug' => $term->slug,
+                    'icon' => $icon,
+                    'count' => (int)$count,
+                ];
+            }
+            usort($options['amenities'], function($a, $b) {
+                return $b['count'] - $a['count'];
+            });
+        }
+        
+        // Rating - taxonomie rating (volitelně)
+        $rating_terms = get_terms(array(
+            'taxonomy' => 'rating',
+            'hide_empty' => false,
+        ));
+        if (!is_wp_error($rating_terms) && !empty($rating_terms)) {
+            foreach ($rating_terms as $term) {
+                $count = $wpdb->get_var($wpdb->prepare(
+                    "SELECT COUNT(*) FROM {$wpdb->posts} p
+                     INNER JOIN {$wpdb->term_relationships} tr ON p.ID = tr.object_id
+                     WHERE p.post_type IN ('charging_location', 'rv_spot', 'poi') AND p.post_status = 'publish'
+                     AND tr.term_taxonomy_id = %d",
+                    $term->term_taxonomy_id
+                ));
+                $options['rating'][] = [
+                    'id' => $term->term_id,
+                    'name' => $term->name,
+                    'slug' => $term->slug,
+                    'count' => (int)$count,
+                ];
+            }
+            usort($options['rating'], function($a, $b) {
+                return $b['count'] - $a['count'];
+            });
+        }
+        
+        return rest_ensure_response($options);
+    }
+
+    /**
+     * Special dataset handler - pro db_recommended/free bez radius filtru
+     * S server-side cache na 5-15 minut
+     */
+    public function handle_map_special($request) {
+        $db_recommended = $request->get_param('db_recommended'); // '1' nebo null
+        $free_only = $request->get_param('free'); // '1' nebo null
+        $fields_mode = $request->get_param('fields') ?: 'minimal';
+        if (!in_array($fields_mode, ['minimal', 'full'], true)) {
+            $fields_mode = 'minimal';
+        }
+        
+        $limit = max(1, min(2000, intval($request->get_param('limit') ?: 2000)));
+        
+        // Cache key podle kombinace db_recommended/free
+        $cache_key = 'db_map_special_' . md5(sprintf('%s_%s_%s_%d', 
+            $db_recommended ? '1' : '0',
+            $free_only ? '1' : '0',
+            $fields_mode,
+            $limit
+        ));
+        $cache_ttl = 10 * MINUTE_IN_SECONDS; // 10 minut
+        
+        // Zkusit cache
+        $cached_result = get_transient($cache_key);
+        if ($cached_result !== false) {
+            // Přidat metadata o cache
+            if (is_array($cached_result) && isset($cached_result['features'])) {
+                $cached_result['cache'] = [
+                    'key' => $cache_key,
+                    'ttl' => $cache_ttl,
+                    'cached' => true
+                ];
+            }
+            return rest_ensure_response($cached_result);
+        }
+        
+        // Načíst charging_location s filtry
+        $args = [
+            'post_type' => 'charging_location',
+            'post_status' => 'publish',
+            'posts_per_page' => $limit,
+            'no_found_rows' => true,
+            'orderby' => 'date',
+            'order' => 'DESC',
+        ];
+        
+        $meta_query = [];
+        if ($db_recommended === '1') {
+            $meta_query[] = [
+                'key' => '_db_recommended',
+                'value' => '1',
+                'compare' => '='
+            ];
+        }
+        if ($free_only === '1') {
+            $meta_query[] = [
+                'key' => '_db_price',
+                'value' => 'free',
+                'compare' => '='
+            ];
+        }
+        if (!empty($meta_query)) {
+            $args['meta_query'] = $meta_query;
+        }
+        
+        $query = new \WP_Query($args);
+        $features = [];
+        
+        // Inicializovat favorite_assignments
+        $favorite_assignments = [];
+        $favorite_folders_index = [];
+        $current_user_id = get_current_user_id();
+        if ($current_user_id > 0 && class_exists('\\DB\\Favorites_Manager')) {
+            try {
+                $favorites_manager = \DB\Favorites_Manager::get_instance();
+                $state = $favorites_manager->get_state($current_user_id);
+                $favorite_assignments = $state['assignments'] ?? [];
+                $folders = $favorites_manager->get_folders($current_user_id);
+                foreach ($folders as $folder) {
+                    if (isset($folder['id'])) {
+                        $favorite_folders_index[(string)$folder['id']] = $folder;
+                    }
+                }
+            } catch (\Exception $e) {
+                // Silent fail
+            }
+        }
+        
+        foreach ($query->posts as $post) {
+            $keys = $this->get_latlng_keys_for_type('charging_location');
+            $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
+            $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
+            
+            if (!$lat || !$lng) continue;
+            
+            $properties = $this->build_minimal_properties($post, 'charging_location', $fields_mode, $favorite_assignments, $favorite_folders_index);
+            
+            $features[] = [
+                'type' => 'Feature',
+                'geometry' => [
+                    'type' => 'Point',
+                    'coordinates' => [$lng, $lat]
+                ],
+                'properties' => $properties
+            ];
+        }
+        
+        $response_data = [
+            'type' => 'FeatureCollection',
+            'features' => $features
+        ];
+        
+        // Uložit do cache
+        set_transient($cache_key, $response_data, $cache_ttl);
+        
+        // Přidat metadata o cache
+        $response_data['cache'] = [
+            'key' => $cache_key,
+            'ttl' => $cache_ttl,
+            'cached' => false
+        ];
+        
+        return rest_ensure_response($response_data);
+    }
+
+    /**
+     * Invalidace cache při změně/uložení postu
+     */
+    public function invalidate_special_cache($post_id, $post) {
+        if (wp_is_post_revision($post_id) || wp_is_post_autosave($post_id)) {
+            return;
+        }
+        
+        if (!in_array($post->post_type, ['charging_location', 'poi', 'rv_spot'])) {
+            return;
+        }
+        
+        // Vymazat všechny special cache klíče
+        global $wpdb;
+        $pattern = 'db_map_special_%';
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+            '_transient_' . $pattern
+        ));
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
+            '_transient_timeout_' . $pattern
+        ));
+    }
+
+    /**
+     * Build minimal properties pro feature (používá stejnou logiku jako handle_map)
+     */
+    private function build_minimal_properties($post, $post_type, $fields_mode, $favorite_assignments, $favorite_folders_index) {
+        // Použít stejnou logiku jako v handle_map pro minimal payload
+        $icon_registry = \DB\Icon_Registry::get_instance();
+        $icon_data = $icon_registry->get_icon($post);
+        
+        $properties = [
+            'id' => $post->ID,
+            'post_type' => $post_type,
+            'title' => get_the_title($post),
+            'icon_slug' => $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true),
+            'icon_color' => $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true),
+            'svg_content' => $icon_data['svg_content'] ?? '',
+            'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
+        ];
+        
+        if ($post_type === 'charging_location') {
+            $provider_terms = wp_get_post_terms($post->ID, 'provider');
+            if (!empty($provider_terms) && !is_wp_error($provider_terms)) {
+                $properties['provider'] = $provider_terms[0]->name;
+                $properties['provider_slug'] = $provider_terms[0]->slug;
+            }
+            $charger_terms = wp_get_post_terms($post->ID, 'charger_type');
+            if (!empty($charger_terms) && !is_wp_error($charger_terms)) {
+                $properties['charger_type'] = $charger_terms[0]->name;
+                $properties['charger_type_slug'] = $charger_terms[0]->slug;
+            }
+        }
+        
+        // Favorites
+        if (!empty($favorite_assignments)) {
+            $fav_id = $favorite_assignments[$post->ID] ?? null;
+            if ($fav_id && isset($favorite_folders_index[(string)$fav_id])) {
+                $properties['favorite_folder_id'] = (string)$fav_id;
+                $folder_meta = $favorite_folders_index[(string)$fav_id];
+                $properties['favorite_folder'] = [
+                    'id' => $folder_meta['id'] ?? $fav_id,
+                    'name' => $folder_meta['name'] ?? '',
+                    'icon' => $folder_meta['icon'] ?? '',
+                    'type' => $folder_meta['type'] ?? 'custom',
+                    'limit' => $folder_meta['limit'] ?? 0,
+                ];
+            }
+        }
+        
+        return $properties;
     }
 } 
