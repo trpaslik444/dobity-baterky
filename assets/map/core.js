@@ -2249,6 +2249,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   let lastSearchResults = [];
   let activeIdxGlobal = null;
   let initialLoadCompleted = false; // Flag pro označení dokončení počátečního načítání
+  let initialDataLoadRunning = false; // Flag pro debounce - zabránit dvojímu spuštění
   let activeFeatureId = null;
   // --- DEBUG utility odstraněna ---
   
@@ -2291,6 +2292,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   const RADIUS_KM = 50; // Výchozí fallback (bude nahrazen dle režimu)
   const MIN_FETCH_ZOOM = (typeof window.DB_MIN_FETCH_ZOOM !== 'undefined') ? window.DB_MIN_FETCH_ZOOM : 9; // pod tímto zoomem nerefreshujeme
   const FIXED_RADIUS_KM = (typeof window.DB_FIXED_RADIUS_KM !== 'undefined') ? window.DB_FIXED_RADIUS_KM : 50; // fixní okruh pro radius režim
+  const MINI_RADIUS_KM = 12; // rychlý mini-fetch pro okamžité zobrazení markerů
+  const MINI_LIMIT = 100; // limit pro mini-fetch
+  const FULL_LIMIT = 300; // limit pro plný fetch
   // Vynucené trvalé zobrazení manuálního tlačítka načítání (staging-safe)
   // Nastaveno na true - tlačítko se zobrazuje permanentně (kromě aktivních speciálních filtrů)
   const ALWAYS_SHOW_MANUAL_BUTTON = true;
@@ -2673,6 +2677,210 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     await fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url);
   }
+
+  /**
+   * Progressive loading: nejdřív rychlý mini-fetch, pak plný fetch v pozadí
+   * Mini-fetch renderuje okamžitě (~1s), plný fetch nahradí data později
+   */
+  async function fetchAndRenderQuickThenFull(center, includedTypesCsv = null) {
+    if (favoritesState.isActive) {
+      return;
+    }
+
+    // Zrušit předchozí fetchy
+    if (inFlightController) {
+      try { inFlightController.abort(); } catch(_) {}
+    }
+    if (window.__dbQuickController) {
+      try { window.__dbQuickController.abort(); } catch(_) {}
+    }
+    if (window.__dbFullController) {
+      try { window.__dbFullController.abort(); } catch(_) {}
+    }
+
+    // Vytvořit dva AbortControllery pro mini a plný fetch
+    const quickController = new AbortController();
+    const fullController = new AbortController();
+    window.__dbQuickController = quickController;
+    window.__dbFullController = fullController;
+
+    // Spustit mini-fetch (rychlejší, menší radius)
+    const quickUrl = buildRestUrlForRadius(center, includedTypesCsv, MINI_RADIUS_KM);
+    // Override limit pro mini-fetch
+    const quickUrlObj = new URL(quickUrl);
+    quickUrlObj.searchParams.set('limit', String(MINI_LIMIT));
+    const quickUrlFinal = quickUrlObj.toString();
+
+    // Spustit plný fetch paralelně
+    const fullUrl = buildRestUrlForRadius(center, includedTypesCsv, FIXED_RADIUS_KM);
+    const fullUrlObj = new URL(fullUrl);
+    fullUrlObj.searchParams.set('limit', String(FULL_LIMIT));
+    const fullUrlFinal = fullUrlObj.toString();
+
+    let quickCompleted = false;
+    let fullCompleted = false;
+
+    // Mini-fetch: renderovat okamžitě po dokončení
+    const quickPromise = (async () => {
+      try {
+        const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
+        const headers = {
+          'Accept': 'application/json'
+        };
+        if (dbData?.restNonce) {
+          headers['X-WP-Nonce'] = dbData.restNonce;
+        }
+
+        const res = await fetch(quickUrlFinal, {
+          signal: quickController.signal,
+          credentials: 'same-origin',
+          headers: headers
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+
+        const geo = await res.json();
+        const incoming = Array.isArray(geo?.features) ? geo.features : [];
+
+        // Pokud už plný fetch dokončil, přeskočit render mini-fetchu
+        if (fullCompleted) {
+          return;
+        }
+
+        // Sloučit do cache
+        for (let i = 0; i < incoming.length; i++) {
+          const f = incoming[i];
+          const id = f?.properties?.id;
+          if (id != null) featureCache.set(id, f);
+        }
+
+        // Nastavit features a renderovat okamžitě
+        features = incoming;
+        window.features = features;
+
+        // Nastavit lastSearchCenter pro mini-fetch
+        lastSearchCenter = { lat: center.lat, lng: center.lng };
+        lastSearchRadiusKm = MINI_RADIUS_KM;
+
+        // Renderovat markery okamžitě
+        if (typeof clearMarkers === 'function') {
+          clearMarkers();
+        }
+        if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
+
+        window.features = features;
+        lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
+        quickCompleted = true;
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          // Silent fail - pokud selže mini-fetch, počkáme na plný
+        }
+      }
+    })();
+
+    // Plný fetch: nahradit data po dokončení
+    const fullPromise = (async () => {
+      try {
+        const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
+        const headers = {
+          'Accept': 'application/json'
+        };
+        if (dbData?.restNonce) {
+          headers['X-WP-Nonce'] = dbData.restNonce;
+        }
+
+        const res = await fetch(fullUrlFinal, {
+          signal: fullController.signal,
+          credentials: 'same-origin',
+          headers: headers
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+
+        const geo = await res.json();
+        const incoming = Array.isArray(geo?.features) ? geo.features : [];
+
+        // Sloučit do cache
+        for (let i = 0; i < incoming.length; i++) {
+          const f = incoming[i];
+          const id = f?.properties?.id;
+          if (id != null) featureCache.set(id, f);
+        }
+
+        // Nahradit features plným datasetem
+        features = incoming;
+        window.features = features;
+
+        // Nastavit lastSearchCenter pro plný fetch
+        lastSearchCenter = { lat: center.lat, lng: center.lng };
+        lastSearchRadiusKm = FIXED_RADIUS_KM;
+
+        // Aktualizovat viditelnost tlačítka po načtení dat
+        if (window.smartLoadingManager && ALWAYS_SHOW_MANUAL_BUTTON) {
+          setTimeout(() => {
+            const hasSpecialFilters = specialDatasetActive || filterState.free || showOnlyRecommended;
+            if (hasSpecialFilters) {
+              window.smartLoadingManager.hideManualLoadButton();
+              window.smartLoadingManager.disableManualLoadButton();
+            } else {
+              window.smartLoadingManager.enableManualLoadButton();
+              window.smartLoadingManager.showManualLoadButton();
+            }
+          }, 0);
+        }
+
+        // Znovu renderovat s plným datasetem
+        if (typeof clearMarkers === 'function') {
+          clearMarkers();
+        }
+        if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
+
+        window.features = features;
+        lastRenderedFeatures = Array.isArray(features) ? features.slice(0) : [];
+        fullCompleted = true;
+
+        // Pokud bylo tlačítko disable během fetchu (z loadNewAreaData), znovu ho aktivovat
+        if (window.smartLoadingManager) {
+          window.smartLoadingManager.enableManualLoadButton();
+        }
+        const btn = document.getElementById('db-load-new-area-btn');
+        if (btn && btn.disabled) {
+          btn.disabled = false;
+          btn.style.opacity = '1';
+          btn.style.cursor = 'pointer';
+        }
+
+        // Vyčistit controllery
+        window.__dbQuickController = null;
+        window.__dbFullController = null;
+        inFlightController = null;
+        
+        // Odstranit loading třídu
+        document.body.classList.remove('db-loading');
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          // Silent fail
+        }
+        // Vyčistit controllery i při chybě
+        window.__dbQuickController = null;
+        window.__dbFullController = null;
+        inFlightController = null;
+        document.body.classList.remove('db-loading');
+      }
+    })();
+
+    // Spustit oba fetchy paralelně
+    await Promise.allSettled([quickPromise, fullPromise]);
+  }
+
   async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
     specialDatasetActive = false;
     if (favoritesState.isActive) {
@@ -2878,6 +3086,10 @@ document.addEventListener('DOMContentLoaded', async function() {
               }
             } else {
               aggregated.set(key, converted);
+              // Uložit do featureCache pro pozdější použití (např. pro ikony v mobilním sheetu)
+              if (converted.properties?.id != null && typeof featureCache !== 'undefined') {
+                featureCache.set(converted.properties.id, converted);
+              }
             }
           });
         } catch (err) {
@@ -2938,6 +3150,10 @@ document.addEventListener('DOMContentLoaded', async function() {
               }
             } else {
               aggregated.set(key, converted);
+              // Uložit do featureCache pro pozdější použití (např. pro ikony v mobilním sheetu)
+              if (converted.properties?.id != null && typeof featureCache !== 'undefined') {
+                featureCache.set(converted.properties.id, converted);
+              }
             }
           });
         } catch (err) {
@@ -3089,6 +3305,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         const chargingData = await chargingRes.json();
         const chargingFeatures = Array.isArray(chargingData?.features) ? chargingData.features : [];
+        
+        // Uložit charging features do featureCache
+        chargingFeatures.forEach(f => {
+          if (f?.properties?.id != null && typeof featureCache !== 'undefined') {
+            featureCache.set(f.properties.id, f);
+          }
+        });
         
         // Dopočítat nearby POI/RV s cache optimalizací
         const poiRvFeatures = await buildSpecialNearbyDatasetCached(chargingFeatures, headers);
@@ -10137,7 +10360,30 @@ document.addEventListener('DOMContentLoaded', async function() {
               <path class="db-marker-pin-outline" d="${pinPath}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-linejoin="round" stroke-linecap="round"/>
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
-              ${p.svg_content ? (p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content) : (p.icon_slug ? `<img src="${getIconUrl(p.icon_slug)}" style="width:100%;height:100%;display:block;" alt="">` : (p.post_type === 'charging_location' ? '⚡' : ''))}
+              ${(() => {
+                // Zkusit nejdřív properties přímo
+                if (p.svg_content && p.svg_content.trim() !== '') {
+                  return p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content;
+                }
+                if (p.icon_slug && p.icon_slug.trim() !== '') {
+                  const iconUrl = getIconUrl(p.icon_slug);
+                  return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="">` : '';
+                }
+                // Pokud není v properties, zkusit featureCache
+                const cachedFeature = typeof featureCache !== 'undefined' ? featureCache.get(p.id) : null;
+                if (cachedFeature && cachedFeature.properties) {
+                  const cachedProps = cachedFeature.properties;
+                  if (cachedProps.svg_content && cachedProps.svg_content.trim() !== '') {
+                    return p.post_type === 'charging_location' ? recolorChargerIcon(cachedProps.svg_content, p) : cachedProps.svg_content;
+                  }
+                  if (cachedProps.icon_slug && cachedProps.icon_slug.trim() !== '') {
+                    const iconUrl = getIconUrl(cachedProps.icon_slug);
+                    return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="">` : '';
+                  }
+                }
+                // Fallback podle typu
+                return p.post_type === 'charging_location' ? '⚡' : '';
+              })()}
             </div>
             ${favoriteBadge}
             ${freeBadge}
@@ -11302,6 +11548,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         return; // Ignorovat kliknutí během probíhajícího fetch
       }
       
+      // Zkontrolovat, zda už běží plný fetch (z progressive loading)
+      if (window.__dbFullController && window.__dbFullController.signal && !window.__dbFullController.signal.aborted) {
+        // Pokud běží plný fetch, jen disable tlačítko a počkat na dokončení
+        // Tlačítko se znovu aktivuje po dokončení fetchu v fetchAndRenderQuickThenFull
+        this.disableManualLoadButton();
+        return;
+      }
+      
       // Použít globální body.db-loading
       document.body.classList.add('db-loading');
       // Disable tlačítko během fetch (zabrání dvojkliku a zrušení probíhajícího requestu)
@@ -11316,9 +11570,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         const center = map.getCenter();
         // Získat aktuální typy z filtrů
         const currentTypes = getCurrentTypesFromFilters();
-        // Použít fixní radius místo dynamického - stejně jako při inicializaci
-        // Fetch je on-demand podle středu mapy, s minimálním payloadem
-        await fetchAndRenderRadiusWithFixedRadius(center, currentTypes, FIXED_RADIUS_KM);
+        // Použít progressive loading (mini + plný fetch) pro rychlejší vnímaný výkon
+        await fetchAndRenderQuickThenFull(center, currentTypes);
         lastSearchCenter = { lat: center.lat, lng: center.lng };
         lastSearchRadiusKm = FIXED_RADIUS_KM;
       } catch (error) {
@@ -11514,8 +11767,15 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Funkce pro počáteční načtení dat
   async function initialDataLoad() {
-    // Nejdřív načíst filtry z localStorage, abychom věděli, zda jsou aktivní speciální filtry
-    loadFilterSettings();
+    // Debounce: zabránit dvojímu spuštění
+    if (initialDataLoadRunning) {
+      return;
+    }
+    initialDataLoadRunning = true;
+    
+    try {
+      // Nejdřív načíst filtry z localStorage, abychom věděli, zda jsou aktivní speciální filtry
+      loadFilterSettings();
     
     // Zkontrolovat, zda jsou aktivní speciální filtry (DB doporučuje nebo Zdarma)
     // Pokud ano, načíst všechna data místo pouze v radiusu
@@ -11532,7 +11792,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Automatický počáteční fetch při prvním otevření mapy (prázdná mapa není OK)
-    // Pokud nejsou aktivní speciální filtry, použít radius režim
+    // Pokud nejsou aktivní speciální filtry, použít progressive loading (mini + plný fetch)
     // Zkusit získat polohu uživatele pro centrování mapy
     const userLocation = await tryGetUserLocation();
     
@@ -11547,11 +11807,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     try {
-      // Použít fixní radius pro co nejbohatší úvodní dataset
-      await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
+      // Progressive loading: mini-fetch pro okamžité zobrazení, pak plný fetch v pozadí
+      await fetchAndRenderQuickThenFull(c, null);
       lastSearchCenter = { lat: c.lat, lng: c.lng };
       lastSearchRadiusKm = FIXED_RADIUS_KM;
     } catch(error) {
+      // Fallback: pokud selže progressive loading, zkusit klasický fetch
       try {
         await fetchAndRenderRadiusWithFixedRadius(c, null, FIXED_RADIUS_KM);
         lastSearchCenter = { lat: c.lat, lng: c.lng };
@@ -11565,8 +11826,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     // I při úspěchu uvolnit gate pro viewport-driven fetch (pro jistotu)
     initialLoadCompleted = true;
-    // // I při úspěchu uvolnit gate pro viewport-driven fetch (pro jistotu)
-    // initialLoadCompleted = true;
+    } finally {
+      initialDataLoadRunning = false;
+    }
   }
   
   // Nejdřív načíst filtry z localStorage, abychom věděli, zda jsou aktivní speciální filtry

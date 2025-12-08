@@ -426,19 +426,30 @@ class REST_Map {
             $keys = $this->get_latlng_keys_for_type($pt);
             // error_log('DB Map REST: Meta klíče pro ' . $pt . ': ' . print_r($keys, true));
 
-            $args = [
-                'post_type'      => $pt,
-                'post_status'    => 'publish',
-                'no_found_rows'  => true,
-                // V radius větvi necháme vyšší strop (prefilter), následně ořízneme až po Haversine
-                'posts_per_page' => 5000, // Zvýšíme limit pro lepší pokrytí před Haversine filtrem
-                'orderby'        => 'date', // Seřadit podle data pro lepší pokrytí
-                'order'          => 'DESC',
+            // Optimalizace: použít bounding box meta_query místo načítání 5000 postů
+            // cca převod km -> stupně (zvětšeno o 20% pro jistotu)
+            $dLat  = ($radius_km * 1.2) / 111.0;
+            $dLng  = ($radius_km * 1.2) / (111.0 * max(cos(deg2rad($lat)), 0.000001));
+            $minLa = $lat - $dLat; $maxLa = $lat + $dLat;
+            $minLo = $lng - $dLng; $maxLo = $lng + $dLng;
+
+            // Sestavit meta_query s bbox a filtry
+            $meta_query = [
+                [
+                    'key'     => $keys['lat'],
+                    'value'   => [$minLa, $maxLa],
+                    'type'    => 'DECIMAL(10,7)',
+                    'compare' => 'BETWEEN',
+                ],
+                [
+                    'key'     => $keys['lng'],
+                    'value'   => [$minLo, $maxLo],
+                    'type'    => 'DECIMAL(10,7)',
+                    'compare' => 'BETWEEN',
+                ],
             ];
             
-            // Přidat meta_query pro filtry
-            $meta_query = array();
-            
+            // Přidat filtry do meta_query
             // Filtr "DB doporučuje" - pouze pro charging_location
             if ($db_recommended === '1' && $pt === 'charging_location') {
                 $meta_query[] = array(
@@ -456,10 +467,16 @@ class REST_Map {
                     'compare' => '='
                 );
             }
-            
-            if (!empty($meta_query)) {
-                $args['meta_query'] = $meta_query;
-            }
+
+            $args = [
+                'post_type'      => $pt,
+                'post_status'    => 'publish',
+                'no_found_rows'  => true,
+                'posts_per_page' => 300, // Sníženo z 5000 - bbox filtruje před Haversine
+                'orderby'        => 'date',
+                'order'          => 'DESC',
+                'meta_query'     => array_merge(['relation' => 'AND'], $meta_query),
+            ];
             
             // Přidat tax_query pro taxonomy filtry
             $tax_query = array();
@@ -545,6 +562,71 @@ class REST_Map {
 
             $q = new \WP_Query($args);
             // error_log('DB Map REST: WP_Query pro ' . $pt . ' - nalezeno postů: ' . $q->post_count);
+            
+            // OPTIMALIZACE 1: Batch loading meta hodnot - načíst všechny meta najednou před loopem
+            if (!empty($q->posts)) {
+                $post_ids = wp_list_pluck($q->posts, 'ID');
+                // Načíst všechny potřebné meta klíče najednou
+                $meta_keys_to_cache = [
+                    $keys['lat'],
+                    $keys['lng'],
+                    '_icon_slug',
+                    '_icon_color',
+                    '_db_recommended',
+                ];
+                // Pro charging_location přidat další meta
+                if ($pt === 'charging_location') {
+                    $meta_keys_to_cache = array_merge($meta_keys_to_cache, [
+                        '_db_provider',
+                        '_db_speed',
+                        '_db_connectors',
+                        '_db_konektory',
+                        '_charging_business_status',
+                        '_charging_live_available',
+                        '_charging_live_total',
+                        '_charging_live_source',
+                        '_charging_live_updated',
+                        '_charging_live_data_available',
+                        '_db_image',
+                        '_db_address',
+                        '_db_phone',
+                        '_db_website',
+                        '_db_rating',
+                        '_db_description',
+                    ]);
+                }
+                // Pro POI přidat další meta
+                if ($pt === 'poi') {
+                    $meta_keys_to_cache = array_merge($meta_keys_to_cache, [
+                        '_db_image',
+                        '_db_address',
+                        '_db_phone',
+                        '_db_website',
+                        '_db_rating',
+                        '_db_description',
+                    ]);
+                }
+                // Pro RV přidat další meta
+                if ($pt === 'rv_spot') {
+                    $meta_keys_to_cache = array_merge($meta_keys_to_cache, [
+                        '_rv_type',
+                        '_rv_address',
+                        '_rv_phone',
+                        '_rv_website',
+                    ]);
+                }
+                // Načíst všechny meta hodnoty najednou
+                update_postmeta_cache($post_ids);
+                
+                // OPTIMALIZACE 3: Batch loading taxonomy - načíst všechny termy najednou
+                if ($pt === 'charging_location') {
+                    update_object_term_cache($post_ids, 'charging_location');
+                } elseif ($pt === 'poi') {
+                    update_object_term_cache($post_ids, 'poi');
+                } elseif ($pt === 'rv_spot') {
+                    update_object_term_cache($post_ids, 'rv_spot');
+                }
+            }
             
             $bbox_count = 0;
             $haversine_count = 0;
