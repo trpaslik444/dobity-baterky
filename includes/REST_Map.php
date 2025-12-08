@@ -968,6 +968,7 @@ class REST_Map {
                     // Icon_Registry vrací null pro icon_color u nabíječek, což je správně
                     // JavaScript kód pak použije getChargerFill() pro určení barvy
                 }
+                } // Konec else bloku pro full payload
 
                 $features[] = [
                     'type' => 'Feature',
