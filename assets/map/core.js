@@ -2295,6 +2295,92 @@ document.addEventListener('DOMContentLoaded', async function() {
   const MINI_RADIUS_KM = 12; // rychlý mini-fetch pro okamžité zobrazení markerů
   const MINI_LIMIT = 100; // limit pro mini-fetch
   const FULL_LIMIT = 300; // limit pro plný fetch
+  
+  // Cache pro SVG ikony podle icon_slug - ikony se načítají jednou podle icon_slug a pak se používají pro všechny markery
+  const iconSvgCache = new Map();
+  const iconSvgLoading = new Set(); // Set icon_slug, které se právě načítají (pro prevenci duplicitních requestů)
+  
+  /**
+   * Načte SVG ikonu podle icon_slug (s cache)
+   * @param {string} iconSlug 
+   * @returns {Promise<string>} SVG obsah
+   */
+  async function loadIconSvg(iconSlug) {
+    if (!iconSlug || !iconSlug.trim()) {
+      return '';
+    }
+    
+    // Pokud už je v cache, vrátit okamžitě
+    if (iconSvgCache.has(iconSlug)) {
+      return iconSvgCache.get(iconSlug);
+    }
+    
+    // Pokud se právě načítá, počkat na dokončení
+    if (iconSvgLoading.has(iconSlug)) {
+      // Počkat až se dokončí načítání (max 5 sekund)
+      const startTime = Date.now();
+      while (iconSvgLoading.has(iconSlug) && (Date.now() - startTime) < 5000) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      // Zkusit znovu získat z cache
+      if (iconSvgCache.has(iconSlug)) {
+        return iconSvgCache.get(iconSlug);
+      }
+    }
+    
+    // Načíst ikonu
+    iconSvgLoading.add(iconSlug);
+    try {
+      const iconUrl = getIconUrl(iconSlug);
+      if (!iconUrl) {
+        iconSvgCache.set(iconSlug, '');
+        return '';
+      }
+      
+      const response = await fetch(iconUrl);
+      if (!response.ok) {
+        iconSvgCache.set(iconSlug, '');
+        return '';
+      }
+      
+      const svgContent = await response.text();
+      iconSvgCache.set(iconSlug, svgContent);
+      return svgContent;
+    } catch (err) {
+      console.warn('[DB Map] Failed to load icon:', iconSlug, err);
+      iconSvgCache.set(iconSlug, '');
+      return '';
+    } finally {
+      iconSvgLoading.delete(iconSlug);
+    }
+  }
+  
+  /**
+   * Načte všechny unikátní ikony z features paralelně
+   * @param {Array} features 
+   */
+  async function preloadIconsFromFeatures(features) {
+    if (!Array.isArray(features) || features.length === 0) {
+      return;
+    }
+    
+    // Získat všechny unikátní icon_slug
+    const uniqueIconSlugs = new Set();
+    for (const feature of features) {
+      const iconSlug = feature?.properties?.icon_slug;
+      if (iconSlug && iconSlug.trim() && !iconSvgCache.has(iconSlug)) {
+        uniqueIconSlugs.add(iconSlug);
+      }
+    }
+    
+    if (uniqueIconSlugs.size === 0) {
+      return;
+    }
+    
+    // Načíst všechny ikony paralelně
+    const loadPromises = Array.from(uniqueIconSlugs).map(iconSlug => loadIconSvg(iconSlug));
+    await Promise.allSettled(loadPromises);
+  }
   // Vynucené trvalé zobrazení manuálního tlačítka načítání (staging-safe)
   // Nastaveno na true - tlačítko se zobrazuje permanentně (kromě aktivních speciálních filtrů)
   const ALWAYS_SHOW_MANUAL_BUTTON = true;
@@ -2753,6 +2839,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (id != null) featureCache.set(id, f);
         }
 
+        // Načíst všechny unikátní ikony paralelně před renderováním
+        await preloadIconsFromFeatures(incoming);
+
         // Nastavit features a renderovat okamžitě
         features = incoming;
         window.features = features;
@@ -2813,6 +2902,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           const id = f?.properties?.id;
           if (id != null) featureCache.set(id, f);
         }
+
+        // Načíst všechny unikátní ikony paralelně před renderováním
+        await preloadIconsFromFeatures(incoming);
 
         // Nahradit features plným datasetem
         features = incoming;
@@ -10368,26 +10460,19 @@ document.addEventListener('DOMContentLoaded', async function() {
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
               ${(() => {
-                // Zkusit nejdřív properties přímo
-                if (p.svg_content && p.svg_content.trim() !== '') {
-                  return p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content;
-                }
-                if (p.icon_slug && p.icon_slug.trim() !== '') {
-                  const iconUrl = getIconUrl(p.icon_slug);
+                // Použít cached SVG podle icon_slug (ikony se načítají paralelně před renderováním)
+                const iconSlug = p.icon_slug || (typeof featureCache !== 'undefined' ? featureCache.get(p.id)?.properties?.icon_slug : null);
+                
+                if (iconSlug && iconSlug.trim() !== '') {
+                  const cachedSvg = iconSvgCache.get(iconSlug);
+                  if (cachedSvg) {
+                    return p.post_type === 'charging_location' ? recolorChargerIcon(cachedSvg, p) : cachedSvg;
+                  }
+                  // Pokud ještě není v cache, použít fallback na obrázek (ikona se možná ještě načítá)
+                  const iconUrl = getIconUrl(iconSlug);
                   return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="">` : '';
                 }
-                // Pokud není v properties, zkusit featureCache
-                const cachedFeature = typeof featureCache !== 'undefined' ? featureCache.get(p.id) : null;
-                if (cachedFeature && cachedFeature.properties) {
-                  const cachedProps = cachedFeature.properties;
-                  if (cachedProps.svg_content && cachedProps.svg_content.trim() !== '') {
-                    return p.post_type === 'charging_location' ? recolorChargerIcon(cachedProps.svg_content, p) : cachedProps.svg_content;
-                  }
-                  if (cachedProps.icon_slug && cachedProps.icon_slug.trim() !== '') {
-                    const iconUrl = getIconUrl(cachedProps.icon_slug);
-                    return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="">` : '';
-                  }
-                }
+                
                 // Fallback podle typu
                 return p.post_type === 'charging_location' ? '⚡' : '';
               })()}
@@ -13691,4 +13776,5 @@ document.addEventListener('DOMContentLoaded', async function() {
   
 }); // Konec DOMContentLoaded handleru
 
+// Zrušeno: intervalové připínání listenerů není potřeba
 // Zrušeno: intervalové připínání listenerů není potřeba

@@ -629,8 +629,10 @@ class REST_Map {
                     ];
                     
                     // Ikony a barvy pro zobrazení
+                    // V minimal payload vracíme pouze icon_slug - frontend načte SVG jednou a použije cache
                     $properties['icon_slug'] = $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true);
                     $properties['icon_color'] = $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true);
+                    // svg_content se nevrací v minimal payload - frontend načte podle icon_slug
                     
                     // Pro charging_location: provider/charger_type pro barvu
                     if ($pt === 'charging_location') {
