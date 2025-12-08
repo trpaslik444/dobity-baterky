@@ -633,7 +633,7 @@ class REST_Map {
                     $properties['icon_slug'] = $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true);
                     $properties['icon_color'] = $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true);
                     // Pokud není icon_slug, vrátit svg_content jako fallback (většina POI nemá icon_slug)
-                    if (empty($properties['icon_slug'])) {
+                    if (empty($properties['icon_slug']) || trim($properties['icon_slug']) === '') {
                         $properties['svg_content'] = $icon_data['svg_content'] ?? '';
                     }
                     
@@ -3808,9 +3808,13 @@ class REST_Map {
             'title' => get_the_title($post),
             'icon_slug' => (!empty($icon_data['slug']) ? $icon_data['slug'] : get_post_meta($post->ID, '_icon_slug', true)),
             'icon_color' => (!empty($icon_data['color']) ? $icon_data['color'] : get_post_meta($post->ID, '_icon_color', true)),
-            'svg_content' => (!empty($icon_data['svg_content']) ? $icon_data['svg_content'] : ''),
             'db_recommended' => get_post_meta($post->ID, '_db_recommended', true) === '1' ? 1 : 0,
         ];
+        
+        // Pokud není icon_slug, vrátit svg_content jako fallback (stejně jako v handle_map)
+        if (empty($properties['icon_slug']) || trim($properties['icon_slug']) === '') {
+            $properties['svg_content'] = (!empty($icon_data['svg_content']) ? $icon_data['svg_content'] : '');
+        }
         
         if ($post_type === 'charging_location') {
             $provider_terms = wp_get_post_terms($post->ID, 'provider');

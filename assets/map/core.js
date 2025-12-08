@@ -10468,8 +10468,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                   return p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content;
                 }
                 
+                // Získat cachedFeature jednou (optimalizace - není třeba kontrolovat featureCache dvakrát)
+                const cachedFeature = typeof featureCache !== 'undefined' ? featureCache.get(p.id) : null;
+                
                 // PRIORITA 2: icon_slug z properties nebo featureCache (pro cache optimalizaci)
-                const iconSlug = p.icon_slug || (typeof featureCache !== 'undefined' ? featureCache.get(p.id)?.properties?.icon_slug : null);
+                const iconSlug = p.icon_slug || (cachedFeature?.properties?.icon_slug || null);
                 
                 if (iconSlug && iconSlug.trim() !== '') {
                   const cachedSvg = iconSvgCache.get(iconSlug);
@@ -10482,7 +10485,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
                 
                 // PRIORITA 3: svg_content z featureCache (jako nearby items - pro konzistenci)
-                const cachedFeature = typeof featureCache !== 'undefined' ? featureCache.get(p.id) : null;
                 if (cachedFeature && cachedFeature.properties) {
                   const cachedProps = cachedFeature.properties;
                   if (cachedProps.svg_content && cachedProps.svg_content.trim() !== '') {
