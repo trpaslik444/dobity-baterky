@@ -134,6 +134,11 @@ class Icon_Registry {
             if ( !empty($rv_types) && !is_wp_error($rv_types) ) {
                 $term = $rv_types[0];
                 $icon_slug = get_term_meta( $term->term_id, 'icon_slug', true );
+                
+                // Ignorovat špatný icon_slug (poi_type-{id} nebo rv_type-{id} jsou fallback hodnoty z Icon_Admin, ne skutečné názvy souborů)
+                if (preg_match('/^(poi_type|rv_type)-\d+$/', $icon_slug)) {
+                    $icon_slug = '';
+                }
             }
 
             if ( !empty($icon_slug) ) {
@@ -181,6 +186,10 @@ class Icon_Registry {
                 $icon_slug = get_term_meta( $term->term_id, 'icon_slug', true );
                 $color_hex = get_term_meta( $term->term_id, 'color_hex', true );
                 
+                // Ignorovat špatný icon_slug (poi_type-{id} nebo rv_type-{id} jsou fallback hodnoty z Icon_Admin, ne skutečné názvy souborů)
+                if (preg_match('/^(poi_type|rv_type)-\d+$/', $icon_slug)) {
+                    $icon_slug = '';
+                }
 
                 
                 if ( !empty($icon_slug) ) {
