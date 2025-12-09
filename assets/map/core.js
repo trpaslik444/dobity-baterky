@@ -2530,6 +2530,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // ===== NOVÉ STAVOVÉ PROMĚNNÉ PRO FLOATING SEARCH =====
   let lastSearchCenter = null;        // {lat, lng} středu posledního vyhledávání
   let lastSearchRadiusKm = 15;        // tlačítko se zobrazí po přesunu mimo 15 km od středu posledního vyhledávání
+  let isSearchMoveInProgress = false; // Flag pro kontrolu, že se jedná o přesun z vyhledávání (zabraňuje race conditions)
   
   // Globální stav režimu načítání - vždy používat radius režim
   let loadMode = 'radius'; // Vždy radius režim - načítání okolo polohy uživatele
@@ -2587,11 +2588,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Pokud je 'granted', získat aktuální polohu
       if (permissionState === 'granted' || (permissionState === 'prompt' && requestPermission)) {
         try {
+          // Použít cache pokud je čerstvá (< 1 minuta), jinak získat aktuální polohu
+          const cacheAge = cachedLoc ? (Date.now() - cachedLoc.ts) : Infinity;
+          const maximumAge = cacheAge < 60000 ? 60000 : 0;
+          
           const pos = await new Promise((resolve, reject) => {
             navigator.geolocation.getCurrentPosition(
               resolve, 
               reject, 
-              { enableHighAccuracy: false, timeout: 10000, maximumAge: 0 }
+              { enableHighAccuracy: false, timeout: 8000, maximumAge: maximumAge }
             );
           });
           
@@ -9924,12 +9929,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         sortMode = 'distance_from_address';
         searchSortLocked = true;
         renderCards('', null, false);
+        
+        // Nastavit flag pro kontrolu, že se jedná o přesun z vyhledávání
+        isSearchMoveInProgress = true;
         map.setView(searchAddressCoords, 13, {animate:true});
         addOrMoveSearchAddressMarker(searchAddressCoords);
         
         // Po přesunu mapy na výsledek vyhledávání načíst body z tohoto místa
         // Počkat na dokončení animace přesunu mapy
         map.once('moveend', async () => {
+          // Ignorovat pokud už není aktivní vyhledávání (uživatel mohl přesunout mapu ručně)
+          if (!isSearchMoveInProgress) return;
+          isSearchMoveInProgress = false;
+          
           const center = map.getCenter();
           try {
             // Progressive loading: mini-fetch pro okamžité zobrazení, pak plný fetch v pozadí
