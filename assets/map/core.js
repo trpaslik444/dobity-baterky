@@ -5813,13 +5813,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   async function openMobileSheet(feature) {
     if (window.innerWidth > 900) return;
 
-    // Načíst detail data pokud jsou dostupná pouze minimal payload
-    const props = feature?.properties || {};
-    if (!props.content && !props.description && !props.address) {
-      // Minimal payload - načíst detail
-      feature = await fetchFeatureDetail(feature);
-    }
-
+    // Zobrazit sheet okamžitě s dostupnými daty (nečekat na detail)
+    // Detail se načte v pozadí a aktualizuje sheet pokud je potřeba
     const p = feature.properties || {};
     const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
     const lat = coords ? coords[1] : null;
@@ -5950,30 +5945,59 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (lat !== null && lng !== null) {
       map.setView([lat, lng], map.getZoom(), { animate: true, duration: 0.5 });
     }
-    // Pokud je to charging_location, načíst rozšířená data asynchronně
-    if (p.post_type === 'charging_location') {
-      const needsChargingEnrich = shouldFetchChargingDetails(p);
-      if (needsChargingEnrich) {
-        // Načíst data na pozadí a aktualizovat UI
-        enrichChargingFeature(feature).then(enrichedCharging => {
-          if (enrichedCharging && enrichedCharging !== feature) {
-            // Aktualizovat cache
-            featureCache.set(enrichedCharging.properties.id, enrichedCharging);
-            
-            // Aktualizovat konektory v mobile sheet
-            const connectorsSection = mobileSheet.querySelector('.sheet-connectors');
-            if (connectorsSection) {
-              const newConnectorsSection = generateMobileConnectorsSection(enrichedCharging.properties);
-              if (newConnectorsSection) {
-                connectorsSection.outerHTML = newConnectorsSection;
+    
+    // Načíst detail a rozšířená data asynchronně v pozadí (neblokuje UI)
+    (async () => {
+      try {
+        // Načíst detail pokud chybí
+        const props = feature?.properties || {};
+        let currentFeature = feature;
+        if (!props.content && !props.description && !props.address) {
+          try {
+            currentFeature = await fetchFeatureDetail(feature);
+            if (currentFeature && currentFeature !== feature) {
+              // Aktualizovat cache
+              featureCache.set(currentFeature.properties.id, currentFeature);
+              // Aktualizovat detailBtn aby používal obohacený feature
+              if (detailBtn) {
+                detailBtn.onclick = () => openDetailModal(currentFeature);
               }
             }
+          } catch (err) {
+            // Silent fail - pokračovat s původními daty
+            console.debug('[DB Map] Failed to fetch feature detail:', err);
           }
-        }).catch(err => {
-          // Silent fail - pokračovat s původními daty
-        });
+        }
+        
+        // Pokud je to charging_location, načíst rozšířená data asynchronně
+        if (currentFeature.properties.post_type === 'charging_location') {
+          const needsChargingEnrich = shouldFetchChargingDetails(currentFeature.properties);
+          if (needsChargingEnrich) {
+            // Načíst data na pozadí a aktualizovat UI
+            enrichChargingFeature(currentFeature).then(enrichedCharging => {
+              if (enrichedCharging && enrichedCharging !== currentFeature) {
+                // Aktualizovat cache
+                featureCache.set(enrichedCharging.properties.id, enrichedCharging);
+                
+                // Aktualizovat konektory v mobile sheet
+                const connectorsSection = mobileSheet.querySelector('.sheet-connectors');
+                if (connectorsSection) {
+                  const newConnectorsSection = generateMobileConnectorsSection(enrichedCharging.properties);
+                  if (newConnectorsSection) {
+                    connectorsSection.outerHTML = newConnectorsSection;
+                  }
+                }
+              }
+            }).catch(err => {
+              // Silent fail - pokračovat s původními daty
+            });
+          }
+        }
+      } catch (error) {
+        // Silent fail - uživatel už vidí sheet
+        console.debug('[DB Map] Error loading detail/enrichment:', error);
       }
-    }
+    })();
     
     // Optimalizace: použít Intersection Observer místo setTimeout
     initNearbyObserver();
@@ -8078,9 +8102,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Mapování typů pro endpoint
+    // POZOR: Endpoint očekává 'poi', ne 'poi_type' nebo jiný formát
     const typeMap = {
       'charging_location': 'charger',
-      'rv_spot': 'rv',
+      'rv_spot': 'rv_spot',
       'poi': 'poi'
     };
     const endpointType = typeMap[postType] || postType;
@@ -8116,6 +8141,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
           return detailFeature;
         }
+      } else if (res.status === 404) {
+        // 404 - endpoint neexistuje nebo post není publikovaný
+        // Vrátit původní feature (máme alespoň minimal payload)
+        console.debug('[DB Map] map-detail endpoint returned 404 for', { type: endpointType, id });
+        return feature;
       }
     } catch (err) {
       console.warn('[DB Map] Failed to fetch feature detail:', err);
@@ -10627,12 +10657,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Primárně otevři spodní náhled (sheet) a zvýrazni pin; modal jen když to uživatel vyžádá
         highlightCardById(p.id);
         
-        // Načíst detail data pokud jsou dostupná pouze minimal payload
-        let currentFeature = f;
-        const currentProps = currentFeature?.properties || {};
-        if (!currentProps.content && !currentProps.description && !currentProps.address) {
-          currentFeature = await fetchFeatureDetail(currentFeature);
-        }
+        // Otevřít sheet/modál okamžitě s dostupnými daty (nečekat na detail a isochrony)
+        // Načíst detail a isochrony asynchronně v pozadí po otevření
         
         // Na mobilu otevři sheet, na desktopu zobraz isochrony a zvýrazni kartu
         // Zoom logika pro isochrony: největší isochrona má radius ~2.25 km (30 min chůze)
@@ -10642,11 +10668,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         const ISOCHRONES_ZOOM = 14; // Zoom level pro zobrazení isochronů
         const targetZoom = currentZoom > ISOCHRONES_ZOOM ? currentZoom : ISOCHRONES_ZOOM;
         
-        // Načíst isochrony nezávisle na nearby datech (pro desktop i mobile)
-        try {
-          loadIsochronesForFeature(currentFeature);
-        } catch (_) {}
-        
         if (isDesktopShell()) {
           // Desktop: zobrazit isochrony a zvýraznit kartu, ale neotevírat novou záložku
           try {
@@ -10655,11 +10676,35 @@ document.addEventListener('DOMContentLoaded', async function() {
           map.setView([lat, lng], targetZoom, {animate:true});
           sortMode = 'distance-active';
         } else {
-          // Mobile: otevři sheet
-          openMobileSheet(currentFeature);
+          // Mobile: otevři sheet okamžitě
+          openMobileSheet(f);
           map.setView([lat, lng], targetZoom, {animate:true});
           sortMode = 'distance-active';
         }
+        
+        // Načíst detail a isochrony asynchronně v pozadí (neblokuje UI)
+        (async () => {
+          try {
+            // Načíst detail pokud chybí
+            let currentFeature = f;
+            const currentProps = currentFeature?.properties || {};
+            if (!currentProps.content && !currentProps.description && !currentProps.address) {
+              currentFeature = await fetchFeatureDetail(currentFeature);
+              // Aktualizovat sheet s novými daty pokud je otevřený
+              if (!isDesktopShell() && currentFeature && currentFeature !== f) {
+                // Aktualizovat feature v cache pro případné další použití
+                featureCache.set(currentFeature.properties.id, currentFeature);
+                // Sheet už je otevřený, není třeba ho znovu otevírat
+              }
+            }
+            
+            // Načíst isochrony v pozadí (neblokuje UI)
+            loadIsochronesForFeature(currentFeature);
+          } catch (error) {
+            // Silent fail - uživatel už vidí sheet/modál
+            console.debug('[DB Map] Error loading detail/isochrones in background:', error);
+          }
+        })();
         // POZOR: Nevolat renderCards() při kliknutí na marker - to způsobuje mizení ostatních markerů!
         // renderCards('', p.id);
       });
