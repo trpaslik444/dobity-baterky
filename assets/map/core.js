@@ -2432,6 +2432,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Cache pro SVG ikony podle icon_slug - ikony se načítají jednou podle icon_slug a pak se používají pro všechny markery
   const iconSvgCache = new Map();
   const iconSvgLoading = new Set(); // Set icon_slug, které se právě načítají (pro prevenci duplicitních requestů)
+  const icon404Cache = new Map(); // Cache pro ikony, které vrátily 404 (Map<iconSlug, timestamp>) - TTL 5 minut
+  const ICON_404_TTL_MS = 5 * 60 * 1000; // 5 minut TTL pro 404 cache
   
   /**
    * Načte SVG ikonu podle icon_slug (s cache)
@@ -2472,6 +2474,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       const response = await fetch(iconUrl);
       if (!response.ok) {
+        // Pokud je 404, přidat do blacklistu s timestampem (TTL 5 minut)
+        if (response.status === 404) {
+          icon404Cache.set(iconSlug, Date.now());
+        }
         iconSvgCache.set(iconSlug, '');
         return '';
       }
@@ -6090,7 +6096,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Načíst detail a rozšířená data asynchronně v pozadí (neblokuje UI)
-    (async () => {
+    // DŮLEŽITÉ: Žádný await před render - sheet se otevře okamžitě
+    Promise.resolve().then(async () => {
       try {
         // Načíst detail pokud chybí
         const props = feature?.properties || {};
@@ -6108,7 +6115,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
           } catch (err) {
             // Silent fail - pokračovat s původními daty
-            console.debug('[DB Map] Failed to fetch feature detail:', err);
+            if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+              console.debug('[DB Map] Failed to fetch feature detail:', err);
+            }
           }
         }
         
@@ -10907,7 +10916,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             </svg>
             <div style="position:absolute;left:${overlayPos}px;top:${overlayPos-2}px;width:${overlaySize}px;height:${overlaySize}px;display:flex;align-items:center;justify-content:center;">
               ${(() => {
-                // PRIORITA 1: svg_content z properties (pokud je - fallback pokud není icon_slug)
+                // PRIORITA 1: svg_content z properties (pokud je - nejrychlejší, okamžité zobrazení)
                 if (p.svg_content && p.svg_content.trim() !== '') {
                   return p.post_type === 'charging_location' ? recolorChargerIcon(p.svg_content, p) : p.svg_content;
                 }
@@ -10915,28 +10924,71 @@ document.addEventListener('DOMContentLoaded', async function() {
                 // Získat cachedFeature jednou (optimalizace - není třeba kontrolovat featureCache dvakrát)
                 const cachedFeature = typeof featureCache !== 'undefined' ? featureCache.get(p.id) : null;
                 
-                // PRIORITA 2: icon_slug z properties nebo featureCache (pro cache optimalizaci)
+                // PRIORITA 2: icon_url z properties (přímá URL k souboru z Icon Admin)
+                if (p.icon_url && p.icon_url.trim() !== '') {
+                  // Escape emoji pro bezpečnost v HTML stringu
+                  const fallbackEmoji = p.post_type === 'charging_location' ? '⚡' : '';
+                  // Použít data attribute místo inline onerror pro lepší bezpečnost
+                  return `<img src="${p.icon_url}" style="width:100%;height:100%;display:block;" alt="" data-fallback="${fallbackEmoji}" onerror="const img=this;img.style.display='none';if(img.parentElement){img.parentElement.innerHTML=img.dataset.fallback||'';}">`;
+                }
+                
+                // PRIORITA 3: icon_slug z properties nebo featureCache (pro cache optimalizaci)
                 const iconSlug = p.icon_slug || (cachedFeature?.properties?.icon_slug || null);
                 
                 if (iconSlug && iconSlug.trim() !== '') {
+                  // Pokud je ikona na blacklistu (404), zkontrolovat TTL
+                  if (icon404Cache.has(iconSlug)) {
+                    const timestamp = icon404Cache.get(iconSlug);
+                    if (Date.now() - timestamp < ICON_404_TTL_MS) {
+                      // Stále na blacklistu - přeskočit
+                      return p.post_type === 'charging_location' ? '⚡' : '';
+                    } else {
+                      // TTL vypršel - smazat z blacklistu a zkusit znovu
+                      icon404Cache.delete(iconSlug);
+                    }
+                  }
                   const cachedSvg = iconSvgCache.get(iconSlug);
                   if (cachedSvg) {
                     return p.post_type === 'charging_location' ? recolorChargerIcon(cachedSvg, p) : cachedSvg;
                   }
                   // Pokud ještě není v cache, použít fallback na obrázek (ikona se možná ještě načítá)
                   const iconUrl = getIconUrl(iconSlug);
-                  return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="">` : '';
+                  if (iconUrl) {
+                    const fallbackEmoji = p.post_type === 'charging_location' ? '⚡' : '';
+                    return `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="" data-fallback="${fallbackEmoji}" onerror="const img=this;img.style.display='none';if(img.parentElement){img.parentElement.innerHTML=img.dataset.fallback||'';}">`;
+                  }
+                  return '';
                 }
                 
-                // PRIORITA 3: svg_content z featureCache (jako nearby items - pro konzistenci)
+                // PRIORITA 4: svg_content z featureCache (jako nearby items - pro konzistenci)
                 if (cachedFeature && cachedFeature.properties) {
                   const cachedProps = cachedFeature.properties;
                   if (cachedProps.svg_content && cachedProps.svg_content.trim() !== '') {
                     return p.post_type === 'charging_location' ? recolorChargerIcon(cachedProps.svg_content, p) : cachedProps.svg_content;
                   }
+                  // icon_url z cache
+                  if (cachedProps.icon_url && cachedProps.icon_url.trim() !== '') {
+                    const fallbackEmoji = p.post_type === 'charging_location' ? '⚡' : '';
+                    return `<img src="${cachedProps.icon_url}" style="width:100%;height:100%;display:block;" alt="" data-fallback="${fallbackEmoji}" onerror="const img=this;img.style.display='none';if(img.parentElement){img.parentElement.innerHTML=img.dataset.fallback||'';}">`;
+                  }
                   if (cachedProps.icon_slug && cachedProps.icon_slug.trim() !== '') {
-                    const iconUrl = getIconUrl(cachedProps.icon_slug);
-                    return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="">` : '';
+                    // Zkontrolovat TTL pro 404 cache
+                    let shouldSkip = false;
+                    if (icon404Cache.has(cachedProps.icon_slug)) {
+                      const timestamp = icon404Cache.get(cachedProps.icon_slug);
+                      if (Date.now() - timestamp < ICON_404_TTL_MS) {
+                        shouldSkip = true;
+                      } else {
+                        icon404Cache.delete(cachedProps.icon_slug);
+                      }
+                    }
+                    if (!shouldSkip) {
+                      const iconUrl = getIconUrl(cachedProps.icon_slug);
+                      if (iconUrl) {
+                        const fallbackEmoji = p.post_type === 'charging_location' ? '⚡' : '';
+                        return `<img src="${iconUrl}" style="width:100%;height:100%;display:block;" alt="" data-fallback="${fallbackEmoji}" onerror="const img=this;img.style.display='none';if(img.parentElement){img.parentElement.innerHTML=img.dataset.fallback||'';}">`;
+                      }
+                    }
                   }
                 }
                 
