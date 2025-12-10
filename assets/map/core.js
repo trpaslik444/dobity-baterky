@@ -4,8 +4,17 @@
 // ===== GLOBÁLNÍ ERROR HANDLING =====
 // Potlačit wp.com pinghub websocket chyby (non-blocking)
 (function() {
+  // Guard: zkontrolovat, zda už není console.error override
+  if (console.error._dbMapOriginal) {
+    return; // Už je override, nepřepisovat
+  }
+  
   const originalError = console.error;
   const originalWarn = console.warn;
+  
+  // Označit originální funkce pro detekci dalších override
+  console.error._dbMapOriginal = originalError;
+  console.warn._dbMapOriginal = originalWarn;
   
   // Helper funkce pro kontrolu, zda je to pinghub/websocket chyba
   function isPinghubOrWebsocketError(msg, source, filename) {
@@ -8301,10 +8310,18 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Flag pro zabránění rekurze při aktualizaci modalu
   let isUpdatingModal = false;
+  let modalUpdateTimeout = null;
+  let lastUpdatedFeatureId = null;
   
   async function openDetailModal(feature, skipUpdate = false) {
     // Pokud probíhá aktualizace, přeskočit (zabránit rekurzi)
     if (isUpdatingModal && skipUpdate) {
+      return;
+    }
+    
+    // Pokud je to stejný feature jako poslední aktualizace, přeskočit (zabránit duplicitním aktualizacím)
+    const featureId = feature?.properties?.id;
+    if (skipUpdate && featureId === lastUpdatedFeatureId) {
       return;
     }
     
@@ -8371,20 +8388,29 @@ document.addEventListener('DOMContentLoaded', async function() {
        // Aktualizovat modal pouze pokud je stále otevřený
        if (!detailModal.classList.contains('open')) return;
        
-       // Re-renderovat modal s novými daty (volat openDetailModal znovu s novým feature)
-       // Ale pouze pokud máme více dat a není to rekurze
-       if (isUpdatingModal) return;
-       
-       try {
-         isUpdatingModal = true;
-         openDetailModal(updatedFeature, true);
-       } catch(err) {
-         if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
-           console.debug('[DB Map] Failed to update modal with detail:', err);
-         }
-       } finally {
-         isUpdatingModal = false;
+       // Debounce aktualizace modalu (zabránit flickering při rychlých aktualizacích)
+       if (modalUpdateTimeout) {
+        clearTimeout(modalUpdateTimeout);
        }
+       
+       // Pokud probíhá aktualizace nebo je to stejný feature, přeskočit
+       if (isUpdatingModal || updatedProps.id === lastUpdatedFeatureId) return;
+       
+       // Debounce: počkat 100ms před aktualizací (shromáždí více aktualizací)
+       modalUpdateTimeout = setTimeout(() => {
+         try {
+           isUpdatingModal = true;
+           lastUpdatedFeatureId = updatedProps.id;
+           openDetailModal(updatedFeature, true);
+         } catch(err) {
+           if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+             console.debug('[DB Map] Failed to update modal with detail:', err);
+           }
+         } finally {
+           isUpdatingModal = false;
+           modalUpdateTimeout = null;
+         }
+       }, 100);
      };
      
      // Spustit enrichment async v pozadí (neblokuje otevření modalu)
@@ -12294,8 +12320,20 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     // Fallback: pokud map.getCenter() vrací null nebo není map ready, použít defaultní centrum
     if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number' || isNaN(c.lat) || isNaN(c.lng)) {
-      // Defaultní centrum: Praha
-      c = { lat: 50.08, lng: 14.44 };
+      // Zkusit použít defaultCenter z dbMapData, pak geolokaci, pak Praha jako fallback
+      const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
+      if (dbData && dbData.defaultCenter && Array.isArray(dbData.defaultCenter) && dbData.defaultCenter.length === 2) {
+        c = { lat: dbData.defaultCenter[0], lng: dbData.defaultCenter[1] };
+      } else {
+        // Zkusit použít geolokaci z LocationService
+        const cachedLocation = LocationService.getLast();
+        if (cachedLocation && cachedLocation.lat && cachedLocation.lng) {
+          c = { lat: cachedLocation.lat, lng: cachedLocation.lng };
+        } else {
+          // Fallback: Praha (centrum ČR)
+          c = { lat: 50.08, lng: 14.44 };
+        }
+      }
       // Pokud je mapa ready, nastavit view
       if (map && typeof map.setView === 'function') {
         try {
