@@ -1,6 +1,10 @@
 // db-map.js – moderní frontend pro Dobitý Baterky
 //
 
+// ===== GLOBÁLNÍ KONSTANTY =====
+// Breakpoint pro mobilní zařízení (používá se i mimo DOMContentLoaded scope)
+const DB_MOBILE_BREAKPOINT_PX = 900;
+
 // ===== PŘEKLADY =====
 // Globální objekt pro překlady
 let translations = {
@@ -558,7 +562,7 @@ function positionAttributionBar(bar) {
   if (!bar) return;
   const wrap = document.getElementById('db-bottom-bar');
   if (!wrap) return;
-  const isMobile = window.innerWidth <= 900;
+  const isMobile = window.innerWidth <= DB_MOBILE_BREAKPOINT_PX;
   const mapEl = document.getElementById('db-map');
   const modal = document.getElementById('db-detail-modal');
   const mobileSheet = document.getElementById('db-mobile-sheet');
@@ -808,8 +812,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.featureCache = featureCache; // Globální přístup pro externí funkce
     const internalSearchCache = new Map();
     const externalSearchCache = new Map();
-    let mobileSearchController = null;
-    let desktopSearchController = null;
+    let searchController = null; // Jediný AbortController pro všechny search requesty
+    let searchHandlersInitialized = false; // Guard flag pro inicializaci handlerů
+    let lastAutocompleteResults = null; // Cache posledních autocomplete výsledků pro submit
+    
+    // Konstanty pro search
+    const SEARCH_DEBOUNCE_MS = 400;
+    const SEARCH_CACHE_VALIDITY_MS = 5000; // 5 sekund - jak dlouho jsou cache výsledky platné pro submit
+    const SEARCH_FOCUS_DELAY_MS = 100; // Delay před focus na search input (pro mobilní zařízení)
+    const MOBILE_BREAKPOINT_PX = 900;
   let lastRenderedFeatures = [];
   const FAVORITES_LAST_FOLDER_KEY = 'dbFavoritesLastFolder';
   const favoritesState = {
@@ -4020,52 +4031,36 @@ document.addEventListener('DOMContentLoaded', async function() {
   topbar.style.zIndex = '1001';
   topbar.style.pointerEvents = 'auto';
   // Desktop vs mobilní obsah topbaru
-  const isMobile = window.innerWidth <= 900;
+  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
   let filterPanel;
   let mapOverlay;
 
   
-  if (isMobile) {
-    // Mobilní verze - s tlačítkem "Moje poloha" a lupou
-    topbar.innerHTML = `
-      <button class="db-map-topbar-btn" title="${t('map.menu')}" type="button" id="db-menu-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+  // Jeden search box pro mobil i desktop - rozdíly řeší CSS
+  topbar.innerHTML = `
+    <button class="db-map-topbar-btn" title="${t('map.menu')}" type="button" id="db-menu-toggle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    ${isMobile ? `<button class="db-map-topbar-btn" title="${t('map.search')}" type="button" id="db-search-toggle">
+      <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m22.241 24-7.414-7.414c-1.559 1.169-3.523 1.875-5.652 1.885h-.002c-.032 0-.07.001-.108.001-5.006 0-9.065-4.058-9.065-9.065 0-.038 0-.076.001-.114v.006c0-5.135 4.163-9.298 9.298-9.298s9.298 4.163 9.298 9.298c-.031 2.129-.733 4.088-1.904 5.682l.019-.027 7.414 7.414zm-12.942-21.487c-3.72.016-6.73 3.035-6.73 6.758 0 3.732 3.025 6.758 6.758 6.758s6.758-3.025 6.758-6.758c0-1.866-.756-3.555-1.979-4.778-1.227-1.223-2.92-1.979-4.79-1.979-.006 0-.012 0-.017 0h.001z"/></svg>
+    </button>` : ''}
+    <form class="db-map-searchbox" style="margin:0;flex:1;min-width:0;${isMobile ? 'display:none;' : ''}">
+      <input type="text" id="db-map-search-input" placeholder="${t('map.search_placeholder')}" autocomplete="off" style="width:100%;min-width:320px;font-size:clamp(0.8rem, 2.5vw, 1rem);padding:0.6em 0.8em;border:none;border-radius:8px;box-sizing:border-box;background:transparent;outline:none;" />
+      <button type="submit" id="db-map-search-btn" tabindex="0" style="background:none;border:none;padding:0;cursor:pointer;outline:none;display:flex;align-items:center;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
-      <button class="db-map-topbar-btn" title="${t('map.search')}" type="button" id="db-search-toggle">
-        <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m22.241 24-7.414-7.414c-1.559 1.169-3.523 1.875-5.652 1.885h-.002c-.032 0-.07.001-.108.001-5.006 0-9.065-4.058-9.065-9.065 0-.038 0-.076.001-.114v.006c0-5.135 4.163-9.298 9.298-9.298s9.298 4.163 9.298 9.298c-.031 2.129-.733 4.088-1.904 5.682l.019-.027 7.414 7.414zm-12.942-21.487c-3.72.016-6.73 3.035-6.73 6.758 0 3.732 3.025 6.758 6.758 6.758s6.758-3.025 6.758-6.758c0-1.866-.756-3.555-1.979-4.778-1.227-1.223-2.92-1.979-4.79-1.979-.006 0-.012 0-.017 0h.001z"/></svg>
-      </button>
-      <button class="db-map-topbar-btn" title="${t('map.list')}" type="button" id="db-list-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
-      </button>
-      <button class="db-map-topbar-btn" title="${t('map.my_location')}" type="button" id="db-locate-btn">
-        <svg width="20px" height="20px" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M249.6 417.088l319.744 43.072 39.168 310.272L845.12 178.88 249.6 417.088zm-129.024 47.168a32 32 0 01-7.68-61.44l777.792-311.04a32 32 0 0141.6 41.6l-310.336 775.68a32 32 0 01-61.44-7.808L512 516.992l-391.424-52.736z"/></svg>
-      </button>
-      <button class="db-map-topbar-btn" title="${t('map.filters')}" type="button" id="db-filter-btn">
-        <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
-      </button>
-      ${getFavoritesButtonHtml()}
-    `;
-  } else {
-    // Desktop verze - bez tlačítka "Moje poloha" (je v Leaflet controls)
-    topbar.innerHTML = `
-      <button class="db-map-topbar-btn" title="${t('map.menu')}" type="button" id="db-menu-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-      </button>
-      <form class="db-map-searchbox" style="margin:0;flex:1;min-width:0;">
-        <input type="text" id="db-map-search-input" placeholder="${t('map.search_placeholder')}" autocomplete="off" style="width:100%;min-width:320px;font-size:clamp(0.8rem, 2.5vw, 1rem);padding:0.6em 0.8em;border:none;border-radius:8px;box-sizing:border-box;background:transparent;outline:none;" />
-        <button type="submit" id="db-map-search-btn" tabindex="0" style="background:none;border:none;padding:0;cursor:pointer;outline:none;display:flex;align-items:center;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        </button>
-      </form>
-      <button class="db-map-topbar-btn" title="${t('map.list')}" type="button" id="db-list-toggle">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
-      </button>
-      <button class="db-map-topbar-btn" title="${t('map.filters')}" type="button" id="db-filter-btn">
-        <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
-      </button>
-      ${getFavoritesButtonHtml()}
-    `;
-  }
+    </form>
+    <button class="db-map-topbar-btn" title="${t('map.list')}" type="button" id="db-list-toggle">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
+    </button>
+    ${isMobile ? `<button class="db-map-topbar-btn" title="${t('map.my_location')}" type="button" id="db-locate-btn">
+      <svg width="20px" height="20px" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M249.6 417.088l319.744 43.072 39.168 310.272L845.12 178.88 249.6 417.088zm-129.024 47.168a32 32 0 01-7.68-61.44l777.792-311.04a32 32 0 0141.6 41.6l-310.336 775.68a32 32 0 01-61.44-7.808L512 516.992l-391.424-52.736z"/></svg>
+    </button>` : ''}
+    <button class="db-map-topbar-btn" title="${t('map.filters')}" type="button" id="db-filter-btn">
+      <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
+    </button>
+    ${getFavoritesButtonHtml()}
+  `;
   mapDiv.style.position = 'relative';
   mapDiv.style.zIndex = '1';
   mapDiv.appendChild(topbar);
@@ -4080,6 +4075,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     switch (button.id) {
       case 'db-menu-toggle':
         handleMenuToggle(event);
+        break;
+      case 'db-search-toggle':
+        handleSearchToggle(event);
         break;
       case 'db-list-toggle':
         handleListToggle(event);
@@ -4111,7 +4109,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Přidáme s delay, aby se nespustil hned po vytvoření topbaru
   setTimeout(() => {
     window.addEventListener('resize', () => {
-      const currentIsMobile = window.innerWidth <= 900;
+      const currentIsMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
       const topbarExists = document.querySelector('.db-map-topbar');
       
       // Odstranit duplicitní search icon na desktopu
@@ -4125,52 +4123,75 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (topbarExists) {
 
         
-        // Přepni obsah topbaru
+        // Přepni obsah topbaru - jeden search box pro obě verze
+        const searchBox = topbar.querySelector('.db-map-searchbox');
+        const searchToggle = topbar.querySelector('#db-search-toggle');
+        const locateBtn = topbar.querySelector('#db-locate-btn');
+        
         if (currentIsMobile) {
-          // Mobilní verze
-          topbar.innerHTML = `
-            <button class="db-map-topbar-btn" title="Menu" type="button" id="db-menu-toggle">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-            </button>
-            <button class="db-map-topbar-btn" title="Vyhledávání" type="button" id="db-search-toggle">
-              <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m22.241 24-7.414-7.414c-1.559 1.169-3.523 1.875-5.652 1.885h-.002c-.032 0-.07.001-.108.001-5.006 0-9.065-4.058-9.065-9.065 0-.038 0-.076.001-.114v.006c0-5.135 4.163-9.298 9.298-9.298s9.298 4.163 9.298 9.298c-.031 2.129-.733 4.088-1.904 5.682l.019-.027 7.414 7.414zm-12.942-21.487c-3.72.016-6.73 3.035-6.73 6.758 0 3.732 3.025 6.758 6.758 6.758s6.758-3.025 6.758-6.758c0-1.866-.756-3.555-1.979-4.778-1.227-1.223-2.92-1.979-4.79-1.979-.006 0-.012 0-.017 0h.001z"/></svg>
-            </button>
-            <button class="db-map-topbar-btn" title="Seznam" type="button" id="db-list-toggle">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
-            </button>
-            <button class="db-map-topbar-btn" title="Moje poloha" type="button" id="db-locate-btn">
-              <svg width="20px" height="20px" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M249.6 417.088l319.744 43.072 39.168 310.272L845.12 178.88 249.6 417.088zm-129.024 47.168a32 32 0 01-7.68-61.44l777.792-311.04a32 32 0 0141.6 41.6l-310.336 775.68a32 32 0 01-61.44-7.808L512 516.992l-391.424-52.736z"/></svg>
-            </button>
-            <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-filter-btn">
-              <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
-            </button>
-            ${getFavoritesButtonHtml()}
-          `;
+          // Mobilní verze - zobrazit toggle, skrýt search box, zobrazit locate
+          if (searchBox) searchBox.style.display = 'none';
+          if (!searchToggle) {
+            const menuBtn = topbar.querySelector('#db-menu-toggle');
+            if (menuBtn) {
+              const toggleBtn = document.createElement('button');
+              toggleBtn.className = 'db-map-topbar-btn';
+              toggleBtn.title = 'Vyhledávání';
+              toggleBtn.type = 'button';
+              toggleBtn.id = 'db-search-toggle';
+              toggleBtn.innerHTML = '<svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m22.241 24-7.414-7.414c-1.559 1.169-3.523 1.875-5.652 1.885h-.002c-.032 0-.07.001-.108.001-5.006 0-9.065-4.058-9.065-9.065 0-.038 0-.076.001-.114v.006c0-5.135 4.163-9.298 9.298-9.298s9.298 4.163 9.298 9.298c-.031 2.129-.733 4.088-1.904 5.682l.019-.027 7.414 7.414zm-12.942-21.487c-3.72.016-6.73 3.035-6.73 6.758 0 3.732 3.025 6.758 6.758 6.758s6.758-3.025 6.758-6.758c0-1.866-.756-3.555-1.979-4.778-1.227-1.223-2.92-1.979-4.79-1.979-.006 0-.012 0-.017 0h.001z"/></svg>';
+              menuBtn.after(toggleBtn);
+            }
+          }
+          if (!locateBtn) {
+            const listBtn = topbar.querySelector('#db-list-toggle');
+            if (listBtn) {
+              const locate = document.createElement('button');
+              locate.className = 'db-map-topbar-btn';
+              locate.title = 'Moje poloha';
+              locate.type = 'button';
+              locate.id = 'db-locate-btn';
+              locate.innerHTML = '<svg width="20px" height="20px" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"><path fill="currentColor" d="M249.6 417.088l319.744 43.072 39.168 310.272L845.12 178.88 249.6 417.088zm-129.024 47.168a32 32 0 01-7.68-61.44l777.792-311.04a32 32 0 0141.6 41.6l-310.336 775.68a32 32 0 01-61.44-7.808L512 516.992l-391.424-52.736z"/></svg>';
+              listBtn.after(locate);
+            }
+          }
         } else {
-          // Desktop verze
-          topbar.innerHTML = `
-            <button class="db-map-topbar-btn" title="Menu" type="button" id="db-menu-toggle">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-            </button>
-            <form class="db-map-searchbox" style="margin:0;flex:1;min-width:0;">
-              <input type="text" id="db-map-search-input" placeholder="Objevujeme víc než jen cíl cesty..." autocomplete="off" style="width:100%;min-width:320px;font-size:clamp(0.8rem, 2.5vw, 1rem);padding:0.6em 0.8em;border:none;border-radius:8px;box-sizing:border-box;background:transparent;outline:none;" />
-              <button type="submit" id="db-map-search-btn" tabindex="0" style="background:none;border:none;padding:0;cursor:pointer;outline:none;display:flex;align-items:center;">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              </button>
-            </form>
-            <button class="db-map-topbar-btn" title="Seznam" type="button" id="db-list-toggle">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>
-            </button>
-            <button class="db-map-topbar-btn" title="Filtry" type="button" id="db-filter-btn">
-              <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M4.45,4.66,10,11V21l4-2V11l5.55-6.34A1,1,0,0,0,18.8,3H5.2A1,1,0,0,0,4.45,4.66Z" style="fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2;"></path></svg>
-            </button>
-            ${getFavoritesButtonHtml()}
-          `;
+          // Desktop verze - zobrazit search box, skrýt toggle, skrýt locate
+          if (searchBox) searchBox.style.display = '';
+          if (searchToggle) searchToggle.remove();
+          if (locateBtn) locateBtn.remove();
         }
         updateFavoritesButtonState();
       }
     });
   }, 500); // 500ms delay před přidáním resize listeneru
+  
+  // Search toggle handler - zobrazí/skryje search box na mobilu
+  function handleSearchToggle(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const searchBox = topbar.querySelector('.db-map-searchbox');
+    if (searchBox) {
+      const isHidden = searchBox.style.display === 'none' || !searchBox.style.display;
+      if (isHidden) {
+        searchBox.style.display = '';
+        const searchInput = searchBox.querySelector('#db-map-search-input');
+        if (searchInput) {
+          setTimeout(() => {
+            try {
+              searchInput.focus();
+            } catch (focusError) {
+              // Ignorovat focus chyby na některých mobilních zařízeních
+            }
+          }, SEARCH_FOCUS_DELAY_MS);
+        }
+      } else {
+        searchBox.style.display = 'none';
+        removeAutocomplete();
+      }
+    }
+  }
+  
   // Menu toggle - slide-out menu panel (funguje na všech zařízeních)
   function handleMenuToggle(event) {
     event.preventDefault();
@@ -5813,13 +5834,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   async function openMobileSheet(feature) {
     if (window.innerWidth > 900) return;
 
-    // Načíst detail data pokud jsou dostupná pouze minimal payload
-    const props = feature?.properties || {};
-    if (!props.content && !props.description && !props.address) {
-      // Minimal payload - načíst detail
-      feature = await fetchFeatureDetail(feature);
-    }
-
+    // Zobrazit sheet okamžitě s dostupnými daty (nečekat na detail)
+    // Detail se načte v pozadí a aktualizuje sheet pokud je potřeba
     const p = feature.properties || {};
     const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
     const lat = coords ? coords[1] : null;
@@ -5950,30 +5966,59 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (lat !== null && lng !== null) {
       map.setView([lat, lng], map.getZoom(), { animate: true, duration: 0.5 });
     }
-    // Pokud je to charging_location, načíst rozšířená data asynchronně
-    if (p.post_type === 'charging_location') {
-      const needsChargingEnrich = shouldFetchChargingDetails(p);
-      if (needsChargingEnrich) {
-        // Načíst data na pozadí a aktualizovat UI
-        enrichChargingFeature(feature).then(enrichedCharging => {
-          if (enrichedCharging && enrichedCharging !== feature) {
-            // Aktualizovat cache
-            featureCache.set(enrichedCharging.properties.id, enrichedCharging);
-            
-            // Aktualizovat konektory v mobile sheet
-            const connectorsSection = mobileSheet.querySelector('.sheet-connectors');
-            if (connectorsSection) {
-              const newConnectorsSection = generateMobileConnectorsSection(enrichedCharging.properties);
-              if (newConnectorsSection) {
-                connectorsSection.outerHTML = newConnectorsSection;
+    
+    // Načíst detail a rozšířená data asynchronně v pozadí (neblokuje UI)
+    (async () => {
+      try {
+        // Načíst detail pokud chybí
+        const props = feature?.properties || {};
+        let currentFeature = feature;
+        if (!props.content && !props.description && !props.address) {
+          try {
+            currentFeature = await fetchFeatureDetail(feature);
+            if (currentFeature && currentFeature !== feature) {
+              // Aktualizovat cache
+              featureCache.set(currentFeature.properties.id, currentFeature);
+              // Aktualizovat detailBtn aby používal obohacený feature
+              if (detailBtn) {
+                detailBtn.onclick = () => openDetailModal(currentFeature);
               }
             }
+          } catch (err) {
+            // Silent fail - pokračovat s původními daty
+            console.debug('[DB Map] Failed to fetch feature detail:', err);
           }
-        }).catch(err => {
-          // Silent fail - pokračovat s původními daty
-        });
+        }
+        
+        // Pokud je to charging_location, načíst rozšířená data asynchronně
+        if (currentFeature.properties.post_type === 'charging_location') {
+          const needsChargingEnrich = shouldFetchChargingDetails(currentFeature.properties);
+          if (needsChargingEnrich) {
+            // Načíst data na pozadí a aktualizovat UI
+            enrichChargingFeature(currentFeature).then(enrichedCharging => {
+              if (enrichedCharging && enrichedCharging !== currentFeature) {
+                // Aktualizovat cache
+                featureCache.set(enrichedCharging.properties.id, enrichedCharging);
+                
+                // Aktualizovat konektory v mobile sheet
+                const connectorsSection = mobileSheet.querySelector('.sheet-connectors');
+                if (connectorsSection) {
+                  const newConnectorsSection = generateMobileConnectorsSection(enrichedCharging.properties);
+                  if (newConnectorsSection) {
+                    connectorsSection.outerHTML = newConnectorsSection;
+                  }
+                }
+              }
+            }).catch(err => {
+              // Silent fail - pokračovat s původními daty
+            });
+          }
+        }
+      } catch (error) {
+        // Silent fail - uživatel už vidí sheet
+        console.debug('[DB Map] Error loading detail/enrichment:', error);
       }
-    }
+    })();
     
     // Optimalizace: použít Intersection Observer místo setTimeout
     initNearbyObserver();
@@ -6127,7 +6172,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           };
 
           return `
-            <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){const currentZoom=map.getZoom();const ISOCHRONES_ZOOM=14;const targetZoom=currentZoom>ISOCHRONES_ZOOM?currentZoom:ISOCHRONES_ZOOM;if(window.highlightMarkerById){window.highlightMarkerById(${item.id});}map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],targetZoom,{animate:true});sortMode='distance-active';if(window.renderCards){window.renderCards('',${item.id});}if(window.innerWidth <= 900){if(window.openMobileSheet){window.openMobileSheet(target);}}else{if(window.openDetailModal){window.openDetailModal(target);}}}">
+            <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){const currentZoom=map.getZoom();const ISOCHRONES_ZOOM=14;const targetZoom=currentZoom>ISOCHRONES_ZOOM?currentZoom:ISOCHRONES_ZOOM;if(window.highlightMarkerById){window.highlightMarkerById(${item.id});}map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],targetZoom,{animate:true});sortMode='distance-active';if(window.renderCards){window.renderCards('',${item.id});}if(window.innerWidth <= ${DB_MOBILE_BREAKPOINT_PX}){if(window.openMobileSheet){window.openMobileSheet(target);}}else{if(window.openDetailModal){window.openDetailModal(target);}}}">
               <div class="nearby-item-icon" style="background: ${getNearbySquareColor(item)};">
                 ${getItemIcon(item)}
               </div>
@@ -6970,7 +7015,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:#f8fafc;border-radius:4px;margin:2px 0;cursor:pointer;transition:all 0.2s;font-size:0.75em;"
               onmouseover="this.style.backgroundColor='#e2e8f0';"
               onmouseout="this.style.backgroundColor='#f8fafc';"
-              onclick="const target=featureCache.get(${item.id});if(target){const currentZoom=map.getZoom();const ISOCHRONES_ZOOM=14;const targetZoom=currentZoom>ISOCHRONES_ZOOM?currentZoom:ISOCHRONES_ZOOM;if(window.highlightMarkerById){window.highlightMarkerById(${item.id});}map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],targetZoom,{animate:true});sortMode='distance-active';if(window.renderCards){window.renderCards('',${item.id});}if(window.innerWidth <= 900){if(window.openMobileSheet){window.openMobileSheet(target);}}else{if(window.openDetailModal){window.openDetailModal(target);}}}">
+              onclick="const target=featureCache.get(${item.id});if(target){const currentZoom=map.getZoom();const ISOCHRONES_ZOOM=14;const targetZoom=currentZoom>ISOCHRONES_ZOOM?currentZoom:ISOCHRONES_ZOOM;if(window.highlightMarkerById){window.highlightMarkerById(${item.id});}map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],targetZoom,{animate:true});sortMode='distance-active';if(window.renderCards){window.renderCards('',${item.id});}if(window.innerWidth <= ${DB_MOBILE_BREAKPOINT_PX}){if(window.openMobileSheet){window.openMobileSheet(target);}}else{if(window.openDetailModal){window.openDetailModal(target);}}}">
               <div style="font-size:12px;flex-shrink:0;">${typeIcon}</div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.name || item.title || '(bez názvu)'}</div>
@@ -7989,7 +8034,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Immerzivní režim body na mobilech (zamezí posunu stránky)
   function applyImmersiveClass() {
     try {
-      if (window.innerWidth <= 900) document.body.classList.add('db-immersive');
+      if (window.innerWidth <= DB_MOBILE_BREAKPOINT_PX) document.body.classList.add('db-immersive');
       else document.body.classList.remove('db-immersive');
     } catch(_) {}
   }
@@ -8078,9 +8123,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     // Mapování typů pro endpoint
+    // POZOR: Endpoint očekává 'poi', ne 'poi_type' nebo jiný formát
     const typeMap = {
       'charging_location': 'charger',
-      'rv_spot': 'rv',
+      'rv_spot': 'rv_spot',
       'poi': 'poi'
     };
     const endpointType = typeMap[postType] || postType;
@@ -8116,6 +8162,11 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
           return detailFeature;
         }
+      } else if (res.status === 404) {
+        // 404 - endpoint neexistuje nebo post není publikovaný
+        // Vrátit původní feature (máme alespoň minimal payload)
+        console.debug('[DB Map] map-detail endpoint returned 404 for', { type: endpointType, id });
+        return feature;
       }
     } catch (err) {
       console.warn('[DB Map] Failed to fetch feature detail:', err);
@@ -9099,19 +9150,76 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     } catch(_) {}
   }
-  // Vyhledávání na mapě
+  // Centralizované handlery pro search (desktop i mobil)
   let searchQuery = '';
   const searchForm = topbar.querySelector('form.db-map-searchbox');
   const searchInput = topbar.querySelector('#db-map-search-input');
   const searchBtn = topbar.querySelector('#db-map-search-btn');
-  // lastSearchResults už inicializováno na začátku
-  // Kontrola, zda existují elementy před přidáním event listenerů
-  if (searchForm && searchInput && searchBtn) {
-    function doSearch(e) {
+  
+  // Inicializace handlerů pouze jednou (guard flag)
+  if (searchForm && searchInput && searchBtn && !searchHandlersInitialized) {
+    searchHandlersInitialized = true;
+    
+    // Debounce pro autocomplete
+    const handleAutocompleteInput = debounce((value) => {
+      fetchAutocomplete(value, searchInput);
+    }, SEARCH_DEBOUNCE_MS);
+
+    // Submit handler - používá cache výsledky místo nového REST callu
+    async function doSearch(e) {
       if (e) e.preventDefault();
-      removeDesktopAutocomplete();
-      searchQuery = searchInput.value.trim().toLowerCase();
+      removeAutocomplete();
+      
+      const query = searchInput.value.trim();
+      if (!query) {
+        return;
+      }
+      
+      // Pokud existují autocomplete výsledky pro aktuální query, použij je
+      // Ověřit, že cache není starší než SEARCH_CACHE_VALIDITY_MS
+      const now = Date.now();
+      if (lastAutocompleteResults && 
+          lastAutocompleteResults.query.toLowerCase() === query.toLowerCase() &&
+          (now - lastAutocompleteResults.timestamp) < SEARCH_CACHE_VALIDITY_MS) {
+        const { internal, external } = lastAutocompleteResults.results;
+        
+        // Zkusit najít přesnou shodu nebo vzít první výsledek
+        let selectedResult = null;
+        let isInternal = false;
+        
+        // Nejprve zkusit přesnou shodu v interních výsledcích
+        const exactInternalMatch = internal.find(item => 
+          (item.title || '').toLowerCase() === query.toLowerCase() ||
+          (item.address || '').toLowerCase() === query.toLowerCase()
+        );
+        
+        if (exactInternalMatch) {
+          selectedResult = exactInternalMatch;
+          isInternal = true;
+        } else if (internal.length > 0) {
+          // Vzít první interní výsledek
+          selectedResult = internal[0];
+          isInternal = true;
+        } else if (external.length > 0) {
+          // Vzít první externí výsledek
+          selectedResult = external[0];
+          isInternal = false;
+        }
+        
+        if (selectedResult) {
+          if (isInternal) {
+            await handleInternalSelection(selectedResult);
+          } else {
+            await handleExternalSelection(selectedResult);
+          }
+          return;
+        }
+      }
+      
+      // Fallback: lokální renderCards nad features (jen highlight), bez nového REST callu
+      searchQuery = query.toLowerCase();
       renderCards(searchQuery, null, true);
+      
       // Pokud je nalezeno přesně jedno místo, přibliž a zvýrazni
       if (lastSearchResults.length === 1) {
         const idx = features.indexOf(lastSearchResults[0]);
@@ -9122,33 +9230,29 @@ document.addEventListener('DOMContentLoaded', async function() {
         ], 15, {animate:true});
       }
     }
-    
-    // Přidat autocomplete pro desktop
-    // Zvýšit debounce na 400ms pro desktop, aby se snížilo množství požadavků
-    const handleDesktopAutocompleteInput = debounce((value) => {
-      showDesktopAutocomplete(value, searchInput);
-    }, 400);
 
+    // Event listenery
     searchInput.addEventListener('input', function() {
       const query = this.value.trim();
       if (query.length >= 2) {
-        handleDesktopAutocompleteInput(query);
+        handleAutocompleteInput(query);
       } else {
-        removeDesktopAutocomplete();
+        removeAutocomplete();
+        lastAutocompleteResults = null;
       }
     });
 
     searchInput.addEventListener('focus', function() {
       const query = this.value.trim();
       if (query.length >= 2) {
-        showDesktopAutocomplete(query, searchInput);
+        fetchAutocomplete(query, searchInput);
       }
     });
 
     searchInput.addEventListener('blur', function() {
       // Dát malé zpoždění, aby kliknutí na autocomplete položku fungovalo
       setTimeout(() => {
-        removeDesktopAutocomplete();
+        removeAutocomplete();
       }, 200);
     });
     
@@ -9156,11 +9260,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     searchBtn.addEventListener('click', doSearch);
     searchInput.addEventListener('keydown', function(e) {
       if (e.key === 'Enter') {
-        removeDesktopAutocomplete();
+        removeAutocomplete();
         doSearch(e);
       }
       if (e.key === 'Escape') {
-        removeDesktopAutocomplete();
+        removeAutocomplete();
       }
     });
   }
@@ -10627,12 +10731,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Primárně otevři spodní náhled (sheet) a zvýrazni pin; modal jen když to uživatel vyžádá
         highlightCardById(p.id);
         
-        // Načíst detail data pokud jsou dostupná pouze minimal payload
-        let currentFeature = f;
-        const currentProps = currentFeature?.properties || {};
-        if (!currentProps.content && !currentProps.description && !currentProps.address) {
-          currentFeature = await fetchFeatureDetail(currentFeature);
-        }
+        // Otevřít sheet/modál okamžitě s dostupnými daty (nečekat na detail a isochrony)
+        // Načíst detail a isochrony asynchronně v pozadí po otevření
         
         // Na mobilu otevři sheet, na desktopu zobraz isochrony a zvýrazni kartu
         // Zoom logika pro isochrony: největší isochrona má radius ~2.25 km (30 min chůze)
@@ -10642,11 +10742,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         const ISOCHRONES_ZOOM = 14; // Zoom level pro zobrazení isochronů
         const targetZoom = currentZoom > ISOCHRONES_ZOOM ? currentZoom : ISOCHRONES_ZOOM;
         
-        // Načíst isochrony nezávisle na nearby datech (pro desktop i mobile)
-        try {
-          loadIsochronesForFeature(currentFeature);
-        } catch (_) {}
-        
         if (isDesktopShell()) {
           // Desktop: zobrazit isochrony a zvýraznit kartu, ale neotevírat novou záložku
           try {
@@ -10655,11 +10750,35 @@ document.addEventListener('DOMContentLoaded', async function() {
           map.setView([lat, lng], targetZoom, {animate:true});
           sortMode = 'distance-active';
         } else {
-          // Mobile: otevři sheet
-          openMobileSheet(currentFeature);
+          // Mobile: otevři sheet okamžitě
+          openMobileSheet(f);
           map.setView([lat, lng], targetZoom, {animate:true});
           sortMode = 'distance-active';
         }
+        
+        // Načíst detail a isochrony asynchronně v pozadí (neblokuje UI)
+        (async () => {
+          try {
+            // Načíst detail pokud chybí
+            let currentFeature = f;
+            const currentProps = currentFeature?.properties || {};
+            if (!currentProps.content && !currentProps.description && !currentProps.address) {
+              currentFeature = await fetchFeatureDetail(currentFeature);
+              // Aktualizovat sheet s novými daty pokud je otevřený
+              if (!isDesktopShell() && currentFeature && currentFeature !== f) {
+                // Aktualizovat feature v cache pro případné další použití
+                featureCache.set(currentFeature.properties.id, currentFeature);
+                // Sheet už je otevřený, není třeba ho znovu otevírat
+              }
+            }
+            
+            // Načíst isochrony v pozadí (neblokuje UI)
+            loadIsochronesForFeature(currentFeature);
+          } catch (error) {
+            // Silent fail - uživatel už vidí sheet/modál
+            console.debug('[DB Map] Error loading detail/isochrones in background:', error);
+          }
+        })();
         // POZOR: Nevolat renderCards() při kliknutí na marker - to způsobuje mizení ostatních markerů!
         // renderCards('', p.id);
       });
@@ -12159,7 +12278,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Přidání lupové ikony do topbaru - pouze na mobilu (na desktopu je search form přímo v topbaru)
   function addSearchIcon() {
-    const isMobile = window.innerWidth <= 900;
+    const isMobile = window.innerWidth <= DB_MOBILE_BREAKPOINT_PX;
     // Na desktopu není potřeba - už je tam search form
     if (!isMobile) {
       return;
@@ -12192,7 +12311,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Spustit po načtení DOM
   document.addEventListener('DOMContentLoaded', () => {
     // Odstranit duplicitní search icon na desktopu, pokud existuje
-    const isMobile = window.innerWidth <= 900;
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
     if (!isMobile) {
       const duplicateSearchIcon = document.querySelector('.db-search-icon');
       if (duplicateSearchIcon) {
@@ -12209,166 +12328,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Spustit po vytvoření topbaru - odstraněno
 
-  // CSS už má správná pravidla pro pozici topbaru
-  // Vytvoření vyhledávacího pole pod topbarem - pouze pro mobilní verzi
-  function createMobileSearchField() {
-    // Kontrola, zda jsme v mobilní verzi
-    if (window.innerWidth <= 900) {
-      // Odstranit existující vyhledávací pole
-      const existingSearch = document.querySelector('.db-mobile-search-field');
-      if (existingSearch) {
-        existingSearch.remove();
-      }
-      
-      // Vytvořit nové vyhledávací pole
-      const searchField = document.createElement('div');
-      searchField.className = 'db-mobile-search-field';
-      
-      // Nastavení velikosti na 90% šířky displeje
-      const width = window.innerWidth * 0.9;
-      
-      searchField.style.cssText = `
-        position: fixed;
-        top: 120px;
-        width: ${width}px;
-        background: transparent;
-        padding: 1rem;
-        box-shadow: none;
-        z-index: 10000;
-        border-radius: 0 0 16px 16px;
-      `;
-      
-      searchField.innerHTML = `
-        <div style="display: flex; gap: 8px; align-items: center;">
-        <input type="text"
-               placeholder="Hledám víc než jen cíl cesty.."
-                 style="flex: 1; padding: 0.75rem; border: 2px solid #e5e7eb; border-radius: 8px; font-size: 1rem; outline: none; touch-action: manipulation; -webkit-tap-highlight-color: transparent;"
-               id="db-mobile-search-field-input">
-          <button type="button" 
-                  style="padding: 0.75rem; background: #049FE8; color: #fff; border: none; border-radius: 8px; cursor: pointer; white-space: nowrap;"
-                  id="db-mobile-search-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8"></circle>
-              <path d="m21 21-4.35-4.35"></path>
-            </svg>
-          </button>
-        </div>
-      `;
-      
-      // Přidat třídu 'hidden' a nastavit display: none pro skrytý stav
-      searchField.classList.add('hidden');
-      searchField.style.display = 'none';
-      
-      document.body.appendChild(searchField);
-      
-      // Event listener pro input
-      const searchInput = searchField.querySelector('#db-mobile-search-field-input');
-      // Pro mobilní zařízení použít kratší debounce (300ms) pro lepší UX
-      const handleAutocompleteInput = debounce((value) => {
-        showMobileAutocomplete(value, searchInput);
-      }, 300);
-
-      searchInput.addEventListener('input', function() {
-        const query = this.value.trim();
-        if (query.length >= 2) {
-          handleAutocompleteInput(query);
-        } else {
-          removeMobileAutocomplete();
-        }
-      });
-      
-      // Event listener pro Enter - spustit vyhledávání
-      searchInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-          const query = this.value.trim();
-          if (query) {
-            // Spustit vyhledávání na mapě
-            performMobileSearch(query);
-          }
-        }
-      });
-      
-      // Event listener pro focus - zobrazit autocomplete
-      searchInput.addEventListener('focus', function() {
-        const query = this.value.trim();
-        if (query.length >= 2) {
-          showMobileAutocomplete(query, searchInput);
-        }
-      });
-      
-      // Event listener pro tlačítko vyhledávání
-      const searchBtn = searchField.querySelector('#db-mobile-search-btn');
-      if (searchBtn) {
-        searchBtn.addEventListener('click', function() {
-          const query = searchInput.value.trim();
-          if (query) {
-            performMobileSearch(query);
-          }
-        });
-      }
-      
-      // Event listener pro kliknutí/touch mimo pole - skrýt pole
-      // Použít jak click, tak touchstart pro lepší kompatibilitu s Androidem
-      const handleOutsideClick = function(e) {
-        if (!searchField.contains(e.target) && !e.target.closest('#db-search-toggle')) {
-          if (!searchField.classList.contains('hidden')) {
-            closeMobileSearchField();
-          }
-        }
-      };
-      document.addEventListener('click', handleOutsideClick);
-      document.addEventListener('touchstart', handleOutsideClick, { passive: true });
-      
-      return searchField;
-    } else {
-      return null;
-    }
-  }
-  
-  // Spustit pouze v mobilní verzi a pokud se mapa vytvořila
-  if (isMobile && map) {
-    setTimeout(() => {
-      createMobileSearchField();
-      
-      // Přidat event listener na tlačítko lupy pro toggle vyhledávacího pole
-      const searchToggleBtn = document.getElementById('db-search-toggle');
-      if (searchToggleBtn) {
-        searchToggleBtn.addEventListener('click', function(e) {
-          e.preventDefault();
-          e.stopPropagation();
-          
-          const searchField = document.querySelector('.db-mobile-search-field');
-          if (searchField) {
-            if (searchField.classList.contains('hidden')) {
-              // Zobrazit pole
-              searchField.classList.remove('hidden');
-              searchField.style.display = 'block';
-              
-              // Focus na input
-              const searchInput = searchField.querySelector('#db-mobile-search-field-input');
-              if (searchInput) {
-                // Pro Android použít touch event pro focus, pro iOS nechat bez focus kvůli zoomu
-                const isAndroid = /Android/i.test(navigator.userAgent);
-                const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-                if (isAndroid) {
-                  // Na Androidu použít touchstart pro focus, aby fungovalo kliknutí
-                  searchInput.addEventListener('touchstart', function() {
-                    this.focus();
-                  }, { once: true, passive: true });
-                } else if (!isIOS) {
-                  // Na desktopu použít normální focus
-                  setTimeout(() => searchInput.focus(), 100);
-                }
-              }
-            } else {
-              // Skrýt pole
-              closeMobileSearchField();
-            }
-          }
-        });
-      }
-    }, 100);
-  }
+  // Starý mobilní search field odstraněn - používá se jeden search box v topbaru
+  // Handler pro db-search-toggle je v topbar click handleru (handleSearchToggle)
   // Cache pro IP geolokaci (24 hodin)
   let ipLocationCache = null;
   let ipLocationCacheTime = 0;
@@ -12727,8 +12688,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     return scoredResults.slice(0, 5);
   }
 
-  function removeMobileAutocomplete() {
-    const existing = document.querySelector('.db-mobile-autocomplete');
+  // Sdílená funkce pro odstranění autocomplete (desktop i mobil)
+  function removeAutocomplete() {
+    const desktopAc = document.querySelector('.db-desktop-autocomplete');
+    const mobileAc = document.querySelector('.db-mobile-autocomplete');
+    const existing = desktopAc || mobileAc;
     if (existing) {
       if (existing.__outsideHandler) {
         document.removeEventListener('click', existing.__outsideHandler);
@@ -12737,15 +12701,249 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
 
-  // Desktop autocomplete funkce
+  // Kompatibilita se starým kódem
+  function removeMobileAutocomplete() {
+    removeAutocomplete();
+  }
   function removeDesktopAutocomplete() {
-    const existing = document.querySelector('.db-desktop-autocomplete');
-    if (existing) {
-      if (existing.__outsideHandler) {
-        document.removeEventListener('click', existing.__outsideHandler);
-      }
-      existing.remove();
+    removeAutocomplete();
+  }
+
+  // Sdílená funkce pro renderování autocomplete (desktop i mobil)
+  function renderAutocomplete(data, inputElement) {
+    const internal = Array.isArray(data?.internal) ? data.internal : [];
+    const external = Array.isArray(data?.external) ? data.external : [];
+
+    if (internal.length === 0 && external.length === 0) {
+      removeAutocomplete();
+      return;
     }
+
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
+    const acClass = isMobile ? 'db-mobile-autocomplete' : 'db-desktop-autocomplete';
+    const itemClass = isMobile ? 'db-mobile-ac-item' : 'db-desktop-ac-item';
+    const sectionClass = isMobile ? 'db-mobile-ac-section' : 'db-desktop-ac-section';
+
+    let autocomplete = document.querySelector(`.${acClass}`);
+    const rect = inputElement.getBoundingClientRect();
+    if (!autocomplete) {
+      autocomplete = document.createElement('div');
+      autocomplete.className = acClass;
+      autocomplete.style.position = 'fixed';
+      autocomplete.style.background = '#fff';
+      autocomplete.style.border = '1px solid #e5e7eb';
+      autocomplete.style.borderRadius = '8px';
+      autocomplete.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+      autocomplete.style.zIndex = '10001';
+      autocomplete.style.maxHeight = isMobile ? '260px' : '400px';
+      autocomplete.style.overflowY = 'auto';
+      if (!isMobile) {
+        autocomplete.style.minWidth = '320px';
+      }
+      document.body.appendChild(autocomplete);
+    }
+
+    autocomplete.style.top = `${rect.bottom + 5}px`;
+    autocomplete.style.left = `${rect.left}px`;
+    autocomplete.style.width = isMobile ? `${rect.width}px` : `${Math.max(rect.width, 320)}px`;
+
+    const itemPadding = isMobile ? '12px' : '10px 12px';
+    const itemStyle = `padding:${itemPadding}; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.15s;`;
+
+    const internalItems = internal.map((item, idx) => {
+      const title = item?.title || '';
+      const address = item?.address || '';
+      const typeLabel = item?.type_label || item?.post_type || '';
+      const subtitleParts = [];
+      if (address) subtitleParts.push(address);
+      if (typeLabel) subtitleParts.push(typeLabel);
+      const subtitle = subtitleParts.join(' • ');
+      const badge = item?.is_recommended ? getDbRecommendedBadgeHtml(20) : '';
+      return `
+        <div class="${itemClass}" data-source="internal" data-index="${idx}" style="${itemStyle}">
+          <div style="font-weight:600; color:#111; display:flex; align-items:center;${isMobile ? ' gap:6px;' : ''}">
+            <span>${escapeHtml(title)}</span>${badge}
+          </div>
+          ${subtitle ? `<div style="font-size:0.85em; color:${isMobile ? '#555' : '#666'}; margin-top:4px;">${escapeHtml(subtitle)}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    const externalItems = external.map((item, idx) => {
+      const display = item?.display_name || '';
+      const primary = display.split(',')[0] || display;
+      const country = item?._country ? ` – ${item._country}` : '';
+      const distance = Number.isFinite(item?._distance) ? ` (${Math.round(item._distance)} km)` : '';
+      return `
+        <div class="${itemClass}" data-source="external" data-index="${idx}" style="${itemStyle}">
+          <div style="font-weight:500; color:#333;">${escapeHtml(primary)}</div>
+          <div style="font-size:0.85em; color:#666; margin-top:4px;">${escapeHtml(display)}${distance}${escapeHtml(country)}</div>
+        </div>
+      `;
+    }).join('');
+
+    const sectionHeaderPadding = isMobile ? '10px 12px' : '8px 12px';
+    const sections = [];
+    if (internal.length > 0) {
+      sections.push(`
+        <div class="${sectionClass}" data-section="internal">
+          <div style="padding:${sectionHeaderPadding}; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280;${!isMobile ? ' background:#f9fafb;' : ''}">Dobitý Baterky</div>
+          ${internalItems}
+        </div>
+      `);
+    }
+    if (external.length > 0) {
+      sections.push(`
+        <div class="${sectionClass}" data-section="external">
+          <div style="padding:${sectionHeaderPadding}; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:#6b7280;${!isMobile ? ' background:#f9fafb;' : ''}">OpenStreetMap</div>
+          ${externalItems}
+        </div>
+      `);
+    }
+
+    autocomplete.innerHTML = sections.join('');
+
+    if (autocomplete.__outsideHandler) {
+      document.removeEventListener('click', autocomplete.__outsideHandler);
+    }
+    const outsideHandler = (e) => {
+      if (!autocomplete.contains(e.target) && e.target !== inputElement) {
+        removeAutocomplete();
+      }
+    };
+    autocomplete.__outsideHandler = outsideHandler;
+    setTimeout(() => document.addEventListener('click', outsideHandler), 0);
+
+    autocomplete.querySelectorAll(`.${itemClass}`).forEach((itemEl) => {
+      itemEl.addEventListener('mouseenter', () => { itemEl.style.background = '#f8f9fa'; });
+      itemEl.addEventListener('mouseleave', () => { itemEl.style.background = 'transparent'; });
+      itemEl.addEventListener('click', async () => {
+        const source = itemEl.getAttribute('data-source');
+        const idx = parseInt(itemEl.getAttribute('data-index'), 10);
+        removeAutocomplete();
+        if (source === 'internal') {
+          const picked = internal[idx];
+          if (picked) {
+            inputElement.value = picked.title || '';
+            await handleInternalSelection(picked);
+          }
+        } else if (source === 'external') {
+          const picked = external[idx];
+          if (picked) {
+            inputElement.value = picked.display_name || '';
+            await handleExternalSelection(picked);
+          }
+        }
+      });
+    });
+  }
+
+  // Handler pro výběr interního výsledku (sdílený pro desktop i mobil)
+  async function handleInternalSelection(result) {
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
+    try {
+      const lat = Number.parseFloat(result?.lat);
+      const lng = Number.parseFloat(result?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        if (isMobile) {
+          showMobileSearchError('Vybraný bod nemá platné souřadnice.');
+        }
+        return;
+      }
+
+      const targetZoom = Math.max(map.getZoom(), 15);
+      map.setView([lat, lng], targetZoom, { animate: true, duration: 0.5 });
+
+      await fetchAndRenderRadiusWithFixedRadius({ lat, lng }, null, FIXED_RADIUS_KM);
+
+      searchAddressCoords = null;
+      searchSortLocked = false;
+      sortMode = 'distance-active';
+      if (searchAddressMarker) {
+        try { map.removeLayer(searchAddressMarker); } catch(_) {}
+        searchAddressMarker = null;
+      }
+
+      if (result?.id != null) {
+        highlightMarkerById(result.id);
+        renderCards('', result.id);
+        const feature = featureCache.get(result.id);
+        if (feature) {
+          if (isMobile) {
+            openMobileSheet(feature);
+            closeMobileSearchField();
+            const descriptorParts = [];
+            if (result?.title) descriptorParts.push(result.title);
+            if (result?.address) descriptorParts.push(result.address);
+            const descriptor = descriptorParts.join(' • ') || 'Výsledek vyhledávání';
+            showMobileSearchConfirmation(descriptor, { headline: 'Bod z databáze' });
+          } else {
+            openDetailModal(feature);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Chyba při zobrazení interního výsledku:', error);
+      if (isMobile) {
+        showMobileSearchError('Nepodařilo se zobrazit vybraný bod.');
+      }
+    }
+  }
+
+  // Handler pro výběr externího výsledku (sdílený pro desktop i mobil)
+  async function handleExternalSelection(result) {
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
+    try {
+      const lat = Number.parseFloat(result?.lat);
+      const lng = Number.parseFloat(result?.lon || result?.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        if (isMobile) {
+          showMobileSearchError('Výsledek nemá platné souřadnice.');
+        }
+        return;
+      }
+
+      const targetZoom = Math.max(map.getZoom(), isMobile ? 15 : 14);
+      map.setView([lat, lng], targetZoom, { animate: true, duration: 0.5 });
+
+      await fetchAndRenderRadiusWithFixedRadius({ lat, lng }, null, FIXED_RADIUS_KM);
+
+      searchAddressCoords = [lat, lng];
+      searchSortLocked = true;
+      sortMode = 'distance-active';
+
+      if (searchAddressMarker) {
+        try { map.removeLayer(searchAddressMarker); } catch(_) {}
+      }
+      searchAddressMarker = L.marker([lat, lng], {
+        icon: L.divIcon({
+          className: 'search-address-marker',
+          html: '<div style="background:#dc2626;border:3px solid #fff;border-radius:50%;width:16px;height:16px;box-shadow:0 2px 8px rgba(0,0,0,0.3);"></div>',
+          iconSize: [16, 16],
+          iconAnchor: [8, 8]
+        })
+      }).addTo(map);
+
+      renderCards('');
+      
+      if (isMobile) {
+        closeMobileSearchField();
+        showMobileSearchConfirmation(result?.display_name || 'Vyhledávání dokončeno');
+      }
+    } catch (error) {
+      console.error('Chyba při zobrazení externího výsledku:', error);
+      if (isMobile) {
+        showMobileSearchError('Nepodařilo se zobrazit vybranou adresu.');
+      }
+    }
+  }
+
+  // Kompatibilita se starým kódem
+  async function handleDesktopInternalSelection(result) {
+    return handleInternalSelection(result);
+  }
+  async function handleDesktopExternalSelection(result) {
+    return handleExternalSelection(result);
   }
 
   function renderDesktopAutocomplete(data, inputElement) {
@@ -12931,10 +13129,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       console.error('Chyba při zobrazení externího výsledku:', error);
     }
   }
-  async function showDesktopAutocomplete(query, inputElement) {
+  // Centralizovaná funkce pro načtení autocomplete výsledků (sdílená pro desktop i mobil)
+  async function fetchAutocomplete(query, inputElement) {
     const trimmed = (query || '').trim();
     if (trimmed.length < 2) {
-      removeDesktopAutocomplete();
+      removeAutocomplete();
+      lastAutocompleteResults = null;
       return;
     }
 
@@ -12942,24 +13142,28 @@ document.addEventListener('DOMContentLoaded', async function() {
     const cachedInternal = internalSearchCache.get(normalized);
     const cachedExternal = externalSearchCache.get(normalized);
     
-    // Zobrazit cache pouze pokud už máme kompletní data (oba typy výsledků)
-    // Jinak počkat na načtení dat, aby se nezobrazovaly duplicitní listy
-    const hasCompleteCache = cachedInternal && cachedExternal;
-    
-    if (hasCompleteCache) {
-      renderDesktopAutocomplete({
+    // Zobrazit cache pokud existuje
+    if (cachedInternal !== undefined || cachedExternal !== undefined) {
+      const results = {
         internal: cachedInternal || [],
         external: (cachedExternal && cachedExternal.results) || []
-      }, inputElement);
+      };
+      lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
+      renderAutocomplete(results, inputElement);
       // Pokud máme kompletní cache, nemusíme načítat znovu
-      return;
+      if (cachedInternal !== undefined && cachedExternal !== undefined) {
+        return;
+      }
+      // Pokud máme pouze částečnou cache, pokračujeme v načítání chybějících dat
+      // Error handling je v try-catch bloku níže - použijeme proměnné cachedInternal/cachedExternal z tohoto scope
     }
 
-    if (desktopSearchController) {
-      try { desktopSearchController.abort(); } catch(_) {}
+    // Abort předchozí request
+    if (searchController) {
+      try { searchController.abort(); } catch(_) {}
     }
-    desktopSearchController = new AbortController();
-    const signal = desktopSearchController.signal;
+    searchController = new AbortController();
+    const signal = searchController.signal;
 
     try {
       const [internal, externalPayload] = await Promise.all([
@@ -12971,12 +13175,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
       }
 
-      renderDesktopAutocomplete({
+      const results = {
         internal,
         external: externalPayload?.results || []
-      }, inputElement);
-      if (desktopSearchController && desktopSearchController.signal === signal) {
-        desktopSearchController = null;
+      };
+      lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
+      renderAutocomplete(results, inputElement);
+      
+      if (searchController && searchController.signal === signal) {
+        searchController = null;
       }
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -12985,37 +13192,50 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Pokud je to CORS chyba, zobrazit pouze interní výsledky
       if (error.message && (error.message.includes('CORS') || error.message.includes('Failed to fetch'))) {
         console.warn('CORS chyba při načítání externích výsledků, zobrazuji pouze interní:', error);
-        // Zkusit zobrazit alespoň interní výsledky, pokud jsou
         try {
           const internal = await getInternalSearchResults(trimmed, signal);
           if (!signal.aborted && internal && internal.length > 0) {
-            renderDesktopAutocomplete({
-              internal,
-              external: []
-            }, inputElement);
+            const results = { internal, external: [] };
+            lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
+            renderAutocomplete(results, inputElement);
           }
         } catch (internalError) {
           console.error('Chyba při načítání interních výsledků:', internalError);
+          // Použít proměnné z vyššího scope místo znovu získávání z cache
+          if (cachedInternal === undefined && cachedExternal === undefined) {
+            removeAutocomplete();
+            lastAutocompleteResults = null;
+          }
         }
       } else {
-        console.error('Chyba při načítání desktop autocomplete:', error);
+        console.error('Chyba při načítání autocomplete:', error);
+        // Použít proměnné z vyššího scope místo znovu získávání z cache
+        if (cachedInternal === undefined && cachedExternal === undefined) {
+          removeAutocomplete();
+          lastAutocompleteResults = null;
+        }
       }
-      if (desktopSearchController && desktopSearchController.signal === signal) {
-        desktopSearchController = null;
+      if (searchController && searchController.signal === signal) {
+        searchController = null;
       }
     }
   }
 
+  // Kompatibilita se starým kódem
+  async function showDesktopAutocomplete(query, inputElement) {
+    return fetchAutocomplete(query, inputElement);
+  }
+
   function closeMobileSearchField() {
-    const searchField = document.querySelector('.db-mobile-search-field');
-    if (searchField && !searchField.classList.contains('hidden')) {
-      searchField.classList.add('hidden');
-      searchField.style.display = 'none';
+    // Skrýt search box v topbaru (mobilní verze)
+    const searchBox = topbar.querySelector('.db-map-searchbox');
+    if (searchBox) {
+      searchBox.style.display = 'none';
     }
-    removeMobileAutocomplete();
-    if (mobileSearchController) {
-      try { mobileSearchController.abort(); } catch(_) {}
-      mobileSearchController = null;
+    removeAutocomplete();
+    if (searchController) {
+      try { searchController.abort(); } catch(_) {}
+      searchController = null;
     }
   }
   async function getInternalSearchResults(query, signal) {
@@ -13298,7 +13518,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         renderCards('', result.id);
         const feature = featureCache.get(result.id);
         if (feature) {
-          if (window.innerWidth <= 900) {
+          if (window.innerWidth <= DB_MOBILE_BREAKPOINT_PX) {
             openMobileSheet(feature);
           } else {
             openDetailModal(feature);
@@ -13534,64 +13754,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }, 5000);
   }
-  // Spustit při změně velikosti okna - pouze pokud je mobilní
-  let resizeTimeout;
-  window.addEventListener('resize', () => {
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-      const currentIsMobile = window.innerWidth <= 900;
-      
-      if (currentIsMobile && map) {
-        createMobileSearchField();
-        
-        // Znovu přidat event listener na tlačítko lupy
-        setTimeout(() => {
-          const searchToggleBtn = document.getElementById('db-search-toggle');
-          if (searchToggleBtn) {
-            // Odstranit staré event listenery
-            const newBtn = searchToggleBtn.cloneNode(true);
-            searchToggleBtn.parentNode.replaceChild(newBtn, searchToggleBtn);
-            
-            // Přidat nový event listener
-            newBtn.addEventListener('click', function(e) {
-              e.preventDefault();
-              e.stopPropagation();
-              
-              const searchField = document.querySelector('.db-mobile-search-field');
-              if (searchField) {
-                if (searchField.classList.contains('hidden')) {
-                  // Zobrazit pole
-                  searchField.classList.remove('hidden');
-                  searchField.style.display = 'block';
-                  
-                  // Focus na input
-                  const searchInput = searchField.querySelector('#db-mobile-search-field-input');
-                  if (searchInput) {
-                    // Nespouštět auto-focus na mobilech kvůli iOS zoomu
-                    const isMobile3 = /Mobi|Android/i.test(navigator.userAgent);
-                    if (!isMobile3) {
-                      setTimeout(() => searchInput.focus(), 100);
-                    }
-                  }
-                } else {
-                  // Skrýt pole
-                  searchField.classList.add('hidden');
-                  searchField.style.display = 'none';
-                }
-              }
-            });
-          }
-        }, 100);
-      } else {
-        // Desktop verze - odstranit mobilní vyhledávací pole
-        const existingSearch = document.querySelector('.db-mobile-search-field');
-        if (existingSearch) {
-          existingSearch.remove();
-        }
-      }
-    }, 100); // Debounce resize event
-  });
-    // Tlačítko lupy už nemá akci - vyhledávací pole je na pevno
+  // Resize handler už není potřeba - search box je v topbaru a toggle funguje přes handleSearchToggle
+  // Starý mobilní search field se už nevytváří
 
 
   
