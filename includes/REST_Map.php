@@ -1408,6 +1408,8 @@ class REST_Map {
         $post_types = $this->determine_search_post_types( $request->get_param( 'post_types' ) );
         
         // Server-side cache: normalizovaný query + post_types jako klíč
+        // Seřadit post_types pro konzistentní cache klíč
+        sort( $post_types );
         $normalized_query = strtolower( $query );
         $cache_key = 'db_map_search_' . md5( $normalized_query . '_' . implode( ',', $post_types ) );
         $cached_results = get_transient( $cache_key );
@@ -1510,8 +1512,13 @@ class REST_Map {
 
         $response_data = array( 'results' => $results );
         
-        // Uložit do cache na 45 sekund
-        set_transient( $cache_key, $response_data, 45 );
+        // Konstanty pro cache
+        if ( ! defined( 'DB_MAP_SEARCH_CACHE_TTL' ) ) {
+            define( 'DB_MAP_SEARCH_CACHE_TTL', 45 );
+        }
+        
+        // Uložit do cache
+        set_transient( $cache_key, $response_data, DB_MAP_SEARCH_CACHE_TTL );
 
         return rest_ensure_response( $response_data );
     }

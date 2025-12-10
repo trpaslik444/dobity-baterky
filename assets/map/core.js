@@ -811,6 +811,11 @@ document.addEventListener('DOMContentLoaded', async function() {
     let searchController = null; // Jediný AbortController pro všechny search requesty
     let searchHandlersInitialized = false; // Guard flag pro inicializaci handlerů
     let lastAutocompleteResults = null; // Cache posledních autocomplete výsledků pro submit
+    
+    // Konstanty pro search
+    const SEARCH_DEBOUNCE_MS = 400;
+    const SEARCH_CACHE_VALIDITY_MS = 5000; // 5 sekund - jak dlouho jsou cache výsledky platné pro submit
+    const MOBILE_BREAKPOINT_PX = 900;
   let lastRenderedFeatures = [];
   const FAVORITES_LAST_FOLDER_KEY = 'dbFavoritesLastFolder';
   const favoritesState = {
@@ -4021,7 +4026,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   topbar.style.zIndex = '1001';
   topbar.style.pointerEvents = 'auto';
   // Desktop vs mobilní obsah topbaru
-  const isMobile = window.innerWidth <= 900;
+  const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
   let filterPanel;
   let mapOverlay;
 
@@ -4099,7 +4104,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Přidáme s delay, aby se nespustil hned po vytvoření topbaru
   setTimeout(() => {
     window.addEventListener('resize', () => {
-      const currentIsMobile = window.innerWidth <= 900;
+      const currentIsMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
       const topbarExists = document.querySelector('.db-map-topbar');
       
       // Odstranit duplicitní search icon na desktopu
@@ -9144,10 +9149,10 @@ document.addEventListener('DOMContentLoaded', async function() {
   if (searchForm && searchInput && searchBtn && !searchHandlersInitialized) {
     searchHandlersInitialized = true;
     
-    // Debounce pro autocomplete (400ms)
+    // Debounce pro autocomplete
     const handleAutocompleteInput = debounce((value) => {
       fetchAutocomplete(value, searchInput);
-    }, 400);
+    }, SEARCH_DEBOUNCE_MS);
 
     // Submit handler - používá cache výsledky místo nového REST callu
     async function doSearch(e) {
@@ -9160,7 +9165,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       // Pokud existují autocomplete výsledky pro aktuální query, použij je
-      if (lastAutocompleteResults && lastAutocompleteResults.query.toLowerCase() === query.toLowerCase()) {
+      // Ověřit, že cache není starší než SEARCH_CACHE_VALIDITY_MS
+      const now = Date.now();
+      if (lastAutocompleteResults && 
+          lastAutocompleteResults.query.toLowerCase() === query.toLowerCase() &&
+          (now - lastAutocompleteResults.timestamp) < SEARCH_CACHE_VALIDITY_MS) {
         const { internal, external } = lastAutocompleteResults.results;
         
         // Zkusit najít přesnou shodu nebo vzít první výsledek
@@ -12699,7 +12708,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       return;
     }
 
-    const isMobile = window.innerWidth <= 900;
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
     const acClass = isMobile ? 'db-mobile-autocomplete' : 'db-desktop-autocomplete';
     const itemClass = isMobile ? 'db-mobile-ac-item' : 'db-desktop-ac-item';
     const sectionClass = isMobile ? 'db-mobile-ac-section' : 'db-desktop-ac-section';
@@ -12820,7 +12829,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Handler pro výběr interního výsledku (sdílený pro desktop i mobil)
   async function handleInternalSelection(result) {
-    const isMobile = window.innerWidth <= 900;
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
     try {
       const lat = Number.parseFloat(result?.lat);
       const lng = Number.parseFloat(result?.lng);
@@ -12872,7 +12881,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Handler pro výběr externího výsledku (sdílený pro desktop i mobil)
   async function handleExternalSelection(result) {
-    const isMobile = window.innerWidth <= 900;
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
     try {
       const lat = Number.parseFloat(result?.lat);
       const lng = Number.parseFloat(result?.lon || result?.lng);
@@ -13128,12 +13137,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         internal: cachedInternal || [],
         external: (cachedExternal && cachedExternal.results) || []
       };
-      lastAutocompleteResults = { query: trimmed, results };
+      lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
       renderAutocomplete(results, inputElement);
       // Pokud máme kompletní cache, nemusíme načítat znovu
       if (cachedInternal !== undefined && cachedExternal !== undefined) {
         return;
       }
+      // Pokud máme pouze částečnou cache, pokračujeme v načítání chybějících dat
+      // Error handling je v try-catch bloku níže
     }
 
     // Abort předchozí request
@@ -13157,7 +13168,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         internal,
         external: externalPayload?.results || []
       };
-      lastAutocompleteResults = { query: trimmed, results };
+      lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
       renderAutocomplete(results, inputElement);
       
       if (searchController && searchController.signal === signal) {
@@ -13174,14 +13185,30 @@ document.addEventListener('DOMContentLoaded', async function() {
           const internal = await getInternalSearchResults(trimmed, signal);
           if (!signal.aborted && internal && internal.length > 0) {
             const results = { internal, external: [] };
-            lastAutocompleteResults = { query: trimmed, results };
+            lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
             renderAutocomplete(results, inputElement);
           }
         } catch (internalError) {
           console.error('Chyba při načítání interních výsledků:', internalError);
+          // Pokud máme částečnou cache zobrazenou, ponecháme ji
+          // Pokud nemáme žádnou cache, zobrazíme prázdný autocomplete
+          const cachedInternal = internalSearchCache.get(normalized);
+          const cachedExternal = externalSearchCache.get(normalized);
+          if (cachedInternal === undefined && cachedExternal === undefined) {
+            removeAutocomplete();
+            lastAutocompleteResults = null;
+          }
         }
       } else {
         console.error('Chyba při načítání autocomplete:', error);
+        // Pokud máme částečnou cache zobrazenou, ponecháme ji
+        // Pokud nemáme žádnou cache, zobrazíme prázdný autocomplete
+        const cachedInternal = internalSearchCache.get(normalized);
+        const cachedExternal = externalSearchCache.get(normalized);
+        if (cachedInternal === undefined && cachedExternal === undefined) {
+          removeAutocomplete();
+          lastAutocompleteResults = null;
+        }
       }
       if (searchController && searchController.signal === signal) {
         searchController = null;
