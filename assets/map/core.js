@@ -26,14 +26,18 @@
     // Konkrétní URL pattern pro WordPress.com pinghub
     if (msgLower.includes('wss://public-api.wordpress.com/pinghub') || 
         msgLower.includes('public-api.wordpress.com/pinghub') ||
+        msgLower.includes('pinghub') ||
+        msgLower.includes('wpcom') ||
         sourceLower.includes('pinghub') ||
-        filenameLower.includes('pinghub')) {
+        sourceLower.includes('wpcom') ||
+        filenameLower.includes('pinghub') ||
+        filenameLower.includes('wpcom')) {
       return true;
     }
     
-    // Obecné websocket chyby (ale jen pokud jsou z WordPress.com nebo pinghub)
+    // Obecné websocket chyby (ale jen pokud jsou z WordPress.com nebo pinghub/wpcom)
     if ((msgLower.includes('websocket') || msgLower.includes('ws://') || msgLower.includes('wss://')) &&
-        (msgLower.includes('pinghub') || msgLower.includes('wordpress.com') || sourceLower.includes('wordpress'))) {
+        (msgLower.includes('pinghub') || msgLower.includes('wpcom') || msgLower.includes('wordpress.com') || sourceLower.includes('wordpress'))) {
       return true;
     }
     
@@ -89,8 +93,13 @@
   window.addEventListener('unhandledrejection', function(event) {
     const msg = event.reason?.message || event.reason?.toString() || '';
     const source = event.reason?.source || '';
+    const stack = event.reason?.stack || '';
     
-    if (isPinghubOrWebsocketError(msg, source, '')) {
+    // Rozšířená kontrola pro pinghub/wpcom chyby
+    const errorString = (msg + ' ' + source + ' ' + stack).toLowerCase();
+    if (errorString.includes('pinghub') || errorString.includes('wpcom') || 
+        errorString.includes('wss://public-api.wordpress.com') ||
+        isPinghubOrWebsocketError(msg, source, '')) {
       event.preventDefault();
       if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
         console.debug('[DB Map] Suppressed unhandled websocket rejection:', event);
@@ -924,6 +933,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.featureCache = featureCache; // Globální přístup pro externí funkce
     const internalSearchCache = new Map();
     const externalSearchCache = new Map();
+    const externalSearch403Blacklist = new Map(); // Cache pro 403 chyby s časovou značkou (prevence opakovaných requestů)
     let searchController = null; // Jediný AbortController pro všechny search requesty
     let searchHandlersInitialized = false; // Guard flag pro inicializaci handlerů
     let lastAutocompleteResults = null; // Cache posledních autocomplete výsledků pro submit
@@ -7789,6 +7799,14 @@ document.addEventListener('DOMContentLoaded', async function() {
         })
       });
       
+      // Tichý return při 403/401 - uživatel nemá oprávnění (není přihlášen nebo nemá capability)
+      if (processResponse.status === 403 || processResponse.status === 401) {
+        if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+          console.debug('[DB Map] on-demand/process 403/401 - user not authorized');
+        }
+        return; // Tichý return - není to chyba, jen uživatel nemá oprávnění
+      }
+      
       if (processResponse.ok) {
         const processData = await processResponse.json();
         
@@ -8246,7 +8264,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Načíst detail z endpointu s timeoutem 4s
     try {
       const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
-      const base = (dbData?.restUrl) || '/wp-json/db/v1';
+      // Opravit base URL - odstranit /map z konce pokud existuje
+      const base = ((dbData?.restUrl) || '/wp-json/db/v1').replace(/\/map$/, '');
       const url = `${base}/map-detail/${endpointType}/${id}`;
       
       const headers = {
@@ -9383,6 +9402,50 @@ document.addEventListener('DOMContentLoaded', async function() {
       const query = searchInput.value.trim();
       if (!query) {
         return;
+      }
+      
+      // Pokud lastAutocompleteResults je null nebo prázdné, fetchnout autocomplete
+      // DŮLEŽITÉ: Zkontrolovat, jestli query odpovídá - pokud ne, fetchnout znovu
+      const hasValidCache = lastAutocompleteResults && 
+        lastAutocompleteResults.results &&
+        lastAutocompleteResults.query.toLowerCase() === query.toLowerCase() &&
+        (lastAutocompleteResults.results.internal.length > 0 || 
+         lastAutocompleteResults.results.external.length > 0);
+      
+      if (!hasValidCache) {
+        // Fetchnout autocomplete a použít první výsledek
+        try {
+          await fetchAutocomplete(query, searchInput);
+          // Po fetchi zkontrolovat znovu lastAutocompleteResults
+          if (lastAutocompleteResults && 
+              lastAutocompleteResults.results &&
+              lastAutocompleteResults.query.toLowerCase() === query.toLowerCase()) {
+            const { internal, external } = lastAutocompleteResults.results;
+            let selectedResult = null;
+            let isInternal = false;
+            
+            if (internal.length > 0) {
+              selectedResult = internal[0];
+              isInternal = true;
+            } else if (external.length > 0) {
+              selectedResult = external[0];
+              isInternal = false;
+            }
+            
+            if (selectedResult) {
+              if (isInternal) {
+                await handleInternalSelection(selectedResult);
+              } else {
+                await handleExternalSelection(selectedResult);
+              }
+              return;
+            }
+          }
+        } catch (error) {
+          if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+            console.debug('[DB Map] Failed to fetch autocomplete in doSearch:', error);
+          }
+        }
       }
       
       // Pokud existují autocomplete výsledky pro aktuální query, použij je
@@ -13553,6 +13616,19 @@ document.addEventListener('DOMContentLoaded', async function() {
       return externalSearchCache.get(normalized);
     }
 
+    // Zkontrolovat, jestli tento query není na blacklistu kvůli 403 (prevence opakovaných requestů)
+    const BLACKLIST_DURATION_MS = 5 * 60 * 1000; // 5 minut
+    if (externalSearch403Blacklist.has(normalized)) {
+      const blacklistTime = externalSearch403Blacklist.get(normalized);
+      if (Date.now() - blacklistTime < BLACKLIST_DURATION_MS) {
+        // Stále na blacklistu - vrátit prázdný výsledek bez dalšího requestu
+        return { results: [], userCoords: null };
+      } else {
+        // Blacklist vypršel - smazat a zkusit znovu
+        externalSearch403Blacklist.delete(normalized);
+      }
+    }
+
     if ((query || '').trim().length < 3) {
       const payload = { results: [], userCoords: null };
       externalSearchCache.set(normalized, payload);
@@ -13571,7 +13647,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         searchUrl += `&lat=${userCoords[0]}&lon=${userCoords[1]}`;
       }
 
-      const response = await fetch(searchUrl, { signal });
+      // Přidat Referer hlavičku pro Nominatim (požadováno pro 403 prevenci)
+      // POZOR: User-Agent nelze nastavit v browser fetch API (forbidden header)
+      // Browser automaticky přidá User-Agent hlavičku, takže ji nemusíme nastavovat
+      const headers = {
+        'Referer': window.location.origin
+      };
+      
+      const response = await fetch(searchUrl, { 
+        signal,
+        headers: headers
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -13585,9 +13671,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (signal && signal.aborted) {
         throw error;
       }
-      console.warn('OSM search failed:', error);
+      // 403 chyby logovat jen v debug módu (Nominatim může blokovat bez User-Agent)
+      const is403 = error.message && (error.message.includes('403') || error.message.includes('Forbidden'));
+      if (is403) {
+        if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+          console.debug('[DB Map] Nominatim 403 (User-Agent required):', error);
+        }
+        // Přidat na blacklist na 5 minut - prevence opakovaných requestů
+        externalSearch403Blacklist.set(normalized, Date.now());
+        // Invalidovat cache při 403 - příště se fetchnuje znovu (možná s lepšími hlavičkami)
+        externalSearchCache.delete(normalized);
+      } else {
+        console.warn('OSM search failed:', error);
+      }
       const fallback = { results: [], userCoords: null };
-      externalSearchCache.set(normalized, fallback);
+      // Neukládat prázdnou cache při 403 - příště se fetchnuje znovu
+      if (!is403) {
+        externalSearchCache.set(normalized, fallback);
+      }
       return fallback;
     }
   }
