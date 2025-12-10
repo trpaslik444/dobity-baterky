@@ -633,15 +633,21 @@ class REST_Map {
                     // V minimal payload vracíme icon_slug pro cache, ale svg_content jako fallback pokud není icon_slug
                     $properties['icon_slug'] = $icon_data['slug'] ?: get_post_meta($post->ID, '_icon_slug', true);
                     $properties['icon_color'] = $icon_data['color'] ?: get_post_meta($post->ID, '_icon_color', true);
-                    // Pro POI: vždy vrátit svg_content pokud je dostupné (POI často nemají icon_slug, ale mají svg_content z term meta)
+                    // Pro POI: vždy vrátit svg_content a icon_url pokud je dostupné (POI často nemají icon_slug, ale mají svg_content z Icon Admin)
                     if ($pt === 'poi') {
-                        // POI může mít icon_slug z term meta (poi_type-*), nebo svg_content
-                        if (!empty($properties['icon_slug']) && trim($properties['icon_slug']) !== '') {
-                            // Máme icon_slug, ale přidáme i svg_content pokud je dostupné (pro okamžité zobrazení)
-                            $properties['svg_content'] = $icon_data['svg_content'] ?? '';
-                        } else {
-                            // Nemáme icon_slug, použít svg_content jako fallback
-                            $properties['svg_content'] = $icon_data['svg_content'] ?? '';
+                        // POI může mít icon_slug z term meta (poi_type-*), nebo svg_content/icon_url z Icon Admin
+                        // Priorita: svg_content → icon_url → icon_slug
+                        $properties['svg_content'] = $icon_data['svg_content'] ?? '';
+                        $properties['icon_url'] = $icon_data['icon_url'] ?? null;
+                        // icon_slug pro cache (pokud existuje)
+                        if (empty($properties['icon_slug']) || trim($properties['icon_slug']) === '') {
+                            // Pokud nemáme icon_slug, ale máme icon_url, použít slug z icon_url
+                            if (!empty($properties['icon_url'])) {
+                                // Extrahovat slug z URL (např. /uploads/dobity-baterky/icons/poi_type-123.svg → poi_type-123)
+                                if (preg_match('/\/([^\/]+)\.svg$/', $properties['icon_url'], $matches)) {
+                                    $properties['icon_slug'] = $matches[1];
+                                }
+                            }
                         }
                     } else {
                         // Pro ostatní typy: svg_content jen pokud není icon_slug
