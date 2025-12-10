@@ -93,8 +93,13 @@
   window.addEventListener('unhandledrejection', function(event) {
     const msg = event.reason?.message || event.reason?.toString() || '';
     const source = event.reason?.source || '';
+    const stack = event.reason?.stack || '';
     
-    if (isPinghubOrWebsocketError(msg, source, '')) {
+    // Rozšířená kontrola pro pinghub/wpcom chyby
+    const errorString = (msg + ' ' + source + ' ' + stack).toLowerCase();
+    if (errorString.includes('pinghub') || errorString.includes('wpcom') || 
+        errorString.includes('wss://public-api.wordpress.com') ||
+        isPinghubOrWebsocketError(msg, source, '')) {
       event.preventDefault();
       if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
         console.debug('[DB Map] Suppressed unhandled websocket rejection:', event);
@@ -9398,6 +9403,44 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
       }
       
+      // Pokud lastAutocompleteResults je null nebo prázdné, fetchnout autocomplete
+      if (!lastAutocompleteResults || 
+          !lastAutocompleteResults.results ||
+          (lastAutocompleteResults.results.internal.length === 0 && 
+           lastAutocompleteResults.results.external.length === 0)) {
+        // Fetchnout autocomplete a použít první výsledek
+        try {
+          await fetchAutocomplete(query, searchInput);
+          // Po fetchi zkontrolovat znovu lastAutocompleteResults
+          if (lastAutocompleteResults && lastAutocompleteResults.results) {
+            const { internal, external } = lastAutocompleteResults.results;
+            let selectedResult = null;
+            let isInternal = false;
+            
+            if (internal.length > 0) {
+              selectedResult = internal[0];
+              isInternal = true;
+            } else if (external.length > 0) {
+              selectedResult = external[0];
+              isInternal = false;
+            }
+            
+            if (selectedResult) {
+              if (isInternal) {
+                await handleInternalSelection(selectedResult);
+              } else {
+                await handleExternalSelection(selectedResult);
+              }
+              return;
+            }
+          }
+        } catch (error) {
+          if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+            console.debug('[DB Map] Failed to fetch autocomplete in doSearch:', error);
+          }
+        }
+      }
+      
       // Pokud existují autocomplete výsledky pro aktuální query, použij je
       // Ověřit, že cache není starší než SEARCH_CACHE_VALIDITY_MS
       const now = Date.now();
@@ -13608,16 +13651,21 @@ document.addEventListener('DOMContentLoaded', async function() {
         throw error;
       }
       // 403 chyby logovat jen v debug módu (Nominatim může blokovat bez User-Agent)
-      const is403 = error.message && error.message.includes('403');
+      const is403 = error.message && (error.message.includes('403') || error.message.includes('Forbidden'));
       if (is403) {
         if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
           console.debug('[DB Map] Nominatim 403 (User-Agent required):', error);
         }
+        // Invalidovat cache při 403 - příště se fetchnuje znovu (možná s lepšími hlavičkami)
+        externalSearchCache.delete(normalized);
       } else {
         console.warn('OSM search failed:', error);
       }
       const fallback = { results: [], userCoords: null };
-      externalSearchCache.set(normalized, fallback);
+      // Neukládat prázdnou cache při 403 - příště se fetchnuje znovu
+      if (!is403) {
+        externalSearchCache.set(normalized, fallback);
+      }
       return fallback;
     }
   }
