@@ -1,6 +1,118 @@
 // db-map.js – moderní frontend pro Dobitý Baterky
 //
 
+// ===== GLOBÁLNÍ ERROR HANDLING =====
+// Potlačit wp.com pinghub websocket chyby (non-blocking)
+(function() {
+  // Guard: zkontrolovat, zda už není console.error override
+  if (console.error._dbMapOriginal) {
+    return; // Už je override, nepřepisovat
+  }
+  
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  
+  // Označit originální funkce pro detekci dalších override
+  console.error._dbMapOriginal = originalError;
+  console.warn._dbMapOriginal = originalWarn;
+  
+  // Helper funkce pro kontrolu, zda je to pinghub/websocket chyba
+  function isPinghubOrWebsocketError(msg, source, filename) {
+    if (!msg) return false;
+    const msgLower = msg.toLowerCase();
+    const sourceLower = source ? source.toLowerCase() : '';
+    const filenameLower = filename ? filename.toLowerCase() : '';
+    
+    // Konkrétní URL pattern pro WordPress.com pinghub
+    if (msgLower.includes('wss://public-api.wordpress.com/pinghub') || 
+        msgLower.includes('public-api.wordpress.com/pinghub') ||
+        sourceLower.includes('pinghub') ||
+        filenameLower.includes('pinghub')) {
+      return true;
+    }
+    
+    // Obecné websocket chyby (ale jen pokud jsou z WordPress.com nebo pinghub)
+    if ((msgLower.includes('websocket') || msgLower.includes('ws://') || msgLower.includes('wss://')) &&
+        (msgLower.includes('pinghub') || msgLower.includes('wordpress.com') || sourceLower.includes('wordpress'))) {
+      return true;
+    }
+    
+    return false;
+  }
+  
+  console.error = function(...args) {
+    const msg = args.join(' ');
+    const source = args.find(arg => arg && typeof arg === 'object' && arg.source)?.source;
+    const filename = args.find(arg => arg && typeof arg === 'object' && arg.filename)?.filename;
+    
+    // Potlačit websocket/pinghub chyby z WordPress.com
+    if (isPinghubOrWebsocketError(msg, source, filename)) {
+      if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+        console.debug('[DB Map] Suppressed websocket error:', ...args);
+      }
+      return;
+    }
+    originalError.apply(console, args);
+  };
+  
+  console.warn = function(...args) {
+    const msg = args.join(' ');
+    const source = args.find(arg => arg && typeof arg === 'object' && arg.source)?.source;
+    const filename = args.find(arg => arg && typeof arg === 'object' && arg.filename)?.filename;
+    
+    // Potlačit websocket/pinghub varování z WordPress.com
+    if (isPinghubOrWebsocketError(msg, source, filename)) {
+      if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+        console.debug('[DB Map] Suppressed websocket warning:', ...args);
+      }
+      return;
+    }
+    originalWarn.apply(console, args);
+  };
+  
+  // Globální error handler pro uncaught errors
+  window.addEventListener('error', function(event) {
+    const msg = event.message || '';
+    const source = event.filename || event.source || '';
+    const filename = event.filename || '';
+    
+    if (isPinghubOrWebsocketError(msg, source, filename)) {
+      event.preventDefault();
+      if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+        console.debug('[DB Map] Suppressed uncaught websocket error:', event);
+      }
+      return false;
+    }
+  }, true);
+  
+  // Unhandled promise rejection handler
+  window.addEventListener('unhandledrejection', function(event) {
+    const msg = event.reason?.message || event.reason?.toString() || '';
+    const source = event.reason?.source || '';
+    
+    if (isPinghubOrWebsocketError(msg, source, '')) {
+      event.preventDefault();
+      if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+        console.debug('[DB Map] Suppressed unhandled websocket rejection:', event);
+      }
+      return false;
+    }
+  });
+  
+  // Try/catch wrapper pro případné inicializace websocketů
+  try {
+    // Pokud WordPress.com inicializuje websocket, zachytit chyby
+    if (typeof window !== 'undefined' && window.wp && window.wp.hooks) {
+      window.wp.hooks.addAction('wp.pinghub.error', 'db-map-suppress', function() {
+        // Potlačit pinghub chyby z WordPress hooks
+        return false;
+      });
+    }
+  } catch(e) {
+    // Silent fail - WordPress hooks nemusí být dostupné
+  }
+})();
+
 // ===== GLOBÁLNÍ KONSTANTY =====
 // Breakpoint pro mobilní zařízení (používá se i mimo DOMContentLoaded scope)
 const DB_MOBILE_BREAKPOINT_PX = 900;
@@ -8131,7 +8243,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     };
     const endpointType = typeMap[postType] || postType;
     
-    // Načíst detail z endpointu
+    // Načíst detail z endpointu s timeoutem 4s
     try {
       const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
       const base = (dbData?.restUrl) || '/wp-json/db/v1';
@@ -8144,10 +8256,17 @@ document.addEventListener('DOMContentLoaded', async function() {
         headers['X-WP-Nonce'] = dbData.restNonce;
       }
       
+      // Timeout 4s
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      
       const res = await fetch(url, {
         credentials: 'same-origin',
-        headers: headers
+        headers: headers,
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
       
       if (res.ok) {
         const data = await res.json();
@@ -8165,43 +8284,80 @@ document.addEventListener('DOMContentLoaded', async function() {
       } else if (res.status === 404) {
         // 404 - endpoint neexistuje nebo post není publikovaný
         // Vrátit původní feature (máme alespoň minimal payload)
-        console.debug('[DB Map] map-detail endpoint returned 404 for', { type: endpointType, id });
+        if (dbData?.debug) {
+          console.debug('[DB Map] map-detail endpoint returned 404 for', { type: endpointType, id });
+        }
         return feature;
       }
     } catch (err) {
-      console.warn('[DB Map] Failed to fetch feature detail:', err);
+      // Timeout nebo jiná chyba - logovat jen v debug módu
+      if (err.name === 'AbortError') {
+        // Timeout - tichý fallback
+        if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+          console.debug('[DB Map] map-detail fetch timeout for', { type: endpointType, id });
+        }
+      } else {
+        // Jiná chyba - logovat jen v debug módu
+        if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+          console.debug('[DB Map] Failed to fetch feature detail:', err);
+        }
+      }
     }
     
     // Fallback: vrátit původní feature
     return feature;
   }
 
-  async function openDetailModal(feature) {
-    // Načíst detail data pokud jsou dostupná pouze minimal payload
-    const props = feature?.properties || {};
-    if (!props.content && !props.description && !props.address) {
-      // Minimal payload - načíst detail
-      feature = await fetchFeatureDetail(feature);
+  // Flag pro zabránění rekurze při aktualizaci modalu
+  let isUpdatingModal = false;
+  let modalUpdateTimeout = null;
+  let lastUpdatedFeatureId = null;
+  
+  async function openDetailModal(feature, skipUpdate = false) {
+    // Pokud probíhá aktualizace, přeskočit (zabránit rekurzi)
+    if (isUpdatingModal && skipUpdate) {
+      return;
     }
     
-    const updatedProps = feature?.properties || {};
+    // Pokud je to stejný feature jako poslední aktualizace, přeskočit (zabránit duplicitním aktualizacím)
+    const featureId = feature?.properties?.id;
+    if (skipUpdate && featureId === lastUpdatedFeatureId) {
+      return;
+    }
+    
+    // Otevřít modal okamžitě s minimálními daty, které už máme ve feature.properties
+    const props = feature?.properties || {};
+    
+    // Na desktopu otevřít detail v nové záložce (voláno z tlačítka na kartě)
     if (isDesktopShell()) {
-      // Na desktopu otevřít detail v nové záložce (voláno z tlačítka na kartě)
-      if (updatedProps && updatedProps.id) {
-        try { highlightMarkerById(updatedProps.id); } catch (_) {}
-        try { renderCards('', updatedProps.id, false); } catch (_) {}
+      if (props && props.id) {
+        try { highlightMarkerById(props.id); } catch (_) {}
+        try { renderCards('', props.id, false); } catch (_) {}
       }
-      const detailUrl = updatedProps.permalink || updatedProps.link || updatedProps.url || null;
+      const detailUrl = props.permalink || props.link || props.url || null;
       if (detailUrl) {
         try {
           window.open(detailUrl, '_blank', 'noopener');
         } catch (err) {
-          console.warn('[DB Map] Failed to open detail URL:', err, { detailUrl, props: updatedProps });
+          console.warn('[DB Map] Failed to open detail URL:', err, { detailUrl, props: props });
         }
       } else {
-        console.warn('[DB Map] No detail URL found for feature:', { id: updatedProps.id, post_type: updatedProps.post_type, props: updatedProps });
+        console.warn('[DB Map] No detail URL found for feature:', { id: props.id, post_type: props.post_type, props: props });
       }
       return;
+    }
+    
+    // Spustit detail fetch async v pozadí (neblokuje otevření modalu)
+    let detailFetchPromise = null;
+    if (!props.content && !props.description && !props.address) {
+      // Minimal payload - načíst detail async
+      detailFetchPromise = fetchFeatureDetail(feature).catch(err => {
+        // Chyby logovat jen v debug módu
+        if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+          console.debug('[DB Map] Failed to fetch feature detail in background:', err);
+        }
+        return feature; // Vrátit původní feature při chybě
+      });
     }
    // Přidat třídu pro scroll lock
    try { 
@@ -8212,43 +8368,97 @@ document.addEventListener('DOMContentLoaded', async function() {
    } catch(_) {}
      // debug log removed
 
-     // Pokud je to POI, pokus se před renderem obohatit (pokud chybí data)
-     if (feature && feature.properties && feature.properties.post_type === 'poi') {
-       const needsEnrich = shouldFetchPOIDetails(feature.properties);
-       if (needsEnrich) {
-         // debug log removed
+     // Funkce pro aktualizaci modalu po dokončení detail fetchu
+     const updateModalWithDetail = (updatedFeature) => {
+       if (!updatedFeature || !updatedFeature.properties) return;
+       const updatedProps = updatedFeature.properties;
+       
+       // Aktualizovat pouze pokud máme více dat než předtím
+       if (!updatedProps.content && !updatedProps.description && !updatedProps.address) {
+         return; // Nemáme více dat, neaktualizovat
+       }
+       
+       // Aktualizovat cache
+       featureCache.set(updatedProps.id, updatedFeature);
+       const idx = window.features?.findIndex(f => f.properties.id === updatedProps.id);
+       if (idx !== undefined && idx >= 0 && window.features) {
+         window.features[idx] = updatedFeature;
+       }
+       
+       // Aktualizovat modal pouze pokud je stále otevřený
+       if (!detailModal.classList.contains('open')) return;
+       
+       // Debounce aktualizace modalu (zabránit flickering při rychlých aktualizacích)
+       if (modalUpdateTimeout) {
+        clearTimeout(modalUpdateTimeout);
+       }
+       
+       // Pokud probíhá aktualizace nebo je to stejný feature, přeskočit
+       if (isUpdatingModal || updatedProps.id === lastUpdatedFeatureId) return;
+       
+       // Debounce: počkat 100ms před aktualizací (shromáždí více aktualizací)
+       modalUpdateTimeout = setTimeout(() => {
          try {
-           const enriched = await enrichPOIFeature(feature);
-           if (enriched && enriched !== feature) {
-             feature = enriched;
-             featureCache.set(enriched.properties.id, enriched);
-             // debug log removed
+           isUpdatingModal = true;
+           lastUpdatedFeatureId = updatedProps.id;
+           openDetailModal(updatedFeature, true);
+         } catch(err) {
+           if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
+             console.debug('[DB Map] Failed to update modal with detail:', err);
+           }
+         } finally {
+           isUpdatingModal = false;
+           modalUpdateTimeout = null;
+         }
+       }, 100);
+     };
+     
+     // Spustit enrichment async v pozadí (neblokuje otevření modalu)
+     (async () => {
+       let currentFeature = feature;
+       
+       // Počkat na detail fetch pokud běží
+       if (detailFetchPromise) {
+         try {
+           currentFeature = await detailFetchPromise;
+           if (currentFeature && currentFeature !== feature) {
+             updateModalWithDetail(currentFeature);
+             feature = currentFeature; // Aktualizovat pro další enrichment
            }
          } catch(err) {
-           // warn log kept minimal: removed noisy output
+           // Chyby už jsou logovány v fetchFeatureDetail
          }
        }
-     }
-
-     if (feature && feature.properties && feature.properties.post_type === 'charging_location') {
-       const needsChargingEnrich = shouldFetchChargingDetails(feature.properties);
-       // debug log removed
-       if (needsChargingEnrich) {
-         // debug log removed
-         try {
-           const enrichedCharging = await enrichChargingFeature(feature);
-           if (enrichedCharging && enrichedCharging !== feature) {
-             feature = enrichedCharging;
-             featureCache.set(enrichedCharging.properties.id, enrichedCharging);
-             // debug log removed
+       
+       // Pokud je to POI, pokus se obohatit (pokud chybí data)
+       if (currentFeature && currentFeature.properties && currentFeature.properties.post_type === 'poi') {
+         const needsEnrich = shouldFetchPOIDetails(currentFeature.properties);
+         if (needsEnrich) {
+           try {
+             const enriched = await enrichPOIFeature(currentFeature);
+             if (enriched && enriched !== currentFeature) {
+               updateModalWithDetail(enriched);
+             }
+           } catch(err) {
+             // Silent fail - pokračovat s původními daty
            }
-         } catch (err) {
-           // warn log kept minimal: removed noisy output
          }
-       } else {
-         // debug log removed
        }
-     }
+
+       if (currentFeature && currentFeature.properties && currentFeature.properties.post_type === 'charging_location') {
+         const needsChargingEnrich = shouldFetchChargingDetails(currentFeature.properties);
+         if (needsChargingEnrich) {
+           try {
+             const enrichedCharging = await enrichChargingFeature(currentFeature);
+             if (enrichedCharging && enrichedCharging !== currentFeature) {
+               updateModalWithDetail(enrichedCharging);
+             }
+           } catch (err) {
+             // Silent fail - pokračovat s původními daty
+           }
+         }
+       }
+     })();
 
      const p = feature.properties || {};
      const coords = feature.geometry && feature.geometry.coordinates ? feature.geometry.coordinates : null;
@@ -12108,6 +12318,30 @@ document.addEventListener('DOMContentLoaded', async function() {
       c = map.getCenter();
     }
     
+    // Fallback: pokud map.getCenter() vrací null nebo není map ready, použít defaultní centrum
+    if (!c || typeof c.lat !== 'number' || typeof c.lng !== 'number' || isNaN(c.lat) || isNaN(c.lng)) {
+      // Zkusit použít defaultCenter z dbMapData, pak geolokaci, pak Praha jako fallback
+      const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
+      if (dbData && dbData.defaultCenter && Array.isArray(dbData.defaultCenter) && dbData.defaultCenter.length === 2) {
+        c = { lat: dbData.defaultCenter[0], lng: dbData.defaultCenter[1] };
+      } else {
+        // Zkusit použít geolokaci z LocationService
+        const cachedLocation = LocationService.getLast();
+        if (cachedLocation && cachedLocation.lat && cachedLocation.lng) {
+          c = { lat: cachedLocation.lat, lng: cachedLocation.lng };
+        } else {
+          // Fallback: Praha (centrum ČR)
+          c = { lat: 50.08, lng: 14.44 };
+        }
+      }
+      // Pokud je mapa ready, nastavit view
+      if (map && typeof map.setView === 'function') {
+        try {
+          map.setView([c.lat, c.lng], 13, { animate: false });
+        } catch(_) {}
+      }
+    }
+    
     try {
       // Progressive loading: mini-fetch pro okamžité zobrazení, pak plný fetch v pozadí
       await fetchAndRenderQuickThenFull(c, null);
@@ -12137,18 +12371,50 @@ document.addEventListener('DOMContentLoaded', async function() {
   loadFilterSettings();
   const hasSpecialFilters = filterState.free || showOnlyRecommended;
   
+  // Funkce pro pokus o spuštění initialDataLoad s kontrolou map ready stavu
+  function tryInitialDataLoad() {
+    // Zkontrolovat, zda je mapa ready
+    if (map && typeof map.getCenter === 'function') {
+      try {
+        const center = map.getCenter();
+        // Pokud map.getCenter() funguje, spustit initialDataLoad
+        if (center && typeof center.lat === 'number' && typeof center.lng === 'number') {
+          initialDataLoad();
+          return true;
+        }
+      } catch(_) {
+        // Map není ready, zkusit znovu později
+      }
+    }
+    return false;
+  }
+  
   // Pokud jsou aktivní speciální filtry, načíst všechna data přímo
   if (hasSpecialFilters) {
     // Zavolat initialDataLoad přímo, ne jen při map.once('load', ...)
-    initialDataLoad();
+    if (!tryInitialDataLoad()) {
+      // Pokud map není ready, zkusit znovu po krátké době
+      setTimeout(() => {
+        if (!initialLoadCompleted) {
+          tryInitialDataLoad();
+        }
+      }, 500);
+    }
   } else {
     // Event listener pro počáteční načtení mapy
     map.once('load', initialDataLoad);
     
     // Fallback: pokud se 'load' event nevyvolá, zkusit načíst data po krátké době
-    setTimeout(async () => {
+    setTimeout(() => {
       if (!initialLoadCompleted) {
-        initialDataLoad();
+        if (!tryInitialDataLoad()) {
+          // Pokud stále není ready, zkusit ještě jednou s delším timeoutem
+          setTimeout(() => {
+            if (!initialLoadCompleted) {
+              initialDataLoad();
+            }
+          }, 1500);
+        }
       }
     }, 1000);
   }
