@@ -1485,19 +1485,18 @@ add_action('wp_footer', function() {
  * Rozpoznání mapové stránky pro PWA optimalizace
  */
 function db_is_map_app_page(): bool {
-    // a) vlastní endpoint přes rewrite (např. ?dobity_map=1)
-    if (get_query_var('dobity_map') == 1) return true;
-
-    // b) Query var přidaný pro samostatnou mapovou appku (rewrite /mapa/)
-    if (intval(get_query_var(DB_MAP_ROUTE_QUERY_VAR)) === 1) return true;
-
-    // c) NEBO konkrétní WP stránka podle slugu/ID:
+    // a) vlastní endpoint přes rewrite (např. ?db_map_app=1)
+    if (defined('DB_MAP_ROUTE_QUERY_VAR') && intval(get_query_var(DB_MAP_ROUTE_QUERY_VAR)) === 1) {
+        return true;
+    }
+    
+    // b) NEBO konkrétní WP stránka podle slugu/ID:
     if (is_page('mapa')) return true;
-
-    // d) NEBO stránka obsahující [db_map] shortcode
+    
+    // c) NEBO stránka obsahující [db_map] shortcode
     global $post;
     if ($post && has_shortcode($post->post_content, 'db_map')) return true;
-
+    
     return false;
 }
 

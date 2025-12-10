@@ -3911,3 +3911,52 @@ body.db-map-app .floatingchat-donate-button,
   display: none !important;
   visibility: hidden !important;
 }
+
+/* ===== HEADER A FOOTER RESPONZIVITA NA MAPOVÉ STRÁNCE ===== */
+/* Zajistit, že header a footer z WordPressu jsou zobrazeny správně */
+
+/* PWA standalone mód - skrýt header/footer vždy (kompatibilita s PWA helper.js) */
+@media (display-mode: standalone) {
+  body.db-map-app > header:first-of-type,
+  body.db-map-app > .site-header:first-of-type,
+  body.db-map-app > footer:last-of-type,
+  body.db-map-app > .site-footer:last-of-type,
+  body.db-map-app.pwa-standalone > header:first-of-type,
+  body.db-map-app.pwa-standalone > .site-header:first-of-type,
+  body.db-map-app.pwa-standalone > footer:last-of-type,
+  body.db-map-app.pwa-standalone > .site-footer:last-of-type {
+    display: none !important;
+  }
+}
+
+/* Header a footer na desktopu - zobrazit normálně (ale ne v PWA standalone) */
+@media (min-width: 901px) {
+  /* PWA standalone má vyšší prioritu - skrýt header/footer */
+  body.db-map-app:not(.pwa-standalone) header,
+  body.db-map-app:not(.pwa-standalone) .site-header,
+  body.db-map-app:not(.pwa-standalone) footer,
+  body.db-map-app:not(.pwa-standalone) .site-footer {
+    position: relative;
+    z-index: 10;
+  }
+  
+  /* Zajistit, že mapa respektuje header/footer */
+  body.db-map-app:not(.pwa-standalone) .db-map-root {
+    margin-top: 1rem;
+  }
+}
+
+/* Header a footer na mobilu - skrýt, aby mapa byla fullscreen */
+@media (max-width: 900px) {
+  body.db-map-app > header:first-of-type,
+  body.db-map-app > .site-header:first-of-type,
+  body.db-map-app > footer:last-of-type,
+  body.db-map-app > .site-footer:last-of-type {
+    display: none;
+  }
+}
+
+/* Kompatibilita - zajistit, že #db-map-app má stejné styly jako .db-map-root */
+#db-map-app.db-map-root {
+  /* Styly jsou definovány v .db-map-root výše */
+}
