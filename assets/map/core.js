@@ -13647,15 +13647,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         searchUrl += `&lat=${userCoords[0]}&lon=${userCoords[1]}`;
       }
 
-      // Přidat User-Agent a Referer hlavičky pro Nominatim (požadováno pro 403 prevenci)
-      const pluginUrl = (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.pluginUrl) 
-        ? window.dbMapData.pluginUrl 
-        : 'https://dobitybaterky.cz';
-      const pluginVersion = (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.version) 
-        ? window.dbMapData.version 
-        : '1.0';
+      // Přidat Referer hlavičku pro Nominatim (požadováno pro 403 prevenci)
+      // POZOR: User-Agent nelze nastavit v browser fetch API (forbidden header)
+      // Browser automaticky přidá User-Agent hlavičku, takže ji nemusíme nastavovat
       const headers = {
-        'User-Agent': `DobityBaterky/${pluginVersion} (${pluginUrl})`,
         'Referer': window.location.origin
       };
       
