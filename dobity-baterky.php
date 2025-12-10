@@ -545,12 +545,19 @@ add_action( 'template_redirect', function() {
 
     // DŮLEŽITÉ: Zajistit, aby se assety načetly před include template
     // template_redirect se spouští dříve než wp_head(), takže musíme spustit wp_enqueue_scripts ručně
-    // Použít flag pro prevenci duplicitního volání (wp_enqueue_scripts může být volán vícekrát, ale lepší být explicitní)
-    static $scripts_enqueued = false;
-    if ( ! $scripts_enqueued ) {
-        do_action( 'wp_enqueue_scripts' );
-        $scripts_enqueued = true;
-    }
+    // Musíme zajistit, aby globální objekty ($wp_query, $wp) byly správně nastaveny
+    global $wp_query, $wp;
+    
+    // Explicitně nastavit query var, aby db_is_map_app_page() a db_is_map_frontend_context() správně detekovaly mapu
+    $wp_query->set( DB_MAP_ROUTE_QUERY_VAR, 1 );
+    
+    // Resetovat static cache v db_is_map_frontend_context(), aby se správně vyhodnotila
+    // (můžeme použít reflexi nebo jednoduše zajistit, že query var je správně nastaven)
+    
+    // Spustit wp_enqueue_scripts hook, aby se assety načetly
+    // POZNÁMKA: Hook handlers sami kontrolují db_is_map_app_page() a db_is_map_frontend_context()
+    // Ale protože jsme explicitně nastavili query var, měly by správně detekovat mapu
+    do_action( 'wp_enqueue_scripts' );
 
     $template = DB_PLUGIN_DIR . 'templates/map-app.php';
     if ( file_exists( $template ) ) {
