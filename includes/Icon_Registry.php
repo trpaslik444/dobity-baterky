@@ -27,6 +27,19 @@ class Icon_Registry {
     }
     
     /**
+     * Validuje icon_slug - ignoruje špatný formát (poi_type-{id} nebo rv_type-{id})
+     * @param string $icon_slug
+     * @return string Validovaný icon_slug nebo prázdný string
+     */
+    private function validateIconSlug($icon_slug) {
+        // Ignorovat špatný icon_slug (poi_type-{id} nebo rv_type-{id} jsou fallback hodnoty z Icon_Admin, ne skutečné názvy souborů)
+        if (!empty($icon_slug) && preg_match('/^(poi_type|rv_type)-\d+$/', $icon_slug)) {
+            return '';
+        }
+        return $icon_slug ?: '';
+    }
+    
+    /**
      * Získá SVG obsah z cache nebo načte ze souboru
      * @param string $icon_slug
      * @param string $post_type
@@ -133,7 +146,7 @@ class Icon_Registry {
             $icon_slug = '';
             if ( !empty($rv_types) && !is_wp_error($rv_types) ) {
                 $term = $rv_types[0];
-                $icon_slug = get_term_meta( $term->term_id, 'icon_slug', true );
+                $icon_slug = $this->validateIconSlug(get_term_meta( $term->term_id, 'icon_slug', true ));
             }
 
             if ( !empty($icon_slug) ) {
@@ -178,9 +191,8 @@ class Icon_Registry {
             $poi_terms = wp_get_post_terms( $post->ID, 'poi_type' );
             if ( !empty($poi_terms) && !is_wp_error($poi_terms) ) {
                 $term = $poi_terms[0];
-                $icon_slug = get_term_meta( $term->term_id, 'icon_slug', true );
+                $icon_slug = $this->validateIconSlug(get_term_meta( $term->term_id, 'icon_slug', true ));
                 $color_hex = get_term_meta( $term->term_id, 'color_hex', true );
-                
 
                 
                 if ( !empty($icon_slug) ) {

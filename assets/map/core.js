@@ -2530,16 +2530,38 @@ document.addEventListener('DOMContentLoaded', async function() {
   // ===== NOVÉ STAVOVÉ PROMĚNNÉ PRO FLOATING SEARCH =====
   let lastSearchCenter = null;        // {lat, lng} středu posledního vyhledávání
   let lastSearchRadiusKm = 15;        // tlačítko se zobrazí po přesunu mimo 15 km od středu posledního vyhledávání
+  let isSearchMoveInProgress = false; // Flag pro kontrolu, že se jedná o přesun z vyhledávání (zabraňuje race conditions)
   
   // Globální stav režimu načítání - vždy používat radius režim
   let loadMode = 'radius'; // Vždy radius režim - načítání okolo polohy uživatele
   
   // Funkce pro získání polohy uživatele
-  const tryGetUserLocation = async () => {
+  const tryGetUserLocation = async (requestPermission = false) => {
     try {
       // Zkontrolovat, zda je geolokace dostupná
       if (!navigator.geolocation) {
         // Pokud není geolokace dostupná, zkusit použít uloženou polohu z cache
+        if (typeof LocationService !== 'undefined' && LocationService.getLast) {
+          const lastLoc = LocationService.getLast();
+          if (lastLoc && lastLoc.lat && lastLoc.lng) {
+            return [lastLoc.lat, lastLoc.lng];
+          }
+        }
+        return null;
+      }
+      
+      // Zkontrolovat stav oprávnění geolokace
+      let permissionState = 'prompt';
+      if (typeof LocationService !== 'undefined' && LocationService.permissionState) {
+        try {
+          permissionState = await LocationService.permissionState();
+        } catch (e) {
+          // Fallback na 'prompt' pokud nelze zjistit stav
+        }
+      }
+      
+      // Pokud je oprávnění zamítnuto, použít cache nebo vrátit null
+      if (permissionState === 'denied') {
         if (typeof LocationService !== 'undefined' && LocationService.getLast) {
           const lastLoc = LocationService.getLast();
           if (lastLoc && lastLoc.lat && lastLoc.lng) {
@@ -2555,35 +2577,52 @@ document.addEventListener('DOMContentLoaded', async function() {
         const lastLoc = LocationService.getLast();
         if (lastLoc && lastLoc.lat && lastLoc.lng) {
           cachedLoc = lastLoc;
-          // Pokud je poloha čerstvá (max 1 hodina), použít ji
-          if (lastLoc.ts && (Date.now() - lastLoc.ts) < 3600000) {
+          // Pokud je poloha čerstvá (max 5 minut) a máme povolenou geolokaci, použít ji
+          if (lastLoc.ts && (Date.now() - lastLoc.ts) < 300000 && permissionState === 'granted') {
             return [lastLoc.lat, lastLoc.lng];
           }
         }
       }
       
-      // Pokusit se získat aktuální polohu
-      try {
-        const pos = await new Promise((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            resolve, 
-            reject, 
-            { enableHighAccuracy: false, timeout: 5000, maximumAge: 300000 }
-          );
-        });
-        
-        if (pos && pos.coords) {
-          return [pos.coords.latitude, pos.coords.longitude];
+      // Pokud je oprávnění 'prompt' a requestPermission je true, zkusit získat polohu (zeptá se uživatele)
+      // Pokud je 'granted', získat aktuální polohu
+      if (permissionState === 'granted' || (permissionState === 'prompt' && requestPermission)) {
+        try {
+          // Použít cache pokud je čerstvá (< 1 minuta), jinak získat aktuální polohu
+          const cacheAge = cachedLoc ? (Date.now() - cachedLoc.ts) : Infinity;
+          const maximumAge = cacheAge < 60000 ? 60000 : 0;
+          
+          const pos = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+              resolve, 
+              reject, 
+              { enableHighAccuracy: false, timeout: 8000, maximumAge: maximumAge }
+            );
+          });
+          
+          if (pos && pos.coords) {
+            return [pos.coords.latitude, pos.coords.longitude];
+          }
+        } catch (err) {
+          // Pokud získání aktuální polohy selže, použít uloženou polohu z cache jako fallback
+          if (cachedLoc && cachedLoc.lat && cachedLoc.lng) {
+            console.debug('[DB Map] Using cached location after geolocation error:', err.message);
+            return [cachedLoc.lat, cachedLoc.lng];
+          }
+          // Tiše selhat - použije se defaultní pozice
+          console.debug('[DB Map] Geolocation not available or denied:', err.message);
         }
-      } catch (err) {
-        // Pokud získání aktuální polohy selže, použít uloženou polohu z cache jako fallback
+      }
+      
+      // Pokud je oprávnění 'prompt' a requestPermission je false, použít cache nebo null
+      if (permissionState === 'prompt' && !requestPermission) {
         if (cachedLoc && cachedLoc.lat && cachedLoc.lng) {
-          console.debug('[DB Map] Using cached location after geolocation error:', err.message);
           return [cachedLoc.lat, cachedLoc.lng];
         }
-        // Tiše selhat - použije se defaultní pozice
-        console.debug('[DB Map] Geolocation not available or denied:', err.message);
+        return null;
       }
+      
+      return null;
     } catch (err) {
       // Pokud vše selže, zkusit použít uloženou polohu z cache
       if (typeof LocationService !== 'undefined' && LocationService.getLast) {
@@ -9890,8 +9929,36 @@ document.addEventListener('DOMContentLoaded', async function() {
         sortMode = 'distance_from_address';
         searchSortLocked = true;
         renderCards('', null, false);
+        
+        // Nastavit flag pro kontrolu, že se jedná o přesun z vyhledávání
+        isSearchMoveInProgress = true;
         map.setView(searchAddressCoords, 13, {animate:true});
         addOrMoveSearchAddressMarker(searchAddressCoords);
+        
+        // Po přesunu mapy na výsledek vyhledávání načíst body z tohoto místa
+        // Počkat na dokončení animace přesunu mapy
+        map.once('moveend', async () => {
+          // Ignorovat pokud už není aktivní vyhledávání (uživatel mohl přesunout mapu ručně)
+          if (!isSearchMoveInProgress) return;
+          isSearchMoveInProgress = false;
+          
+          const center = map.getCenter();
+          try {
+            // Progressive loading: mini-fetch pro okamžité zobrazení, pak plný fetch v pozadí
+            await fetchAndRenderQuickThenFull(center, null);
+            lastSearchCenter = { lat: center.lat, lng: center.lng };
+            lastSearchRadiusKm = FIXED_RADIUS_KM;
+          } catch (error) {
+            // Fallback: pokud selže progressive loading, zkusit klasický fetch
+            try {
+              await fetchAndRenderRadiusWithFixedRadius(center, null, FIXED_RADIUS_KM);
+              lastSearchCenter = { lat: center.lat, lng: center.lng };
+              lastSearchRadiusKm = FIXED_RADIUS_KM;
+            } catch (error2) {
+              // Silent fail
+            }
+          }
+        });
     } catch (error) {
     }
   }
@@ -11909,7 +11976,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Automatický počáteční fetch při prvním otevření mapy (prázdná mapa není OK)
     // Pokud nejsou aktivní speciální filtry, použít progressive loading (mini + plný fetch)
     // Zkusit získat polohu uživatele pro centrování mapy
-    const userLocation = await tryGetUserLocation();
+    // requestPermission=true: zeptat se uživatele na geolokaci pokud není povolena
+    const userLocation = await tryGetUserLocation(true);
     
     let c;
     if (userLocation) {

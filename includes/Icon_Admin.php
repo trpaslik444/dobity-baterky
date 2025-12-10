@@ -262,7 +262,8 @@ class Icon_Admin {
             $term_id = intval($m[2]);
             if ( $term_id ) {
                 update_term_meta($term_id, 'color_hex', $color);
-                update_term_meta($term_id, 'icon_slug', $m[1] . '-' . $term_id);
+                // NENASTAVOVAT icon_slug automaticky - icon_slug se nastavuje pouze při uploadu ikony
+                // Automatické nastavení icon_slug jako "poi_type-{id}" způsobovalo 404 chyby při načítání ikon
             }
         }
         // Pro charger_type se ikony a barvy neukládají - používají se automaticky
