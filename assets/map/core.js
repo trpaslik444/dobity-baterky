@@ -933,6 +933,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.featureCache = featureCache; // Globální přístup pro externí funkce
     const internalSearchCache = new Map();
     const externalSearchCache = new Map();
+    const externalSearch403Blacklist = new Map(); // Cache pro 403 chyby s časovou značkou (prevence opakovaných requestů)
     let searchController = null; // Jediný AbortController pro všechny search requesty
     let searchHandlersInitialized = false; // Guard flag pro inicializaci handlerů
     let lastAutocompleteResults = null; // Cache posledních autocomplete výsledků pro submit
@@ -9404,15 +9405,21 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       // Pokud lastAutocompleteResults je null nebo prázdné, fetchnout autocomplete
-      if (!lastAutocompleteResults || 
-          !lastAutocompleteResults.results ||
-          (lastAutocompleteResults.results.internal.length === 0 && 
-           lastAutocompleteResults.results.external.length === 0)) {
+      // DŮLEŽITÉ: Zkontrolovat, jestli query odpovídá - pokud ne, fetchnout znovu
+      const hasValidCache = lastAutocompleteResults && 
+        lastAutocompleteResults.results &&
+        lastAutocompleteResults.query.toLowerCase() === query.toLowerCase() &&
+        (lastAutocompleteResults.results.internal.length > 0 || 
+         lastAutocompleteResults.results.external.length > 0);
+      
+      if (!hasValidCache) {
         // Fetchnout autocomplete a použít první výsledek
         try {
           await fetchAutocomplete(query, searchInput);
           // Po fetchi zkontrolovat znovu lastAutocompleteResults
-          if (lastAutocompleteResults && lastAutocompleteResults.results) {
+          if (lastAutocompleteResults && 
+              lastAutocompleteResults.results &&
+              lastAutocompleteResults.query.toLowerCase() === query.toLowerCase()) {
             const { internal, external } = lastAutocompleteResults.results;
             let selectedResult = null;
             let isInternal = false;
@@ -13609,6 +13616,19 @@ document.addEventListener('DOMContentLoaded', async function() {
       return externalSearchCache.get(normalized);
     }
 
+    // Zkontrolovat, jestli tento query není na blacklistu kvůli 403 (prevence opakovaných requestů)
+    const BLACKLIST_DURATION_MS = 5 * 60 * 1000; // 5 minut
+    if (externalSearch403Blacklist.has(normalized)) {
+      const blacklistTime = externalSearch403Blacklist.get(normalized);
+      if (Date.now() - blacklistTime < BLACKLIST_DURATION_MS) {
+        // Stále na blacklistu - vrátit prázdný výsledek bez dalšího requestu
+        return { results: [], userCoords: null };
+      } else {
+        // Blacklist vypršel - smazat a zkusit znovu
+        externalSearch403Blacklist.delete(normalized);
+      }
+    }
+
     if ((query || '').trim().length < 3) {
       const payload = { results: [], userCoords: null };
       externalSearchCache.set(normalized, payload);
@@ -13628,8 +13648,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
 
       // Přidat User-Agent a Referer hlavičky pro Nominatim (požadováno pro 403 prevenci)
+      const pluginUrl = (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.pluginUrl) 
+        ? window.dbMapData.pluginUrl 
+        : 'https://dobitybaterky.cz';
+      const pluginVersion = (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.version) 
+        ? window.dbMapData.version 
+        : '1.0';
       const headers = {
-        'User-Agent': 'DobityBaterky/1.0 (https://dobitybaterky.cz)',
+        'User-Agent': `DobityBaterky/${pluginVersion} (${pluginUrl})`,
         'Referer': window.location.origin
       };
       
@@ -13656,6 +13682,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
           console.debug('[DB Map] Nominatim 403 (User-Agent required):', error);
         }
+        // Přidat na blacklist na 5 minut - prevence opakovaných requestů
+        externalSearch403Blacklist.set(normalized, Date.now());
         // Invalidovat cache při 403 - příště se fetchnuje znovu (možná s lepšími hlavičkami)
         externalSearchCache.delete(normalized);
       } else {
