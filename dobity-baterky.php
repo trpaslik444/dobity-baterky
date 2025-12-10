@@ -543,6 +543,10 @@ add_action( 'template_redirect', function() {
     status_header( 200 );
     nocache_headers();
 
+    // DŮLEŽITÉ: Zajistit, aby se assety načetly před include template
+    // template_redirect se spouští dříve než wp_head(), takže musíme spustit wp_enqueue_scripts ručně
+    do_action( 'wp_enqueue_scripts' );
+
     $template = DB_PLUGIN_DIR . 'templates/map-app.php';
     if ( file_exists( $template ) ) {
         include $template;
