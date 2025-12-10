@@ -196,20 +196,29 @@ class Icon_Registry {
             $poi_terms = wp_get_post_terms( $post->ID, 'poi_type' );
             if ( !empty($poi_terms) && !is_wp_error($poi_terms) ) {
                 $term = $poi_terms[0];
-                $icon_slug = $this->validateIconSlug(get_term_meta( $term->term_id, 'icon_slug', true ));
-                $color_hex = get_term_meta( $term->term_id, 'color_hex', true );
+                $term_id = $term->term_id;
+                $icon_slug = $this->validateIconSlug(get_term_meta( $term_id, 'icon_slug', true ));
+                $color_hex = get_term_meta( $term_id, 'color_hex', true );
 
-                
-                if ( !empty($icon_slug) ) {
-                // Preferuj uploads, pak assets
+                // PRIORITA 1: Zkusit načíst z Icon Admin konfigurace (uploads/dobity-baterky/icons/poi_type-{term_id}.svg)
+                // Toto je obecná cesta podle Icon Admin konfigurace, ne jen icon_slug z termu
                 $up = wp_upload_dir();
                 $uploads_path = trailingslashit($up['basedir']) . 'dobity-baterky/icons/';
-                $svg_path = $uploads_path . $icon_slug . '.svg';
-                $is_upload = file_exists($svg_path);
-                if ( ! $is_upload ) {
-                    $svg_path = $this->base_path . $icon_slug . '.svg';
-                }
-                if ( file_exists($svg_path) ) {
+                $uploads_url = trailingslashit($up['baseurl']) . 'dobity-baterky/icons/';
+                $icon_admin_slug = 'poi_type-' . $term_id;
+                $icon_admin_path = $uploads_path . $icon_admin_slug . '.svg';
+                $icon_admin_url = $uploads_url . $icon_admin_slug . '.svg';
+                $is_icon_admin_upload = file_exists($icon_admin_path);
+                
+                // PRIORITA 2: Pokud máme icon_slug z term meta, zkusit ho použít
+                if ( !empty($icon_slug) ) {
+                    // Preferuj uploads, pak assets
+                    $svg_path = $is_icon_admin_upload ? $icon_admin_path : ($uploads_path . $icon_slug . '.svg');
+                    $is_upload = file_exists($svg_path);
+                    if ( ! $is_upload ) {
+                        $svg_path = $this->base_path . $icon_slug . '.svg';
+                    }
+                    if ( file_exists($svg_path) ) {
                         // Použít cache pro SVG obsah (pokud není v uploads)
                         if (!$is_upload) {
                             $svg_content = $this->get_svg_content_cached($icon_slug, 'poi', 'db_poi_icon_color');
@@ -233,13 +242,42 @@ class Icon_Registry {
                         if (empty($global_poi_color)) {
                             $global_poi_color = '#FCE67D';
                         }
+                        // Vrátit icon_url pokud je v uploads
+                        $icon_url = $is_upload ? ($is_icon_admin_upload ? $icon_admin_url : ($uploads_url . $icon_slug . '.svg')) : null;
                         return [
                             'slug' => $icon_slug,
                             'svg_content' => $svg_content,
+                            'icon_url' => $icon_url,
                             // POI barva se čerpá z centrálního nastavení
                             'color' => $global_poi_color,
                         ];
                     }
+                }
+                
+                // PRIORITA 3: Pokud nemáme icon_slug, ale máme Icon Admin soubor, použít ho
+                if ($is_icon_admin_upload) {
+                    $svg_content = file_get_contents($icon_admin_path);
+                    $svg_content = preg_replace('/<svg([^>]*)width="[^"]*"/','<svg$1', $svg_content);
+                    $svg_content = preg_replace('/<svg([^>]*)height="[^"]*"/','<svg$1', $svg_content);
+                    $svg_content = preg_replace('/<svg /', '<svg width="100%" height="100%" style="display:block;" ', $svg_content, 1);
+                    // Nastav fill a stroke podle globální barvy SVG ikony
+                    $icon_fill = get_option('db_poi_icon_color', '#049FE8');
+                    if (!is_string($icon_fill) || !preg_match('/^#[0-9a-fA-F]{6}$/', $icon_fill)) {
+                        $icon_fill = '#049FE8';
+                    }
+                    $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_fill . '"', $svg_content);
+                    $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_fill . '"', $svg_content);
+                    $global_poi_color = get_option('db_poi_color', '#FCE67D');
+                    $global_poi_color = is_string($global_poi_color) ? sanitize_hex_color($global_poi_color) : '#FCE67D';
+                    if (empty($global_poi_color)) {
+                        $global_poi_color = '#FCE67D';
+                    }
+                    return [
+                        'slug' => $icon_admin_slug,
+                        'svg_content' => $svg_content,
+                        'icon_url' => $icon_admin_url,
+                        'color' => $global_poi_color,
+                    ];
                 }
                 
                 // Pokud není SVG dekorace, vrátit defaultní barvu z centrálního nastavení
@@ -251,6 +289,7 @@ class Icon_Registry {
                 return [
                     'slug' => '',
                     'svg_content' => '',
+                    'icon_url' => null,
                     'color' => $global_poi_color,
                 ];
             } else {
@@ -263,6 +302,7 @@ class Icon_Registry {
                 return [
                     'slug' => '',
                     'svg_content' => '',
+                    'icon_url' => null,
                     'color' => $global_poi_color,
                 ];
             }
