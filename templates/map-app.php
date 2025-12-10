@@ -35,14 +35,19 @@ do_action( 'db_map_app_before_app' );
 // Načíst header template pokud existuje (zobrazí se i na mobilu, ale lze skrýt pomocí CSS)
 $header_template = locate_template( array( 'header.php' ) );
 if ( $header_template ) {
-    // Zjednodušené načtení - prostě include, bez manipulace s hooky
-    // wp_head() je už voláno výše, takže se nevolá znovu
+    // Odstranit wp_head() callbacks před include, protože už jsme volali wp_head() výše
+    global $wp_filter;
+    $wp_head_callbacks_backup = isset( $wp_filter['wp_head'] ) ? $wp_filter['wp_head'] : null;
+    remove_all_actions( 'wp_head' );
+    
     ob_start();
-    // Dočasně odstranit wp_head() z výstupu, protože už je voláno výše
-    add_filter( 'wp_head', '__return_empty_string', 999 );
     include $header_template;
-    remove_filter( 'wp_head', '__return_empty_string', 999 );
     $header_output = ob_get_clean();
+    
+    // Obnovit wp_head callbacks
+    if ( $wp_head_callbacks_backup !== null ) {
+        $wp_filter['wp_head'] = $wp_head_callbacks_backup;
+    }
     
     // Extrahovat pouze obsah mezi <body> tagy (bez samotných tagů)
     if ( preg_match( '/<body[^>]*>(.*?)<\/body>/is', $header_output, $matches ) ) {
@@ -78,18 +83,25 @@ if ( $header_template ) {
 // Načíst footer template pokud existuje (zobrazí se i na mobilu, ale lze skrýt pomocí CSS)
 $footer_template = locate_template( array( 'footer.php' ) );
 if ( $footer_template ) {
+    // Odstranit wp_footer() callbacks před include, protože ho zavoláme sami později
+    global $wp_filter;
+    $wp_footer_callbacks_backup = isset( $wp_filter['wp_footer'] ) ? $wp_filter['wp_footer'] : null;
+    remove_all_actions( 'wp_footer' );
+    
     ob_start();
-    // Dočasně odstranit wp_footer() z výstupu, protože ho zavoláme sami později
-    add_filter( 'wp_footer', '__return_empty_string', 999 );
     include $footer_template;
-    remove_filter( 'wp_footer', '__return_empty_string', 999 );
     $footer_output = ob_get_clean();
+    
+    // Obnovit wp_footer callbacks před voláním wp_footer() na konci
+    if ( $wp_footer_callbacks_backup !== null ) {
+        $wp_filter['wp_footer'] = $wp_footer_callbacks_backup;
+    }
     
     // Extrahovat obsah před </body> tagem (bez samotného tagu)
     // A také odstranit případné volání wp_footer() z footer obsahu (PHP kód)
     if ( preg_match( '/(.*?)<\/body>/is', $footer_output, $matches ) ) {
         $footer_content = $matches[1];
-        // Odstranit případné volání wp_footer() z footer obsahu
+        // Odstranit případné volání wp_footer() z footer obsahu (PHP kód)
         $footer_content = preg_replace( '/<\?php\s*wp_footer\(\);\s*\?>/i', '', $footer_content );
         echo $footer_content;
     } else {
@@ -118,6 +130,7 @@ if ( $footer_template ) {
 // Zavolat wp_footer() jednou na konci
 // DŮLEŽITÉ: Voláme wp_footer() přímo, ne přes get_footer(), aby to fungovalo
 // i na block/FSE tématech, která nemají footer.php
+// Callbacks byly obnoveny výše, takže se zavolají správně
 wp_footer();
 ?>
 </body>
