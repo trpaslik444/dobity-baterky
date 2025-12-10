@@ -552,6 +552,27 @@ add_action( 'template_redirect', function() {
     exit;
 } );
 
+add_action( 'wp_enqueue_scripts', function() {
+    if ( ! db_is_map_app_page() ) {
+        return;
+    }
+
+    wp_enqueue_style( 'wp-block-library' );
+    wp_enqueue_style( 'global-styles' );
+
+    if ( wp_style_is( 'twentytwentyfour-style', 'registered' ) ) {
+        wp_enqueue_style( 'twentytwentyfour-style' );
+    }
+}, 20 );
+
+add_filter( 'body_class', function( array $classes ): array {
+    if ( db_is_map_app_page() && ! in_array( 'db-map-app', $classes, true ) ) {
+        $classes[] = 'db-map-app';
+    }
+
+    return $classes;
+} );
+
 // Načítání assetů s ochranou - spouští se až po init
 add_action('wp_enqueue_scripts', function() {
 
