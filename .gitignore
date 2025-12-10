@@ -9,3 +9,8 @@ staging-debug.log
 downloaded logs from production/
 production-logs/
 *.csv
+
+# System files and temporary files
+.DS_Store
+*.har
+Docasne soubory/

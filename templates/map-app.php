@@ -18,10 +18,9 @@ if ( ! defined( 'ABSPATH' ) ) {
     <?php
     /**
      * Umožní pluginům vložit potřebná metadata / skripty (např. PWA manifest).
-     * 
-     * DŮLEŽITÉ: Voláme wp_head() přímo zde, ne přes get_header(), aby to fungovalo
+     * Voláme wp_head() přímo zde, ne přes get_header(), aby to fungovalo
      * i na block/FSE tématech (jako TwentyTwentyFour), která nemají header.php.
-     * Tím zajišťujeme, že assety (Leaflet, CSS, JS) se načtou i když get_header() není dostupný.
+     * Tím zajišťujeme, že assety (Leaflet, CSS, JS) se načtou.
      */
     wp_head();
     ?>
@@ -33,52 +32,36 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 do_action( 'db_map_app_before_app' );
 
-// Načíst header template (zobrazí se i na mobilu, ale lze skrýt pomocí CSS)
-// POZNÁMKA: wp_head() je již voláno výše v <head>, takže assety se načtou i na block themes
+// Načíst header template pokud existuje (zobrazí se i na mobilu, ale lze skrýt pomocí CSS)
 $header_template = locate_template( array( 'header.php' ) );
 if ( $header_template ) {
-        // Dočasně odstranit wp_head akci, aby se nevolala znovu (už byla volána výše)
-        // Musíme vytvořit hlubokou kopii, protože remove_all_actions modifikuje původní objekt
-        global $wp_filter;
-        $wp_head_callbacks = null;
-        if ( isset( $wp_filter['wp_head'] ) && is_object( $wp_filter['wp_head'] ) ) {
-            // Vytvořit hlubokou kopii WP_Hook objektu pomocí clone
-            $wp_head_callbacks = clone $wp_filter['wp_head'];
-        }
-        remove_all_actions( 'wp_head' );
-        
-        // Načíst header template a extrahovat pouze obsah body
-        ob_start();
-        include $header_template;
-        $full_header = ob_get_clean();
-        
-        // Obnovit wp_head callbacks
-        // Použít uloženou kopii, která nebyla modifikována remove_all_actions
-        if ( $wp_head_callbacks !== null ) {
-            $wp_filter['wp_head'] = $wp_head_callbacks;
-        }
-        
-        // Extrahovat pouze obsah mezi <body> tagy (bez samotných tagů)
-        if ( preg_match( '/<body[^>]*>(.*?)<\/body>/is', $full_header, $matches ) ) {
-            echo $matches[1];
-        } elseif ( preg_match( '/<body[^>]*>(.*)/is', $full_header, $matches ) ) {
-            // Pokud není </body>, vezmeme vše po <body>
-            echo $matches[1];
-        } else {
-            // Fallback: některá témata nemají body obsah v header.php – zkusíme běžné partialy
-            $header_partials = array(
-                'template-parts/header/site-header',
-                'template-parts/header/header',
-                'parts/header',
-            );
-            foreach ( $header_partials as $part ) {
-                $candidate = locate_template( array( $part . '.php' ) );
-                if ( $candidate ) {
-                    ob_start();
-                    include $candidate;
-                    echo ob_get_clean();
-                    break;
-                }
+    // Zjednodušené načtení - prostě include, bez manipulace s hooky
+    // wp_head() je už voláno výše, takže se nevolá znovu
+    ob_start();
+    // Dočasně odstranit wp_head() z výstupu, protože už je voláno výše
+    add_filter( 'wp_head', '__return_empty_string', 999 );
+    include $header_template;
+    remove_filter( 'wp_head', '__return_empty_string', 999 );
+    $header_output = ob_get_clean();
+    
+    // Extrahovat pouze obsah mezi <body> tagy (bez samotných tagů)
+    if ( preg_match( '/<body[^>]*>(.*?)<\/body>/is', $header_output, $matches ) ) {
+        echo $matches[1];
+    } elseif ( preg_match( '/<body[^>]*>(.*)/is', $header_output, $matches ) ) {
+        // Pokud není </body>, vezmeme vše po <body>
+        echo $matches[1];
+    } else {
+        // Fallback: některá témata nemají body obsah v header.php – zkusíme běžné partialy
+        $header_partials = array(
+            'template-parts/header/site-header',
+            'template-parts/header/header',
+            'parts/header',
+        );
+        foreach ( $header_partials as $part ) {
+            $candidate = locate_template( array( $part . '.php' ) );
+            if ( $candidate ) {
+                include $candidate;
+                break;
             }
         }
     }
@@ -90,68 +73,49 @@ if ( $header_template ) {
     <div id="db-map" class="db-map-app__canvas" aria-live="polite"></div>
 </div>
 <?php do_action( 'db_map_app_after_app' ); ?>
+
 <?php
-// Načíst footer template (zobrazí se i na mobilu, ale lze skrýt pomocí CSS)
+// Načíst footer template pokud existuje (zobrazí se i na mobilu, ale lze skrýt pomocí CSS)
 $footer_template = locate_template( array( 'footer.php' ) );
 if ( $footer_template ) {
-        // Uložit všechny wp_footer callbacks před jejich dočasným odstraněním
-        // Musíme vytvořit hlubokou kopii, protože remove_all_actions modifikuje původní objekt
-        global $wp_filter;
-        $wp_footer_callbacks = null;
-        if ( isset( $wp_filter['wp_footer'] ) && is_object( $wp_filter['wp_footer'] ) ) {
-            // Vytvořit hlubokou kopii WP_Hook objektu pomocí clone
-            $wp_footer_callbacks = clone $wp_filter['wp_footer'];
-        }
-        
-        // Dočasně odstranit wp_footer akci, aby se nevolala při include footer.php
-        // (zavoláme ji sami později pouze jednou)
-        remove_all_actions( 'wp_footer' );
-        
-        // Načíst footer template a extrahovat pouze obsah před </body>
-        ob_start();
-        include $footer_template;
-        $full_footer = ob_get_clean();
-        
-        // Obnovit wp_footer callbacks před voláním wp_footer()
-        // Použít uloženou kopii, která nebyla modifikována remove_all_actions
-        if ( $wp_footer_callbacks !== null ) {
-            $wp_filter['wp_footer'] = $wp_footer_callbacks;
-        }
-        
-        // Extrahovat obsah před </body> tagem (bez samotného tagu)
-        // A také odstranit případné volání wp_footer() z footer obsahu (PHP kód)
-        if ( preg_match( '/(.*?)<\/body>/is', $full_footer, $matches ) ) {
-            $footer_content = $matches[1];
-            // Odstranit případné volání wp_footer() z footer obsahu
-            $footer_content = preg_replace( '/<\?php\s*wp_footer\(\);\s*\?>/i', '', $footer_content );
+    ob_start();
+    // Dočasně odstranit wp_footer() z výstupu, protože ho zavoláme sami později
+    add_filter( 'wp_footer', '__return_empty_string', 999 );
+    include $footer_template;
+    remove_filter( 'wp_footer', '__return_empty_string', 999 );
+    $footer_output = ob_get_clean();
+    
+    // Extrahovat obsah před </body> tagem (bez samotného tagu)
+    // A také odstranit případné volání wp_footer() z footer obsahu (PHP kód)
+    if ( preg_match( '/(.*?)<\/body>/is', $footer_output, $matches ) ) {
+        $footer_content = $matches[1];
+        // Odstranit případné volání wp_footer() z footer obsahu
+        $footer_content = preg_replace( '/<\?php\s*wp_footer\(\);\s*\?>/i', '', $footer_content );
+        echo $footer_content;
+    } else {
+        // Pokud není </body>, použijeme celý obsah, ale odstraníme wp_footer()
+        $footer_content = preg_replace( '/<\?php\s*wp_footer\(\);\s*\?>/i', '', $footer_output );
+        if ( trim( $footer_content ) !== '' ) {
             echo $footer_content;
         } else {
-            // Pokud není </body>, použijeme celý obsah, ale odstraníme wp_footer()
-            $footer_content = preg_replace( '/<\?php\s*wp_footer\(\);\s*\?>/i', '', $full_footer );
-            if ( trim( $footer_content ) !== '' ) {
-                echo $footer_content;
-            } else {
-                // Fallback: pokus o načtení běžných footer partialů
-                $footer_partials = array(
-                    'template-parts/footer/site-footer',
-                    'template-parts/footer/footer',
-                    'parts/footer',
-                );
-                foreach ( $footer_partials as $part ) {
-                    $candidate = locate_template( array( $part . '.php' ) );
-                    if ( $candidate ) {
-                        ob_start();
-                        include $candidate;
-                        echo ob_get_clean();
-                        break;
-                    }
+            // Fallback: pokus o načtení běžných footer partialů
+            $footer_partials = array(
+                'template-parts/footer/site-footer',
+                'template-parts/footer/footer',
+                'parts/footer',
+            );
+            foreach ( $footer_partials as $part ) {
+                $candidate = locate_template( array( $part . '.php' ) );
+                if ( $candidate ) {
+                    include $candidate;
+                    break;
                 }
             }
         }
     }
 }
 
-// Zavolat wp_footer() pouze jednou (callbacks byly obnoveny z kopie)
+// Zavolat wp_footer() jednou na konci
 // DŮLEŽITÉ: Voláme wp_footer() přímo, ne přes get_footer(), aby to fungovalo
 // i na block/FSE tématech, která nemají footer.php
 wp_footer();

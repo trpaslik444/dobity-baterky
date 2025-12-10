@@ -521,6 +521,16 @@ add_filter( 'query_vars', function( array $vars ): array {
     return $vars;
 } );
 
+// Zajistit, aby query var byl nastaven před wp_enqueue_scripts (pro správnou detekci mapové stránky)
+// parse_request se spouští dříve než wp_enqueue_scripts, takže query var bude správně nastaven
+add_action( 'parse_request', function( $wp ) {
+    if ( isset( $wp->query_vars[ DB_MAP_ROUTE_QUERY_VAR ] ) && intval( $wp->query_vars[ DB_MAP_ROUTE_QUERY_VAR ] ) === 1 ) {
+        global $wp_query;
+        // Explicitně nastavit query var v $wp_query pro správnou detekci v db_is_map_app_page()
+        $wp_query->set( DB_MAP_ROUTE_QUERY_VAR, 1 );
+    }
+}, 1 );
+
 add_action( 'template_redirect', function() {
     if ( intval( get_query_var( DB_MAP_ROUTE_QUERY_VAR ) ) !== 1 ) {
         return;
@@ -543,22 +553,8 @@ add_action( 'template_redirect', function() {
     status_header( 200 );
     nocache_headers();
 
-    // DŮLEŽITÉ: Zajistit, aby se assety načetly před include template
-    // template_redirect se spouští dříve než wp_head(), takže musíme spustit wp_enqueue_scripts ručně
-    // Musíme zajistit, aby globální objekty ($wp_query, $wp) byly správně nastaveny
-    global $wp_query, $wp;
-    
-    // Explicitně nastavit query var, aby db_is_map_app_page() a db_is_map_frontend_context() správně detekovaly mapu
-    $wp_query->set( DB_MAP_ROUTE_QUERY_VAR, 1 );
-    
-    // Resetovat static cache v db_is_map_frontend_context(), aby se správně vyhodnotila
-    // (můžeme použít reflexi nebo jednoduše zajistit, že query var je správně nastaven)
-    
-    // Spustit wp_enqueue_scripts hook, aby se assety načetly
-    // POZNÁMKA: Hook handlers sami kontrolují db_is_map_app_page() a db_is_map_frontend_context()
-    // Ale protože jsme explicitně nastavili query var, měly by správně detekovat mapu
-    do_action( 'wp_enqueue_scripts' );
-
+    // Načíst template - wp_head() a wp_footer() v šabloně zajistí načtení assetů
+    // wp_enqueue_scripts hook se spustil normálně (před template_redirect) a query var je už nastaven
     $template = DB_PLUGIN_DIR . 'templates/map-app.php';
     if ( file_exists( $template ) ) {
         include $template;
