@@ -552,6 +552,27 @@ add_action( 'template_redirect', function() {
     exit;
 } );
 
+add_action( 'wp_enqueue_scripts', function() {
+    if ( ! db_is_map_app_page() ) {
+        return;
+    }
+
+    wp_enqueue_style( 'wp-block-library' );
+    wp_enqueue_style( 'global-styles' );
+
+    if ( wp_style_is( 'twentytwentyfour-style', 'registered' ) ) {
+        wp_enqueue_style( 'twentytwentyfour-style' );
+    }
+}, 20 );
+
+add_filter( 'body_class', function( array $classes ): array {
+    if ( db_is_map_app_page() && ! in_array( 'db-map-app', $classes, true ) ) {
+        $classes[] = 'db-map-app';
+    }
+
+    return $classes;
+} );
+
 // Načítání assetů s ochranou - spouští se až po init
 add_action('wp_enqueue_scripts', function() {
 
@@ -1466,14 +1487,17 @@ add_action('wp_footer', function() {
 function db_is_map_app_page(): bool {
     // a) vlastní endpoint přes rewrite (např. ?dobity_map=1)
     if (get_query_var('dobity_map') == 1) return true;
-    
-    // b) NEBO konkrétní WP stránka podle slugu/ID:
+
+    // b) Query var přidaný pro samostatnou mapovou appku (rewrite /mapa/)
+    if (intval(get_query_var(DB_MAP_ROUTE_QUERY_VAR)) === 1) return true;
+
+    // c) NEBO konkrétní WP stránka podle slugu/ID:
     if (is_page('mapa')) return true;
-    
-    // c) NEBO stránka obsahující [db_map] shortcode
+
+    // d) NEBO stránka obsahující [db_map] shortcode
     global $post;
     if ($post && has_shortcode($post->post_content, 'db_map')) return true;
-    
+
     return false;
 }
 
