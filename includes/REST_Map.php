@@ -644,8 +644,21 @@ class REST_Map {
                             // Pokud nemáme icon_slug, ale máme icon_url, použít slug z icon_url
                             if (!empty($properties['icon_url'])) {
                                 // Extrahovat slug z URL (např. /uploads/dobity-baterky/icons/poi_type-123.svg → poi_type-123)
-                                if (preg_match('/\/([^\/]+)\.svg$/', $properties['icon_url'], $matches)) {
-                                    $properties['icon_slug'] = $matches[1];
+                                // Použít basename a pathinfo pro robustnější extrakci
+                                $url_path = parse_url($properties['icon_url'], PHP_URL_PATH);
+                                if ($url_path) {
+                                    $filename = basename($url_path);
+                                    $pathinfo = pathinfo($filename);
+                                    if (isset($pathinfo['filename']) && !empty($pathinfo['filename'])) {
+                                        $extracted_slug = $pathinfo['filename'];
+                                        // Validovat pomocí Icon_Registry::validateIconSlug()
+                                        $icon_registry = \DB\Icon_Registry::get_instance();
+                                        // Použít reflexi pro přístup k private metodě, nebo vytvořit public wrapper
+                                        // Pro jednoduchost použijeme stejnou validaci jako v validateIconSlug
+                                        if (preg_match('/^[a-zA-Z0-9_-]+$/', $extracted_slug)) {
+                                            $properties['icon_slug'] = $extracted_slug;
+                                        }
+                                    }
                                 }
                             }
                         }
