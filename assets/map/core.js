@@ -1,6 +1,10 @@
 // db-map.js – moderní frontend pro Dobitý Baterky
 //
 
+// ===== GLOBÁLNÍ KONSTANTY =====
+// Breakpoint pro mobilní zařízení (používá se i mimo DOMContentLoaded scope)
+const DB_MOBILE_BREAKPOINT_PX = 900;
+
 // ===== PŘEKLADY =====
 // Globální objekt pro překlady
 let translations = {
@@ -558,7 +562,7 @@ function positionAttributionBar(bar) {
   if (!bar) return;
   const wrap = document.getElementById('db-bottom-bar');
   if (!wrap) return;
-  const isMobile = window.innerWidth <= 900;
+  const isMobile = window.innerWidth <= DB_MOBILE_BREAKPOINT_PX;
   const mapEl = document.getElementById('db-map');
   const modal = document.getElementById('db-detail-modal');
   const mobileSheet = document.getElementById('db-mobile-sheet');
@@ -815,6 +819,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Konstanty pro search
     const SEARCH_DEBOUNCE_MS = 400;
     const SEARCH_CACHE_VALIDITY_MS = 5000; // 5 sekund - jak dlouho jsou cache výsledky platné pro submit
+    const SEARCH_FOCUS_DELAY_MS = 100; // Delay před focus na search input (pro mobilní zařízení)
     const MOBILE_BREAKPOINT_PX = 900;
   let lastRenderedFeatures = [];
   const FAVORITES_LAST_FOLDER_KEY = 'dbFavoritesLastFolder';
@@ -4172,7 +4177,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         searchBox.style.display = '';
         const searchInput = searchBox.querySelector('#db-map-search-input');
         if (searchInput) {
-          setTimeout(() => searchInput.focus(), 100);
+          setTimeout(() => {
+            try {
+              searchInput.focus();
+            } catch (focusError) {
+              // Ignorovat focus chyby na některých mobilních zařízeních
+            }
+          }, SEARCH_FOCUS_DELAY_MS);
         }
       } else {
         searchBox.style.display = 'none';
@@ -6161,7 +6172,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           };
 
           return `
-            <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){const currentZoom=map.getZoom();const ISOCHRONES_ZOOM=14;const targetZoom=currentZoom>ISOCHRONES_ZOOM?currentZoom:ISOCHRONES_ZOOM;if(window.highlightMarkerById){window.highlightMarkerById(${item.id});}map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],targetZoom,{animate:true});sortMode='distance-active';if(window.renderCards){window.renderCards('',${item.id});}if(window.innerWidth <= 900){if(window.openMobileSheet){window.openMobileSheet(target);}}else{if(window.openDetailModal){window.openDetailModal(target);}}}">
+            <div class="nearby-item" data-id="${item.id}" onclick="const target=featureCache.get(${item.id});if(target){const currentZoom=map.getZoom();const ISOCHRONES_ZOOM=14;const targetZoom=currentZoom>ISOCHRONES_ZOOM?currentZoom:ISOCHRONES_ZOOM;if(window.highlightMarkerById){window.highlightMarkerById(${item.id});}map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],targetZoom,{animate:true});sortMode='distance-active';if(window.renderCards){window.renderCards('',${item.id});}if(window.innerWidth <= ${DB_MOBILE_BREAKPOINT_PX}){if(window.openMobileSheet){window.openMobileSheet(target);}}else{if(window.openDetailModal){window.openDetailModal(target);}}}">
               <div class="nearby-item-icon" style="background: ${getNearbySquareColor(item)};">
                 ${getItemIcon(item)}
               </div>
@@ -7004,7 +7015,7 @@ document.addEventListener('DOMContentLoaded', async function() {
               style="display:flex;align-items:center;gap:6px;padding:4px 6px;background:#f8fafc;border-radius:4px;margin:2px 0;cursor:pointer;transition:all 0.2s;font-size:0.75em;"
               onmouseover="this.style.backgroundColor='#e2e8f0';"
               onmouseout="this.style.backgroundColor='#f8fafc';"
-              onclick="const target=featureCache.get(${item.id});if(target){const currentZoom=map.getZoom();const ISOCHRONES_ZOOM=14;const targetZoom=currentZoom>ISOCHRONES_ZOOM?currentZoom:ISOCHRONES_ZOOM;if(window.highlightMarkerById){window.highlightMarkerById(${item.id});}map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],targetZoom,{animate:true});sortMode='distance-active';if(window.renderCards){window.renderCards('',${item.id});}if(window.innerWidth <= 900){if(window.openMobileSheet){window.openMobileSheet(target);}}else{if(window.openDetailModal){window.openDetailModal(target);}}}">
+              onclick="const target=featureCache.get(${item.id});if(target){const currentZoom=map.getZoom();const ISOCHRONES_ZOOM=14;const targetZoom=currentZoom>ISOCHRONES_ZOOM?currentZoom:ISOCHRONES_ZOOM;if(window.highlightMarkerById){window.highlightMarkerById(${item.id});}map.setView([target.geometry.coordinates[1],target.geometry.coordinates[0]],targetZoom,{animate:true});sortMode='distance-active';if(window.renderCards){window.renderCards('',${item.id});}if(window.innerWidth <= ${DB_MOBILE_BREAKPOINT_PX}){if(window.openMobileSheet){window.openMobileSheet(target);}}else{if(window.openDetailModal){window.openDetailModal(target);}}}">
               <div style="font-size:12px;flex-shrink:0;">${typeIcon}</div>
               <div style="flex:1;min-width:0;">
                 <div style="font-weight:600;color:#111;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.name || item.title || '(bez názvu)'}</div>
@@ -8023,7 +8034,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Immerzivní režim body na mobilech (zamezí posunu stránky)
   function applyImmersiveClass() {
     try {
-      if (window.innerWidth <= 900) document.body.classList.add('db-immersive');
+      if (window.innerWidth <= DB_MOBILE_BREAKPOINT_PX) document.body.classList.add('db-immersive');
       else document.body.classList.remove('db-immersive');
     } catch(_) {}
   }
@@ -12267,7 +12278,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Přidání lupové ikony do topbaru - pouze na mobilu (na desktopu je search form přímo v topbaru)
   function addSearchIcon() {
-    const isMobile = window.innerWidth <= 900;
+    const isMobile = window.innerWidth <= DB_MOBILE_BREAKPOINT_PX;
     // Na desktopu není potřeba - už je tam search form
     if (!isMobile) {
       return;
@@ -12300,7 +12311,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Spustit po načtení DOM
   document.addEventListener('DOMContentLoaded', () => {
     // Odstranit duplicitní search icon na desktopu, pokud existuje
-    const isMobile = window.innerWidth <= 900;
+    const isMobile = window.innerWidth <= MOBILE_BREAKPOINT_PX;
     if (!isMobile) {
       const duplicateSearchIcon = document.querySelector('.db-search-icon');
       if (duplicateSearchIcon) {
@@ -13144,7 +13155,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         return;
       }
       // Pokud máme pouze částečnou cache, pokračujeme v načítání chybějících dat
-      // Error handling je v try-catch bloku níže
+      // Error handling je v try-catch bloku níže - použijeme proměnné cachedInternal/cachedExternal z tohoto scope
     }
 
     // Abort předchozí request
@@ -13190,10 +13201,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         } catch (internalError) {
           console.error('Chyba při načítání interních výsledků:', internalError);
-          // Pokud máme částečnou cache zobrazenou, ponecháme ji
-          // Pokud nemáme žádnou cache, zobrazíme prázdný autocomplete
-          const cachedInternal = internalSearchCache.get(normalized);
-          const cachedExternal = externalSearchCache.get(normalized);
+          // Použít proměnné z vyššího scope místo znovu získávání z cache
           if (cachedInternal === undefined && cachedExternal === undefined) {
             removeAutocomplete();
             lastAutocompleteResults = null;
@@ -13201,10 +13209,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
       } else {
         console.error('Chyba při načítání autocomplete:', error);
-        // Pokud máme částečnou cache zobrazenou, ponecháme ji
-        // Pokud nemáme žádnou cache, zobrazíme prázdný autocomplete
-        const cachedInternal = internalSearchCache.get(normalized);
-        const cachedExternal = externalSearchCache.get(normalized);
+        // Použít proměnné z vyššího scope místo znovu získávání z cache
         if (cachedInternal === undefined && cachedExternal === undefined) {
           removeAutocomplete();
           lastAutocompleteResults = null;
@@ -13513,7 +13518,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         renderCards('', result.id);
         const feature = featureCache.get(result.id);
         if (feature) {
-          if (window.innerWidth <= 900) {
+          if (window.innerWidth <= DB_MOBILE_BREAKPOINT_PX) {
             openMobileSheet(feature);
           } else {
             openDetailModal(feature);

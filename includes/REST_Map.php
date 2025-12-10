@@ -18,6 +18,7 @@ class REST_Map {
     const GOOGLE_DAILY_LIMIT = 900; // Bezplatný tarif má 1000 dotazů/den – necháme si rezervu
     const TRIPADVISOR_DAILY_LIMIT = 500;
     const USAGE_OPTION = 'db_poi_api_usage';
+    const MAP_SEARCH_CACHE_TTL = 45; // Cache TTL pro map search endpoint (sekundy)
 
     public static function get_instance() {
         if ( self::$instance === null ) {
@@ -1512,13 +1513,8 @@ class REST_Map {
 
         $response_data = array( 'results' => $results );
         
-        // Konstanty pro cache
-        if ( ! defined( 'DB_MAP_SEARCH_CACHE_TTL' ) ) {
-            define( 'DB_MAP_SEARCH_CACHE_TTL', 45 );
-        }
-        
         // Uložit do cache
-        set_transient( $cache_key, $response_data, DB_MAP_SEARCH_CACHE_TTL );
+        set_transient( $cache_key, $response_data, self::MAP_SEARCH_CACHE_TTL );
 
         return rest_ensure_response( $response_data );
     }
