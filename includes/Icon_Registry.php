@@ -27,16 +27,21 @@ class Icon_Registry {
     }
     
     /**
-     * Validuje icon_slug - ignoruje špatný formát (poi_type-{id} nebo rv_type-{id})
+     * Validuje icon_slug - povoluje poi_type-* a rv_type-* slugy (soubory existují v assets/icons/)
      * @param string $icon_slug
      * @return string Validovaný icon_slug nebo prázdný string
      */
     private function validateIconSlug($icon_slug) {
-        // Ignorovat špatný icon_slug (poi_type-{id} nebo rv_type-{id} jsou fallback hodnoty z Icon_Admin, ne skutečné názvy souborů)
-        if (!empty($icon_slug) && preg_match('/^(poi_type|rv_type)-\d+$/', $icon_slug)) {
+        // Povolit poi_type-* a rv_type-* slugy - soubory existují v assets/icons/
+        // Validovat pouze prázdný string nebo neplatné znaky
+        if (empty($icon_slug) || !is_string($icon_slug)) {
             return '';
         }
-        return $icon_slug ?: '';
+        // Povolit alfanumerické znaky, pomlčky, podtržítka (včetně poi_type-* a rv_type-*)
+        if (!preg_match('/^[a-zA-Z0-9_-]+$/', $icon_slug)) {
+            return '';
+        }
+        return $icon_slug;
     }
     
     /**
