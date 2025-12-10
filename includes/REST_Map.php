@@ -1406,6 +1406,15 @@ class REST_Map {
         $limit = max( 1, min( 25, $limit ) );
 
         $post_types = $this->determine_search_post_types( $request->get_param( 'post_types' ) );
+        
+        // Server-side cache: normalizovaný query + post_types jako klíč
+        $normalized_query = strtolower( $query );
+        $cache_key = 'db_map_search_' . md5( $normalized_query . '_' . implode( ',', $post_types ) );
+        $cached_results = get_transient( $cache_key );
+        
+        if ( false !== $cached_results ) {
+            return rest_ensure_response( $cached_results );
+        }
 
         $results = array();
         $seen_ids = array();
@@ -1499,7 +1508,12 @@ class REST_Map {
             return $item;
         }, $results );
 
-        return rest_ensure_response( array( 'results' => $results ) );
+        $response_data = array( 'results' => $results );
+        
+        // Uložit do cache na 45 sekund
+        set_transient( $cache_key, $response_data, 45 );
+
+        return rest_ensure_response( $response_data );
     }
 
     private function score_to_confidence( $score ) {
