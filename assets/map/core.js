@@ -933,7 +933,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     window.featureCache = featureCache; // Globální přístup pro externí funkce
     const internalSearchCache = new Map();
     const externalSearchCache = new Map();
-    const externalSearch403Blacklist = new Map(); // Cache pro 403 chyby s časovou značkou (prevence opakovaných requestů)
     let searchController = null; // Jediný AbortController pro všechny search requesty
     let searchHandlersInitialized = false; // Guard flag pro inicializaci handlerů
     let lastAutocompleteResults = null; // Cache posledních autocomplete výsledků pro submit
@@ -2434,6 +2433,13 @@ document.addEventListener('DOMContentLoaded', async function() {
   const iconSvgLoading = new Set(); // Set icon_slug, které se právě načítají (pro prevenci duplicitních requestů)
   const icon404Cache = new Map(); // Cache pro ikony, které vrátily 404 (Map<iconSlug, timestamp>) - TTL 5 minut
   const ICON_404_TTL_MS = 5 * 60 * 1000; // 5 minut TTL pro 404 cache
+  const POI_FALLBACK_SVG = '<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="poiDefaultFill" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#FFF6C7"/><stop offset="100%" stop-color="#FCE67D"/></linearGradient></defs><path d="M32 6C20.954 6 12 14.955 12 26c0 14.25 15.182 28.828 18.594 32.012a2 2 0 0 0 2.812 0C36.818 54.828 52 40.25 52 26 52 14.955 43.046 6 32 6Z" fill="url(#poiDefaultFill)" stroke="#2B2B2B" stroke-width="2" /><circle cx="32" cy="26" r="8" fill="#2B2B2B" opacity="0.9"/></svg>';
+
+  function isPoiIconSlug(slug) {
+    if (!slug || typeof slug !== 'string') return false;
+    const normalized = slug.toLowerCase();
+    return normalized.startsWith('poi') || normalized.includes('poi_type') || normalized.includes('poi-type');
+  }
   
   /**
    * Načte SVG ikonu podle icon_slug (s cache)
@@ -2468,8 +2474,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     try {
       const iconUrl = getIconUrl(iconSlug);
       if (!iconUrl) {
-        iconSvgCache.set(iconSlug, '');
-        return '';
+        const fallbackSvg = isPoiIconSlug(iconSlug) ? POI_FALLBACK_SVG : '';
+        iconSvgCache.set(iconSlug, fallbackSvg);
+        return fallbackSvg;
       }
       
       const response = await fetch(iconUrl);
@@ -2478,8 +2485,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (response.status === 404) {
           icon404Cache.set(iconSlug, Date.now());
         }
-        iconSvgCache.set(iconSlug, '');
-        return '';
+        const fallbackSvg = isPoiIconSlug(iconSlug) ? POI_FALLBACK_SVG : '';
+        iconSvgCache.set(iconSlug, fallbackSvg);
+        return fallbackSvg;
       }
       
       const svgContent = await response.text();
@@ -2487,8 +2495,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       return svgContent;
     } catch (err) {
       console.warn('[DB Map] Failed to load icon:', iconSlug, err);
-      iconSvgCache.set(iconSlug, '');
-      return '';
+      const fallbackSvg = isPoiIconSlug(iconSlug) ? POI_FALLBACK_SVG : '';
+      iconSvgCache.set(iconSlug, fallbackSvg);
+      return fallbackSvg;
     } finally {
       iconSvgLoading.delete(iconSlug);
     }
@@ -5821,12 +5830,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Fallback pro RV
       return '🚐';
     } else if (props.post_type === 'poi') {
-      // Fallback pro POI - použít generickou ikonu podniku
-      return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-      </svg>`;
+      const fallback = POI_FALLBACK_SVG;
+      if (props.svg_content && props.svg_content.trim() !== '') {
+        return props.svg_content;
+      }
+      if (props.icon_slug && props.icon_slug.trim() !== '') {
+        const iconUrl = getIconUrl(props.icon_slug);
+        const fallbackUrl = getIconUrl('poi-default');
+        return iconUrl ? `<img src="${iconUrl}" onerror="this.onerror=null;this.src='${fallbackUrl}';" style="width:100%;height:100%;object-fit:contain;" alt="">` : fallback;
+      }
+      return fallback;
     }
     return '📍';
   }
@@ -5950,12 +5963,16 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Fallback pro RV
       return '🚐';
     } else if (props.post_type === 'poi') {
-      // Fallback pro POI - použít generickou ikonu podniku
-      return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-      </svg>`;
+      const fallback = POI_FALLBACK_SVG;
+      if (props.svg_content && props.svg_content.trim() !== '') {
+        return props.svg_content;
+      }
+      if (props.icon_slug && props.icon_slug.trim() !== '') {
+        const iconUrl = getIconUrl(props.icon_slug);
+        const fallbackUrl = getIconUrl('poi-default');
+        return iconUrl ? `<img src="${iconUrl}" onerror="this.onerror=null;this.src='${fallbackUrl}';" style="width:100%;height:100%;object-fit:contain;" alt="">` : fallback;
+      }
+      return fallback;
     }
     return '📍';
   }
@@ -6273,13 +6290,10 @@ document.addEventListener('DOMContentLoaded', async function() {
               }
               if (cachedFeature && cachedFeature.properties && cachedFeature.properties.icon_slug && cachedFeature.properties.icon_slug.trim() !== '') {
                 const iconUrl = getIconUrl(cachedFeature.properties.icon_slug);
-                return iconUrl ? `<img src="${iconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="">` : '📍';
+                const fallbackUrl = getIconUrl('poi-default');
+                return iconUrl ? `<img src="${iconUrl}" onerror="this.onerror=null;this.src='${fallbackUrl}';" style="width:100%;height:100%;object-fit:contain;" alt="">` : POI_FALLBACK_SVG;
               }
-              return `<svg width="100%" height="100%" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-                <path d="M2 17L12 22L22 17" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-                <path d="M2 12L12 17L22 12" stroke="#049FE8" stroke-width="2" stroke-linejoin="round"/>
-              </svg>`;
+              return POI_FALLBACK_SVG;
             }
             return '📍';
           };
@@ -10125,116 +10139,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const x = lng, y = lat;
     return `https://mapy.cz/zakladni?source=coor&id=${x},${y}&x=${x}&y=${y}&z=16`;
   }
-  // --- AUTOCOMPLETE ADRESY (NOMINATIM) ---
-  function createAddressAutocomplete(input, onSelect) {
-    if (!input || !input.parentNode) {
-      return; // Tichý return bez console.warn
-    }
-    
-    let acWrap = document.createElement('div');
-    acWrap.className = 'db-map-ac-wrap';
-    acWrap.style.cssText = 'position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #e5e7eb;border-radius:0 0 1em 1em;box-shadow:0 2px 8px #0002;display:none;max-height:220px;overflow-y:auto;z-index:1000;';
-    input.parentNode.style.position = 'relative';
-    input.parentNode.appendChild(acWrap);
-    let lastResults = [];
-    let lastTimeout = null;
-    input.addEventListener('input', function() {
-      let q = input.value.trim();
-      if (lastTimeout) clearTimeout(lastTimeout);
-      if (!q) { acWrap.style.display = 'none'; return; }
-      lastTimeout = setTimeout(async () => {
-        try {
-          // Optimalizace: cache pro opakované dotazy
-          const cacheKey = `search_${q}`;
-          if (searchCache.has(cacheKey)) {
-            const cached = searchCache.get(cacheKey);
-            if (Date.now() - cached.timestamp < 300000) { // 5 minut cache
-              lastResults = cached.results;
-              
-              // Render cached results
-              acWrap.innerHTML = '';
-              if (!cached.results.length) { acWrap.style.display = 'none'; return; }
-              
-              cached.results.slice(0, 6).forEach((r, i) => {
-                let d = document.createElement('div');
-                d.className = 'db-map-ac-item';
-                
-                // Přidat informace o vzdálenosti a zemi
-                const distance = r._distance ? ` (${Math.round(r._distance)} km)` : '';
-                const country = r._country ? ` - ${r._country}` : '';
-                d.innerHTML = `
-                  <div style="font-weight: 500;">${r.display_name.split(',')[0]}</div>
-                  <div style="font-size: 0.8em; color: #666;">${r.display_name.split(',').slice(1).join(',').trim()}${distance}${country}</div>
-                `;
-                d.onclick = () => {
-                  acWrap.style.display = 'none';
-                  onSelect(r);
-                };
-                acWrap.appendChild(d);
-              });
-              acWrap.style.display = 'block';
-              return;
-            }
-          }
-          
-          // Získat lokalitu prohlížeče
-          const locale = await getBrowserLocale();
-          const userCoords = locale.coords;
-          
-          // Sestavit URL s geografickými omezeními podle detekované lokality
-          let searchUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&addressdetails=1&limit=10&accept-language=cs`;
-          
-          // Dynamické omezení podle detekované země
-          const countryConfig = getCountrySearchConfig(locale.country);
-          searchUrl += `&countrycodes=${countryConfig.countrycodes}`;
-          searchUrl += `&bounded=1&viewbox=${countryConfig.viewbox}`;
-          
-          // Pokud máme pozici uživatele, přidat ji pro prioritizaci
-          if (userCoords) {
-            searchUrl += `&lat=${userCoords[0]}&lon=${userCoords[1]}`;
-          }
-          
-          const response = await fetch(searchUrl);
-          const results = await response.json();
-          
-          // Prioritizace výsledků
-          const prioritizedResults = prioritizeSearchResults(results, userCoords);
-          lastResults = prioritizedResults;
-          
-          // Cache výsledky
-          searchCache.set(cacheKey, {
-            results: prioritizedResults,
-            timestamp: Date.now()
-          });
-          
-            acWrap.innerHTML = '';
-          if (!prioritizedResults.length) { acWrap.style.display = 'none'; return; }
-          
-          prioritizedResults.slice(0, 6).forEach((r, i) => {
-              let d = document.createElement('div');
-              d.className = 'db-map-ac-item';
-            
-            // Přidat informace o vzdálenosti a zemi
-            const distance = r._distance ? ` (${Math.round(r._distance)} km)` : '';
-            const country = r._country ? ` - ${r._country}` : '';
-            d.innerHTML = `
-              <div style="font-weight: 500;">${r.display_name.split(',')[0]}</div>
-              <div style="font-size: 0.9em; color: #666; margin-top: 2px;">${r.display_name.split(',').slice(1).join(',').trim()}${distance}${country}</div>
-            `;
-            
-              d.tabIndex = 0;
-              d.addEventListener('mousedown', e => { e.preventDefault(); onSelect(r); acWrap.style.display = 'none'; });
-              d.addEventListener('keydown', e => { if (e.key === 'Enter') { onSelect(r); acWrap.style.display = 'none'; } });
-              acWrap.appendChild(d);
-            });
-            acWrap.style.display = 'block';
-        } catch (error) {
-          acWrap.style.display = 'none';
-        }
-      }, 400); // Optimalizace: zvýšený delay pro méně časté dotazy
-    });
-    input.addEventListener('blur', () => setTimeout(() => acWrap.style.display = 'none', 200));
-  }
 
   // --- LOGIKA VYHLEDÁVÁNÍ A ŘAZENÍ PODLE ADRESY ---
   // searchAddressCoords a searchSortLocked už inicializovány na začátku
@@ -10258,23 +10162,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   // --- GLOBÁLNÍ PROMĚNNÁ PRO VYHLEDÁVACÍ PIN ---
   // searchAddressMarker už inicializován na začátku
 
-  // --- ÚPRAVA VYHLEDÁVACÍHO ŘÁDKU ---
-  // Použít globální searchInput z řádku 6726
-  
-  if (searchInput && searchInput.parentNode) {
-    createAddressAutocomplete(searchInput, function(result) {
-      searchInput.value = result.display_name;
-      searchAddressCoords = [parseFloat(result.lat), parseFloat(result.lon)];
-      sortByDistanceFrom(searchAddressCoords[0], searchAddressCoords[1]);
-      sortMode = 'distance_from_address';
-      searchSortLocked = true;
-      renderCards('', null, false);
-      // Přibliž mapu na adresu
-      map.setView(searchAddressCoords, 13, {animate:true});
-      // Přidej/obnov vyhledávací pin
-      addOrMoveSearchAddressMarker(searchAddressCoords);
-    });
-  }
   async function doAddressSearch(e) {
     if (e) e.preventDefault();
     if (!searchInput) return; // Kontrola existence searchInput
@@ -10285,28 +10172,9 @@ document.addEventListener('DOMContentLoaded', async function() {
     try {
       // Získat lokalitu prohlížeče
       const locale = await getBrowserLocale();
-      const userCoords = locale.coords;
-      
-      // Sestavit URL s geografickými omezeními podle detekované lokality
-      let searchUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&addressdetails=1&limit=10&accept-language=cs`;
-      
-      // Dynamické omezení podle detekované země
-      const countryConfig = getCountrySearchConfig(locale.country);
-      searchUrl += `&countrycodes=${countryConfig.countrycodes}`;
-      searchUrl += `&bounded=1&viewbox=${countryConfig.viewbox}`;
-      
-      // Pokud máme pozici uživatele, přidat ji pro prioritizaci
-      if (userCoords) {
-        searchUrl += `&lat=${userCoords[0]}&lon=${userCoords[1]}`;
-      }
-      
-      const response = await fetch(searchUrl);
-      const results = await response.json();
-      
-        if (!results.length) return;
-      
-      // Prioritizace výsledků
-      const prioritizedResults = prioritizeSearchResults(results, userCoords);
+      const geocodePayload = await geocodeViaProxy(q, locale);
+      const prioritizedResults = Array.isArray(geocodePayload?.results) ? geocodePayload.results : [];
+      if (!prioritizedResults.length) return;
       const result = prioritizedResults[0];
       
         searchInput.value = result.display_name;
@@ -10346,6 +10214,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         });
     } catch (error) {
+      renderAutocomplete({ internal: [], external: [], notice: 'Adresy dočasně nedostupné' }, searchInput);
     }
   }
   
@@ -13094,8 +12963,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   function renderAutocomplete(data, inputElement) {
     const internal = Array.isArray(data?.internal) ? data.internal : [];
     const external = Array.isArray(data?.external) ? data.external : [];
+    const notice = data?.notice ? String(data.notice) : '';
 
-    if (internal.length === 0 && external.length === 0) {
+    if (internal.length === 0 && external.length === 0 && !notice) {
       removeAutocomplete();
       return;
     }
@@ -13130,6 +13000,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const itemPadding = isMobile ? '12px' : '10px 12px';
     const itemStyle = `padding:${itemPadding}; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background 0.15s;`;
+
+    const noticeBlock = notice ? `
+      <div style="padding:${itemPadding}; color:#9A3412; background:#FFFBEB; border-bottom:1px solid #f0f0f0; font-size:${isMobile ? '0.9em' : '0.85em'};">
+        ${escapeHtml(notice)}
+      </div>
+    ` : '';
 
     const internalItems = internal.map((item, idx) => {
       const title = item?.title || '';
@@ -13182,7 +13058,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       `);
     }
 
-    autocomplete.innerHTML = sections.join('');
+    autocomplete.innerHTML = `${noticeBlock}${sections.join('')}`;
 
     if (autocomplete.__outsideHandler) {
       document.removeEventListener('click', autocomplete.__outsideHandler);
@@ -13527,7 +13403,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (cachedInternal !== undefined || cachedExternal !== undefined) {
       const results = {
         internal: cachedInternal || [],
-        external: (cachedExternal && cachedExternal.results) || []
+        external: (cachedExternal && cachedExternal.results) || [],
+        notice: cachedExternal?.notice || ''
       };
       lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
       renderAutocomplete(results, inputElement);
@@ -13558,7 +13435,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
       const results = {
         internal,
-        external: externalPayload?.results || []
+        external: externalPayload?.results || [],
+        notice: externalPayload?.notice || ''
       };
       lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
       renderAutocomplete(results, inputElement);
@@ -13570,36 +13448,74 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (error.name === 'AbortError') {
         return;
       }
-      // Pokud je to CORS chyba, zobrazit pouze interní výsledky
-      if (error.message && (error.message.includes('CORS') || error.message.includes('Failed to fetch'))) {
-        console.warn('CORS chyba při načítání externích výsledků, zobrazuji pouze interní:', error);
-        try {
-          const internal = await getInternalSearchResults(trimmed, signal);
-          if (!signal.aborted && internal && internal.length > 0) {
-            const results = { internal, external: [] };
-            lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
-            renderAutocomplete(results, inputElement);
-          }
-        } catch (internalError) {
-          console.error('Chyba při načítání interních výsledků:', internalError);
-          // Použít proměnné z vyššího scope místo znovu získávání z cache
-          if (cachedInternal === undefined && cachedExternal === undefined) {
-            removeAutocomplete();
-            lastAutocompleteResults = null;
-          }
+      console.warn('Chyba při načítání autocomplete:', error);
+      let internal = Array.isArray(cachedInternal) ? cachedInternal : [];
+      try {
+        if (internal.length === 0) {
+          internal = await getInternalSearchResults(trimmed, signal);
         }
-      } else {
-        console.error('Chyba při načítání autocomplete:', error);
-        // Použít proměnné z vyššího scope místo znovu získávání z cache
-        if (cachedInternal === undefined && cachedExternal === undefined) {
-          removeAutocomplete();
-          lastAutocompleteResults = null;
-        }
+      } catch (internalError) {
+        console.error('Chyba při načítání interních výsledků:', internalError);
       }
+
+      const results = {
+        internal: internal || [],
+        external: [],
+        notice: 'Adresy dočasně nedostupné'
+      };
+
+      if (!signal.aborted) {
+        lastAutocompleteResults = { query: trimmed, results, timestamp: Date.now() };
+        renderAutocomplete(results, inputElement);
+      }
+
       if (searchController && searchController.signal === signal) {
         searchController = null;
       }
     }
+  }
+
+  const GEOCODE_ENDPOINT = (dbMapData && dbMapData.geocodeUrl) ? dbMapData.geocodeUrl : '/wp-json/db/v1/geocode';
+
+  function buildGeocodeQueryParams(query, locale = {}) {
+    const params = new URLSearchParams();
+    params.set('query', (query || '').trim());
+    if (locale.country) {
+      params.set('country', locale.country);
+    }
+    if (Array.isArray(locale.coords) && locale.coords.length === 2) {
+      params.set('lat', locale.coords[0]);
+      params.set('lon', locale.coords[1]);
+    }
+    if (locale.lang) {
+      params.set('accept_language', locale.lang);
+    }
+    return params.toString();
+  }
+
+  async function geocodeViaProxy(query, locale = {}, signal) {
+    const trimmed = (query || '').trim();
+    if (!trimmed) {
+      return { results: [], userCoords: null, notice: '' };
+    }
+    const params = buildGeocodeQueryParams(trimmed, locale);
+    const url = `${GEOCODE_ENDPOINT}?${params}`;
+    const res = await fetch(url, {
+      signal,
+      credentials: 'same-origin',
+      headers: {
+        'Accept': 'application/json',
+        'X-WP-Nonce': dbMapData?.restNonce || ''
+      }
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const payload = await res.json();
+    const rawResults = Array.isArray(payload?.results) ? payload.results : [];
+    const userCoords = Array.isArray(payload?.userCoords) ? payload.userCoords : (locale?.coords || null);
+    const prioritizedResults = prioritizeSearchResults(rawResults, userCoords || null);
+    return { results: prioritizedResults, userCoords: userCoords || null, notice: payload?.error ? 'Adresy dočasně nedostupné' : '' };
   }
 
   // Kompatibilita se starým kódem
@@ -13668,19 +13584,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       return externalSearchCache.get(normalized);
     }
 
-    // Zkontrolovat, jestli tento query není na blacklistu kvůli 403 (prevence opakovaných requestů)
-    const BLACKLIST_DURATION_MS = 5 * 60 * 1000; // 5 minut
-    if (externalSearch403Blacklist.has(normalized)) {
-      const blacklistTime = externalSearch403Blacklist.get(normalized);
-      if (Date.now() - blacklistTime < BLACKLIST_DURATION_MS) {
-        // Stále na blacklistu - vrátit prázdný výsledek bez dalšího requestu
-        return { results: [], userCoords: null };
-      } else {
-        // Blacklist vypršel - smazat a zkusit znovu
-        externalSearch403Blacklist.delete(normalized);
-      }
-    }
-
     if ((query || '').trim().length < 3) {
       const payload = { results: [], userCoords: null };
       externalSearchCache.set(normalized, payload);
@@ -13689,58 +13592,21 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     try {
       const locale = await getBrowserLocale();
-      const userCoords = locale.coords;
-
-      let searchUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&addressdetails=1&limit=10&accept-language=cs`;
-      const countryConfig = getCountrySearchConfig(locale.country);
-      searchUrl += `&countrycodes=${countryConfig.countrycodes}`;
-      searchUrl += `&bounded=1&viewbox=${countryConfig.viewbox}`;
-      if (userCoords) {
-        searchUrl += `&lat=${userCoords[0]}&lon=${userCoords[1]}`;
-      }
-
-      // Přidat Referer hlavičku pro Nominatim (požadováno pro 403 prevenci)
-      // POZOR: User-Agent nelze nastavit v browser fetch API (forbidden header)
-      // Browser automaticky přidá User-Agent hlavičku, takže ji nemusíme nastavovat
-      const headers = {
-        'Referer': window.location.origin
+      const payload = await geocodeViaProxy(query, locale, signal);
+      const hydratedPayload = {
+        results: Array.isArray(payload?.results) ? payload.results : [],
+        userCoords: payload?.userCoords || (locale?.coords || null),
+        notice: payload?.notice || ''
       };
-      
-      const response = await fetch(searchUrl, { 
-        signal,
-        headers: headers
-      });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const rawResults = await response.json();
-      const prioritizedResults = prioritizeSearchResults(Array.isArray(rawResults) ? rawResults : [], userCoords || null);
-      const payload = { results: prioritizedResults, userCoords: userCoords || null };
-      externalSearchCache.set(normalized, payload);
-      return payload;
+      externalSearchCache.set(normalized, hydratedPayload);
+      return hydratedPayload;
     } catch (error) {
       if (signal && signal.aborted) {
         throw error;
       }
-      // 403 chyby logovat jen v debug módu (Nominatim může blokovat bez User-Agent)
-      const is403 = error.message && (error.message.includes('403') || error.message.includes('Forbidden'));
-      if (is403) {
-        if (typeof window !== 'undefined' && window.dbMapData && window.dbMapData.debug) {
-          console.debug('[DB Map] Nominatim 403 (User-Agent required):', error);
-        }
-        // Přidat na blacklist na 5 minut - prevence opakovaných requestů
-        externalSearch403Blacklist.set(normalized, Date.now());
-        // Invalidovat cache při 403 - příště se fetchnuje znovu (možná s lepšími hlavičkami)
-        externalSearchCache.delete(normalized);
-      } else {
-        console.warn('OSM search failed:', error);
-      }
-      const fallback = { results: [], userCoords: null };
-      // Neukládat prázdnou cache při 403 - příště se fetchnuje znovu
-      if (!is403) {
-        externalSearchCache.set(normalized, fallback);
-      }
+      console.warn('OSM search failed:', error);
+      const fallback = { results: [], userCoords: null, notice: 'Adresy dočasně nedostupné' };
+      externalSearchCache.set(normalized, fallback);
       return fallback;
     }
   }

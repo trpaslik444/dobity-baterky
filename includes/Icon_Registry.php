@@ -43,6 +43,35 @@ class Icon_Registry {
         }
         return $icon_slug;
     }
+
+    /**
+     * Vrátí globální barvu pro POI piny (sanitizovanou)
+     */
+    private function get_global_poi_color(): string {
+        $color = get_option('db_poi_color', '#FCE67D');
+        $color = is_string($color) ? sanitize_hex_color($color) : '#FCE67D';
+        if (empty($color)) {
+            $color = '#FCE67D';
+        }
+        return $color;
+    }
+
+    /**
+     * Fallback data pro POI ikonu (poi-default.svg)
+     * @return array
+     */
+    private function get_poi_fallback_icon(): array {
+        $color = $this->get_global_poi_color();
+        $svg_content = $this->get_svg_content_cached('poi-default', 'poi', 'db_poi_icon_color');
+        $icon_url = trailingslashit($this->base_url) . 'poi-default.svg';
+
+        return [
+            'slug' => 'poi-default',
+            'svg_content' => $svg_content,
+            'icon_url' => $icon_url,
+            'color' => $color,
+        ];
+    }
     
     /**
      * Získá SVG obsah z cache nebo načte ze souboru
@@ -193,12 +222,13 @@ class Icon_Registry {
             ];
         }
         if ( $type === 'poi' ) {
+            $fallback_icon = $this->get_poi_fallback_icon();
+            $global_poi_color = $fallback_icon['color'];
             $poi_terms = wp_get_post_terms( $post->ID, 'poi_type' );
             if ( !empty($poi_terms) && !is_wp_error($poi_terms) ) {
                 $term = $poi_terms[0];
                 $term_id = $term->term_id;
                 $icon_slug = $this->validateIconSlug(get_term_meta( $term_id, 'icon_slug', true ));
-                $color_hex = get_term_meta( $term_id, 'color_hex', true );
 
                 // PRIORITA 1: Zkusit načíst z Icon Admin konfigurace (uploads/dobity-baterky/icons/poi_type-{term_id}.svg)
                 // Toto je obecná cesta podle Icon Admin konfigurace, ne jen icon_slug z termu
@@ -236,12 +266,6 @@ class Icon_Registry {
                             $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_fill . '"', $svg_content);
                             $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_fill . '"', $svg_content);
                         }
-                        // Centrální barva POI pinů (option), fallback na #FCE67D dle brandbooku
-                        $global_poi_color = get_option('db_poi_color', '#FCE67D');
-                        $global_poi_color = is_string($global_poi_color) ? sanitize_hex_color($global_poi_color) : '#FCE67D';
-                        if (empty($global_poi_color)) {
-                            $global_poi_color = '#FCE67D';
-                        }
                         // Vrátit icon_url pokud je v uploads
                         $icon_url = $is_upload ? ($is_icon_admin_upload ? $icon_admin_url : ($uploads_url . $icon_slug . '.svg')) : null;
                         return [
@@ -267,11 +291,6 @@ class Icon_Registry {
                     }
                     $svg_content = preg_replace('/fill="[^"]*"/', 'fill="' . $icon_fill . '"', $svg_content);
                     $svg_content = preg_replace('/stroke="[^"]*"/', 'stroke="' . $icon_fill . '"', $svg_content);
-                    $global_poi_color = get_option('db_poi_color', '#FCE67D');
-                    $global_poi_color = is_string($global_poi_color) ? sanitize_hex_color($global_poi_color) : '#FCE67D';
-                    if (empty($global_poi_color)) {
-                        $global_poi_color = '#FCE67D';
-                    }
                     return [
                         'slug' => $icon_admin_slug,
                         'svg_content' => $svg_content,
@@ -279,32 +298,11 @@ class Icon_Registry {
                         'color' => $global_poi_color,
                     ];
                 }
-                
-                // Pokud není SVG dekorace, vrátit defaultní barvu z centrálního nastavení
-                $global_poi_color = get_option('db_poi_color', '#FCE67D');
-                $global_poi_color = is_string($global_poi_color) ? sanitize_hex_color($global_poi_color) : '#FCE67D';
-                if (empty($global_poi_color)) {
-                    $global_poi_color = '#FCE67D';
-                }
-                return [
-                    'slug' => '',
-                    'svg_content' => '',
-                    'icon_url' => null,
-                    'color' => $global_poi_color,
-                ];
+                // Pokud není SVG dekorace, vrátit fallback ikonu
+                return $fallback_icon;
             } else {
-                // Fallback pro případy bez termu – stále použít centrální barvu
-                $global_poi_color = get_option('db_poi_color', '#FCE67D');
-                $global_poi_color = is_string($global_poi_color) ? sanitize_hex_color($global_poi_color) : '#FCE67D';
-                if (empty($global_poi_color)) {
-                    $global_poi_color = '#FCE67D';
-                }
-                return [
-                    'slug' => '',
-                    'svg_content' => '',
-                    'icon_url' => null,
-                    'color' => $global_poi_color,
-                ];
+                // Fallback pro případy bez termu – použít default
+                return $fallback_icon;
             }
         }
         return [
