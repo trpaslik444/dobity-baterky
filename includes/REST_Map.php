@@ -19,6 +19,9 @@ class REST_Map {
     const TRIPADVISOR_DAILY_LIMIT = 500;
     const USAGE_OPTION = 'db_poi_api_usage';
     const MAP_SEARCH_CACHE_TTL = 45; // Cache TTL pro map search endpoint (sekundy)
+    const NOMINATIM_CACHE_TTL = 600; // 10 minut cache pro geocoding proxy
+    const NOMINATIM_IP_LIMIT = 80; // Maximální počet geocode dotazů na IP v časovém okně
+    const NOMINATIM_IP_WINDOW = 600; // 10 minutové okno pro rate limit
 
     public static function get_instance() {
         if ( self::$instance === null ) {
@@ -178,6 +181,38 @@ class REST_Map {
                 ),
                 'post_types' => array(
                     'type' => 'string',
+                ),
+            ),
+        ) );
+
+        // Nominatim proxy endpoint (server-side geocoding bez CORS)
+        register_rest_route( 'db/v1', '/geocode', array(
+            'methods'  => array( 'GET', 'POST' ),
+            'callback' => array( $this, 'handle_geocode' ),
+            'permission_callback' => function ( $request ) {
+                $nonce = $request->get_header( 'X-WP-Nonce' );
+                if ( $nonce && ! wp_verify_nonce( $nonce, 'wp_rest' ) ) {
+                    return false;
+                }
+                return function_exists('db_user_can_see_map') ? db_user_can_see_map() : is_user_logged_in();
+            },
+            'args' => array(
+                'query' => array(
+                    'required' => true,
+                    'type'     => 'string',
+                ),
+                'country' => array(
+                    'type' => 'string',
+                ),
+                'lat' => array(
+                    'type' => 'number',
+                ),
+                'lon' => array(
+                    'type' => 'number',
+                ),
+                'limit' => array(
+                    'type'    => 'integer',
+                    'default' => 10,
                 ),
             ),
         ) );
@@ -1550,6 +1585,104 @@ class REST_Map {
         return rest_ensure_response( $response_data );
     }
 
+    /**
+     * Server-side proxy pro Nominatim geocoding (bez CORS)
+     */
+    public function handle_geocode( $request ) {
+        $raw_query = $request->get_param( 'query' );
+        $query = is_string( $raw_query ) ? sanitize_text_field( wp_unslash( $raw_query ) ) : '';
+        $query = trim( $query );
+
+        $min_len = function_exists( 'mb_strlen' ) ? mb_strlen( $query ) : strlen( $query );
+        if ( $min_len < 3 ) {
+            return rest_ensure_response( array( 'results' => array(), 'userCoords' => null ) );
+        }
+
+        $country_param = $request->get_param( 'country' );
+        $country = is_string( $country_param ) ? strtoupper( trim( $country_param ) ) : 'CZ';
+        $country = preg_replace( '/[^A-Z]/', '', $country );
+        $country = $country ? $country : 'CZ';
+
+        $lat = $this->normalize_coordinate( $request->get_param( 'lat' ) );
+        $lon = $this->normalize_coordinate( $request->get_param( 'lon' ) );
+        $user_coords = ( null !== $lat && null !== $lon ) ? array( $lat, $lon ) : null;
+
+        $limit_param = $request->get_param( 'limit' );
+        $limit = is_numeric( $limit_param ) ? (int) $limit_param : 10;
+        $limit = max( 1, min( 20, $limit ) );
+
+        $accept_language = $request->get_param( 'accept_language' );
+        $accept_language = is_string( $accept_language ) && $accept_language !== '' ? substr( $accept_language, 0, 12 ) : 'cs';
+
+        $normalized_query = strtolower( $query );
+        $cache_key = 'db_geocode_' . md5( $normalized_query . '|' . $country . '|' . ( $lat ?? '' ) . '|' . ( $lon ?? '' ) . '|' . $limit . '|' . $accept_language );
+        $cached = get_transient( $cache_key );
+        if ( false !== $cached ) {
+            return rest_ensure_response( $cached );
+        }
+
+        if ( ! $this->check_geocode_rate_limit() ) {
+            return rest_ensure_response( array(
+                'results'    => array(),
+                'userCoords' => $user_coords,
+                'error'      => 'rate_limited',
+            ) );
+        }
+
+        $country_config = $this->get_geocode_country_config( $country );
+
+        $params = array(
+            'format'           => 'json',
+            'q'                => $query,
+            'addressdetails'   => 1,
+            'limit'            => $limit,
+            'accept-language'  => $accept_language,
+            'bounded'          => 1,
+            'countrycodes'     => $country_config['countrycodes'],
+            'viewbox'          => $country_config['viewbox'],
+        );
+
+        if ( $user_coords ) {
+            $params['lat'] = $user_coords[0];
+            $params['lon'] = $user_coords[1];
+        }
+
+        $url = 'https://nominatim.openstreetmap.org/search?' . http_build_query( $params, '', '&', PHP_QUERY_RFC3986 );
+
+        $response = wp_remote_get( $url, array(
+            'timeout' => 10,
+            'headers' => array(
+                'User-Agent' => $this->get_geocode_user_agent(),
+                'Referer'    => home_url( '/' ),
+            ),
+        ) );
+
+        $payload = array(
+            'results'    => array(),
+            'userCoords' => $user_coords,
+        );
+
+        if ( is_wp_error( $response ) ) {
+            return rest_ensure_response( $payload );
+        }
+
+        $status_code = (int) wp_remote_retrieve_response_code( $response );
+        if ( 200 !== $status_code ) {
+            return rest_ensure_response( $payload );
+        }
+
+        $body = wp_remote_retrieve_body( $response );
+        $decoded = json_decode( $body, true );
+        if ( JSON_ERROR_NONE !== json_last_error() || ! is_array( $decoded ) ) {
+            return rest_ensure_response( $payload );
+        }
+
+        $payload['results'] = $decoded;
+        set_transient( $cache_key, $payload, self::NOMINATIM_CACHE_TTL );
+
+        return rest_ensure_response( $payload );
+    }
+
     private function score_to_confidence( $score ) {
         if ( ! is_numeric( $score ) ) {
             return null;
@@ -1689,6 +1822,95 @@ class REST_Map {
         }
 
         return is_numeric( $value ) ? (float) $value : null;
+    }
+
+    private function get_geocode_country_config( string $country ): array {
+        $configs = array(
+            'CZ' => array(
+                'countrycodes' => 'cz,sk,at,de,pl,hu',
+                'viewbox'      => '8,46,22,55',
+            ),
+            'SK' => array(
+                'countrycodes' => 'sk,cz,at,hu,pl',
+                'viewbox'      => '8,46,22,55',
+            ),
+            'DE' => array(
+                'countrycodes' => 'de,at,cz,ch,pl,fr,be,nl',
+                'viewbox'      => '5,47,15,55',
+            ),
+            'AT' => array(
+                'countrycodes' => 'at,de,cz,sk,hu,si,ch,it',
+                'viewbox'      => '8,46,17,49',
+            ),
+            'PL' => array(
+                'countrycodes' => 'pl,de,cz,sk,lt,by,ua',
+                'viewbox'      => '14,49,24,55',
+            ),
+            'HU' => array(
+                'countrycodes' => 'hu,sk,at,si,hr,ro,rs,ua',
+                'viewbox'      => '16,45,23,49',
+            ),
+            'SI' => array(
+                'countrycodes' => 'si,at,it,hr,hu',
+                'viewbox'      => '13,45,16,47',
+            ),
+        );
+
+        return $configs[ $country ] ?? $configs['CZ'];
+    }
+
+    private function get_geocode_user_agent(): string {
+        $site_url = home_url( '/' );
+        $contact = get_bloginfo( 'admin_email' );
+        $ua = sprintf( 'DobityBaterky/%s (%s; contact: %s)', DB_PLUGIN_VERSION, $site_url, $contact ?: 'admin' );
+        return $ua;
+    }
+
+    private function check_geocode_rate_limit(): bool {
+        $ip = $this->get_client_ip();
+        if ( ! $ip ) {
+            return true;
+        }
+
+        $key = 'db_geocode_rl_' . md5( $ip );
+        $window = self::NOMINATIM_IP_WINDOW;
+        $limit = self::NOMINATIM_IP_LIMIT;
+        $entry = get_transient( $key );
+
+        if ( ! is_array( $entry ) || ! isset( $entry['count'], $entry['start'] ) ) {
+            set_transient( $key, array( 'count' => 1, 'start' => time() ), $window );
+            return true;
+        }
+
+        $start = (int) $entry['start'];
+        $count = (int) $entry['count'];
+
+        if ( ( time() - $start ) > $window ) {
+            set_transient( $key, array( 'count' => 1, 'start' => time() ), $window );
+            return true;
+        }
+
+        if ( $count >= $limit ) {
+            return false;
+        }
+
+        $entry['count'] = $count + 1;
+        set_transient( $key, $entry, $window );
+        return true;
+    }
+
+    private function get_client_ip(): string {
+        $keys = array( 'HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' );
+        foreach ( $keys as $key ) {
+            if ( ! empty( $_SERVER[ $key ] ) ) {
+                $ip_list = explode( ',', (string) $_SERVER[ $key ] );
+                $ip = trim( $ip_list[0] );
+                if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+                    return $ip;
+                }
+            }
+        }
+        return '';
     }
 
     private function get_address_for_post( $post ) {

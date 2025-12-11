@@ -633,6 +633,7 @@ add_action('wp_enqueue_scripts', function() {
     wp_localize_script( 'db-map-loader', 'dbMapData', array(
         'restUrl'   => rest_url( 'db/v1/map' ),
         'restNonce' => wp_create_nonce( 'wp_rest' ),
+        'geocodeUrl' => rest_url( 'db/v1/geocode' ),
         'iconsBase' => plugins_url( 'assets/icons/', DB_PLUGIN_FILE ),
         'pluginUrl' => plugins_url( '/', DB_PLUGIN_FILE ),
         'assetsBase' => plugins_url( 'assets/map/', DB_PLUGIN_FILE ),
