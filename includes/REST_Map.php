@@ -1899,15 +1899,29 @@ class REST_Map {
         return true;
     }
 
+    /**
+     * Získá IP adresu klienta pro rate limiting.
+     * Používá pouze REMOTE_ADDR (spolehlivý zdroj) aby se zabránilo obcházení rate limitu
+     * pomocí spoofed headers (HTTP_CLIENT_IP, HTTP_X_FORWARDED_FOR).
+     * 
+     * Pokud je server za proxy/load balancerem, měl by být správně nakonfigurován
+     * tak, aby REMOTE_ADDR obsahoval skutečnou IP klienta.
+     * 
+     * @return string IP adresa nebo prázdný string pokud není dostupná
+     */
     private function get_client_ip(): string {
-        $keys = array( 'HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR' );
-        foreach ( $keys as $key ) {
-            if ( ! empty( $_SERVER[ $key ] ) ) {
-                $ip_list = explode( ',', (string) $_SERVER[ $key ] );
-                $ip = trim( $ip_list[0] );
-                if ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
-                    return $ip;
-                }
+        // Použít pouze REMOTE_ADDR - jediný spolehlivý zdroj IP adresy
+        // HTTP_CLIENT_IP a HTTP_X_FORWARDED_FOR jsou pod kontrolou klienta
+        // a mohou být použity k obcházení rate limitu
+        if ( ! empty( $_SERVER['REMOTE_ADDR'] ) ) {
+            $ip = trim( (string) $_SERVER['REMOTE_ADDR'] );
+            // Validovat IP adresu
+            if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
+                // Veřejná IP adresa
+                return $ip;
+            } elseif ( filter_var( $ip, FILTER_VALIDATE_IP ) ) {
+                // Privátní/localhost IP (pro vývoj/testování)
+                return $ip;
             }
         }
         return '';
