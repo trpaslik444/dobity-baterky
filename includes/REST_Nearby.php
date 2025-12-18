@@ -229,24 +229,6 @@ class REST_Nearby {
         $ttl_days  = (int) (get_option('db_nearby_config', [])['cache_ttl_days'] ?? 30);
         $computed  = $payload['computed_at'] ?? null;
         $stale     = !$computed || (time() - strtotime($computed)) > ($ttl_days * DAY_IN_SECONDS);
-        
-        // Debug log pro DB doporučuje charging_location
-        if ($origin_post && $origin_post->post_type === 'charging_location') {
-            $is_recommended = get_post_meta($origin_id, '_db_recommended', true) === '1';
-            if ($is_recommended) {
-                error_log(sprintf(
-                    '[DB Nearby] Charger %d (%s): original_type=%s, mapped_type=%s, meta_key=%s, cache_exists=%s, payload_items_count=%d, stale=%s',
-                    $origin_id,
-                    $origin_post->post_title,
-                    $original_type,
-                    $type,
-                    $meta_key,
-                    $cache ? 'yes' : 'no',
-                    isset($payload['items']) ? count($payload['items']) : 0,
-                    $stale ? 'yes' : 'no'
-                ));
-            }
-        }
 
         // stav recompute (lock)
         $lock_key  = $meta_key . '_lock';
