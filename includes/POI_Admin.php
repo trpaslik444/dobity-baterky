@@ -478,6 +478,15 @@ class POI_Admin {
                 $errors[] = "POI ID {$poi_id}: " . $e->getMessage();
             }
         }
+        
+        // Synchronizovat db_recommended_ids option z meta hodnot (pouze pro charging_location)
+        // POI_Admin je pro POI, ale pokud se změnil recommended flag, synchronizujeme charging_location
+        if (class_exists('\\DB\\REST_Map')) {
+            $rest_map = \DB\REST_Map::get_instance();
+            if (method_exists($rest_map, 'sync_recommended_ids_from_meta')) {
+                $rest_map->sync_recommended_ids_from_meta();
+            }
+        }
 
         wp_send_json_success([
             'message' => "Úspěšně aktualizováno {$updated} POI",

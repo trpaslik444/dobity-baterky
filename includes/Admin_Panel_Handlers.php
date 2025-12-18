@@ -52,6 +52,14 @@ class Admin_Panel_Handlers {
         $result = update_post_meta($post_id, '_db_recommended', $recommended ? '1' : '0');
         
         if ($result !== false) {
+            // Synchronizovat db_recommended_ids option z meta hodnot
+            if (class_exists('\\DB\\REST_Map')) {
+                $rest_map = \DB\REST_Map::get_instance();
+                if (method_exists($rest_map, 'sync_recommended_ids_from_meta')) {
+                    $rest_map->sync_recommended_ids_from_meta();
+                }
+            }
+            
             wp_send_json_success([
                 'post_id' => $post_id,
                 'recommended' => $recommended

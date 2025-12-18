@@ -704,7 +704,7 @@ class REST_Map {
                         }
                     }
                     
-                    // Pro charging_location: provider/charger_type pro barvu
+                    // Pro charging_location: provider/charger_type pro barvu a price
                     if ($pt === 'charging_location') {
                         $provider_terms = wp_get_post_terms($post->ID, 'provider');
                         if (!empty($provider_terms) && !is_wp_error($provider_terms)) {
@@ -716,6 +716,7 @@ class REST_Map {
                             $properties['charger_type'] = $charger_terms[0]->name;
                             $properties['charger_type_slug'] = $charger_terms[0]->slug;
                         }
+                        $properties['price'] = get_post_meta($post->ID, '_db_price', true);
                     }
                 } else {
                     // FULL PAYLOAD: všechna data (pro kompatibilitu nebo explicitní požadavek)
@@ -884,6 +885,9 @@ class REST_Map {
                         $properties['provider'] = $term->name; // Přepíšeme meta hodnotu term názvem
                         $properties['provider_slug'] = $term->slug;
                     }
+                    
+                    // Přidat price do full payloadu
+                    $properties['price'] = get_post_meta($post->ID, '_db_price', true);
                     
                     // Načtení konektorů z charger_type taxonomie (správná taxonomie pro ikony)
                     $charger_type_terms = wp_get_post_terms($post->ID, 'charger_type');
@@ -3960,36 +3964,107 @@ class REST_Map {
         }
         
         // Načíst charging_location s filtry
-        $args = [
-            'post_type' => 'charging_location',
-            'post_status' => 'publish',
-            'posts_per_page' => $limit,
-            'no_found_rows' => true,
-            'orderby' => 'date',
-            'order' => 'DESC',
-        ];
-        
-        $meta_query = [];
-        if ($db_recommended === '1') {
-            $meta_query[] = [
-                'key' => '_db_recommended',
-                'value' => '1',
-                'compare' => '='
-            ];
-        }
-        if ($free_only === '1') {
-            $meta_query[] = [
-                'key' => '_db_price',
-                'value' => 'free',
-                'compare' => '='
-            ];
-        }
-        if (!empty($meta_query)) {
-            $args['meta_query'] = $meta_query;
-        }
-        
-        $query = new \WP_Query($args);
         $features = [];
+        $recommended_ids = []; // Inicializovat pro použití v loopu
+        
+        // Pro db_recommended použít předpočítaný seznam ID místo WP_Query s meta (s fallbackem na původní query)
+        if ($db_recommended === '1') {
+            // Načíst seznam doporučených IDs z option
+            $recommended_ids_raw = get_option('db_recommended_ids', []);
+            
+            // Sanitizovat na pole int
+            if (is_string($recommended_ids_raw)) {
+                // Pokud je CSV string, převést na pole
+                $recommended_ids = array_filter(array_map('intval', explode(',', $recommended_ids_raw)));
+            } elseif (is_array($recommended_ids_raw)) {
+                // Pokud je už pole, sanitizovat každý prvek
+                $recommended_ids = array_filter(array_map('intval', $recommended_ids_raw));
+            } else {
+                $recommended_ids = [];
+            }
+            
+            // Odfiltrovat <= 0
+            $recommended_ids = array_filter($recommended_ids, function($id) {
+                return $id > 0;
+            });
+            
+            if (!empty($recommended_ids)) {
+                // Načíst posty podle seznamu ID, seřadit v pořadí podle IDs
+                $args = [
+                    'post_type' => 'charging_location',
+                    'post_status' => 'publish',
+                    'post__in' => array_values($recommended_ids),
+                    'posts_per_page' => $limit,
+                    'no_found_rows' => true,
+                    'orderby' => 'post__in', // Zachovat pořadí podle seznamu IDs
+                ];
+                
+                // Pokud je také aktivní free filtr, přidat meta_query
+                if ($free_only === '1') {
+                    $args['meta_query'] = [
+                        [
+                            'key' => '_db_price',
+                            'value' => 'free',
+                            'compare' => '='
+                        ]
+                    ];
+                }
+                
+                $query = new \WP_Query($args);
+            } else {
+                // Pokud je seznam prázdný, fallback na původní meta dotaz (db_recommended meta)
+                $fallback_args = [
+                    'post_type' => 'charging_location',
+                    'post_status' => 'publish',
+                    'posts_per_page' => $limit,
+                    'no_found_rows' => true,
+                    'orderby' => 'date',
+                    'order' => 'DESC',
+                    'meta_query' => [
+                        [
+                            'key' => '_db_recommended',
+                            'value' => '1',
+                            'compare' => '='
+                        ]
+                    ]
+                ];
+                if ($free_only === '1') {
+                    $fallback_args['meta_query'][] = [
+                        'key' => '_db_price',
+                        'value' => 'free',
+                        'compare' => '='
+                    ];
+                }
+                $query = new \WP_Query($fallback_args);
+                
+                // Synchronizovat db_recommended_ids z meta hodnot při fallbacku
+                $this->sync_recommended_ids_from_meta();
+            }
+        } else {
+            // Pokud není db_recommended, použít standardní WP_Query s meta
+            $args = [
+                'post_type' => 'charging_location',
+                'post_status' => 'publish',
+                'posts_per_page' => $limit,
+                'no_found_rows' => true,
+                'orderby' => 'date',
+                'order' => 'DESC',
+            ];
+            
+            $meta_query = [];
+            if ($free_only === '1') {
+                $meta_query[] = [
+                    'key' => '_db_price',
+                    'value' => 'free',
+                    'compare' => '='
+                ];
+            }
+            if (!empty($meta_query)) {
+                $args['meta_query'] = $meta_query;
+            }
+            
+            $query = new \WP_Query($args);
+        }
         
         // Inicializovat favorite_assignments
         $favorite_assignments = [];
@@ -4020,6 +4095,11 @@ class REST_Map {
             
             $properties = $this->build_minimal_properties($post, 'charging_location', $fields_mode, $favorite_assignments, $favorite_folders_index);
             
+            // Pokud používáme předpočítaný seznam ID pro db_recommended, explicitně nastavit db_recommended=1
+            if ($db_recommended === '1' && !empty($recommended_ids) && in_array($post->ID, $recommended_ids)) {
+                $properties['db_recommended'] = 1;
+            }
+            
             $features[] = [
                 'type' => 'Feature',
                 'geometry' => [
@@ -4028,6 +4108,46 @@ class REST_Map {
                 ],
                 'properties' => $properties
             ];
+        }
+        
+        // Pokud je aktivní db_recommended filtr, načíst také POI s db_recommended=1
+        if ($db_recommended === '1') {
+            $poi_args = [
+                'post_type' => 'poi',
+                'post_status' => 'publish',
+                'posts_per_page' => $limit,
+                'no_found_rows' => true,
+                'orderby' => 'date',
+                'order' => 'DESC',
+                'meta_query' => [
+                    [
+                        'key' => '_db_recommended',
+                        'value' => '1',
+                        'compare' => '='
+                    ]
+                ]
+            ];
+            
+            $poi_query = new \WP_Query($poi_args);
+            
+            foreach ($poi_query->posts as $post) {
+                $keys = $this->get_latlng_keys_for_type('poi');
+                $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
+                $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
+                
+                if (!$lat || !$lng) continue;
+                
+                $properties = $this->build_minimal_properties($post, 'poi', $fields_mode, $favorite_assignments, $favorite_folders_index);
+                
+                $features[] = [
+                    'type' => 'Feature',
+                    'geometry' => [
+                        'type' => 'Point',
+                        'coordinates' => [$lng, $lat]
+                    ],
+                    'properties' => $properties
+                ];
+            }
         }
         
         $response_data = [
@@ -4111,6 +4231,7 @@ class REST_Map {
                 $properties['charger_type'] = $charger_terms[0]->name;
                 $properties['charger_type_slug'] = $charger_terms[0]->slug;
             }
+            $properties['price'] = get_post_meta($post->ID, '_db_price', true);
         }
         
         // Favorites
@@ -4130,5 +4251,50 @@ class REST_Map {
         }
         
         return $properties;
+    }
+
+    /**
+     * Synchronizovat db_recommended_ids option z meta hodnot _db_recommended
+     * Volá se při fallbacku a po uložení postu s _db_recommended flagem
+     */
+    public function sync_recommended_ids_from_meta() {
+        $args = [
+            'post_type' => 'charging_location',
+            'post_status' => 'publish',
+            'posts_per_page' => -1,
+            'no_found_rows' => true,
+            'fields' => 'ids', // Pouze ID, ne celé objekty
+            'meta_query' => [
+                [
+                    'key' => '_db_recommended',
+                    'value' => '1',
+                    'compare' => '='
+                ]
+            ]
+        ];
+        
+        $query = new \WP_Query($args);
+        $ids = $query->posts;
+        
+        // Sanitizovat na pole int
+        $ids = array_map('intval', $ids);
+        $ids = array_filter($ids, function($id) {
+            return $id > 0;
+        });
+        
+        // Aktualizovat option pouze pokud se změnilo
+        $current_ids = get_option('db_recommended_ids', []);
+        $current_ids = is_array($current_ids) ? array_map('intval', $current_ids) : [];
+        $current_ids = array_filter($current_ids, function($id) {
+            return $id > 0;
+        });
+        
+        // Porovnat seřazené pole
+        sort($ids);
+        sort($current_ids);
+        
+        if ($ids !== $current_ids) {
+            update_option('db_recommended_ids', array_values($ids), false);
+        }
     }
 } 
