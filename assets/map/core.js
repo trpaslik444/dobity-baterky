@@ -3633,7 +3633,26 @@ document.addEventListener('DOMContentLoaded', async function() {
         return null;
       }
       
-      return data.features || null;
+      const features = data.features || null;
+      if (!features) return null;
+      
+      // Po deserializaci převést pole v nearby_of zpět na Set
+      const restoredFeatures = features.map(f => {
+        if (!f || !f.properties) return f;
+        const props = { ...f.properties };
+        if (Array.isArray(props.nearby_of)) {
+          props.nearby_of = new Set(props.nearby_of);
+        } else if (props.nearby_of && typeof props.nearby_of === 'object' && !(props.nearby_of instanceof Set)) {
+          // Pokud je to objekt (z prázdného Set po deserializaci), převést na prázdný Set
+          props.nearby_of = new Set();
+        }
+        return {
+          ...f,
+          properties: props
+        };
+      });
+      
+      return restoredFeatures;
     } catch (e) {
       console.warn('[DB Map] Cache read error:', e);
       return null;
@@ -3643,8 +3662,21 @@ document.addEventListener('DOMContentLoaded', async function() {
   function setSpecialCache(recommended, free, features) {
     try {
       const key = getSpecialCacheKey(recommended, free);
+      // Před serializací převést Set objekty v nearby_of na pole
+      const serializableFeatures = features.map(f => {
+        if (!f || !f.properties) return f;
+        const props = { ...f.properties };
+        if (props.nearby_of instanceof Set) {
+          props.nearby_of = Array.from(props.nearby_of);
+        }
+        return {
+          ...f,
+          properties: props
+        };
+      });
+      
       const data = {
-        features: features,
+        features: serializableFeatures,
         fetchedAt: Date.now(),
         ttl: SPECIAL_CACHE_TTL * 1000
       };
@@ -3769,6 +3801,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         const cachedFeatures = getSpecialCache(showOnlyRecommended, filterState.free);
         if (cachedFeatures && cachedFeatures.length > 0) {
           features = cachedFeatures;
+          // Uložit všechny features do featureCache
+          features.forEach(f => {
+            if (f?.properties?.id != null && typeof featureCache !== 'undefined') {
+              featureCache.set(f.properties.id, f);
+            }
+          });
           // Vykreslit z cache bez fetchu
           if (typeof clearMarkers === 'function') {
             clearMarkers();
@@ -3838,6 +3876,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Deduplikovat features s mergováním nearby_of relací
         features = dedupeFeaturesWithNearby(features);
         
+        // Uložit všechny features do featureCache po deduplikaci
+        features.forEach(f => {
+          if (f?.properties?.id != null && typeof featureCache !== 'undefined') {
+            featureCache.set(f.properties.id, f);
+          }
+        });
         
         // Uložit do cache (pouze minimal payload)
         setSpecialCache(showOnlyRecommended, filterState.free, features);
@@ -6530,12 +6574,27 @@ document.addEventListener('DOMContentLoaded', async function() {
     // V special režimu zkontrolovat, zda máme nearby body v features array
     if (specialDatasetActive) {
       // Najít všechny nearby body, které mají nearby_of obsahující tento centerId
+      const centerIdNum = Number(centerId);
+      const centerIdStr = String(centerId);
       const nearbyFeatures = features.filter(f => {
         const fp = f.properties || {};
         if (!fp.nearby_of) return false;
-        const nearbyOf = fp.nearby_of instanceof Set ? Array.from(fp.nearby_of) :
-          (Array.isArray(fp.nearby_of) ? fp.nearby_of : []);
-        return nearbyOf.includes(centerId) || nearbyOf.includes(String(centerId)) || nearbyOf.includes(Number(centerId));
+        // Převést nearby_of na pole pro porovnání
+        let nearbyOfArray = [];
+        if (fp.nearby_of instanceof Set) {
+          nearbyOfArray = Array.from(fp.nearby_of);
+        } else if (Array.isArray(fp.nearby_of)) {
+          nearbyOfArray = fp.nearby_of;
+        } else {
+          return false;
+        }
+        // Porovnat jako čísla i jako stringy
+        return nearbyOfArray.some(id => {
+          const idNum = Number(id);
+          const idStr = String(id);
+          return (Number.isFinite(idNum) && Number.isFinite(centerIdNum) && idNum === centerIdNum) ||
+                 (idStr === centerIdStr);
+        });
       });
       
       if (nearbyFeatures.length > 0) {
@@ -7440,12 +7499,27 @@ document.addEventListener('DOMContentLoaded', async function() {
     // V special režimu zkontrolovat, zda máme nearby body v features array
     if (specialDatasetActive) {
       // Najít všechny nearby body, které mají nearby_of obsahující tento featureId
+      const featureIdNum = Number(featureId);
+      const featureIdStr = String(featureId);
       const nearbyFeatures = features.filter(f => {
         const fp = f.properties || {};
         if (!fp.nearby_of) return false;
-        const nearbyOf = fp.nearby_of instanceof Set ? Array.from(fp.nearby_of) :
-          (Array.isArray(fp.nearby_of) ? fp.nearby_of : []);
-        return nearbyOf.includes(featureId) || nearbyOf.includes(String(featureId)) || nearbyOf.includes(Number(featureId));
+        // Převést nearby_of na pole pro porovnání
+        let nearbyOfArray = [];
+        if (fp.nearby_of instanceof Set) {
+          nearbyOfArray = Array.from(fp.nearby_of);
+        } else if (Array.isArray(fp.nearby_of)) {
+          nearbyOfArray = fp.nearby_of;
+        } else {
+          return false;
+        }
+        // Porovnat jako čísla i jako stringy
+        return nearbyOfArray.some(id => {
+          const idNum = Number(id);
+          const idStr = String(id);
+          return (Number.isFinite(idNum) && Number.isFinite(featureIdNum) && idNum === featureIdNum) ||
+                 (idStr === featureIdStr);
+        });
       });
       
       if (nearbyFeatures.length > 0) {
