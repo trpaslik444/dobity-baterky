@@ -3917,10 +3917,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (typeof fetchAndRenderRadiusWithFixedRadius === 'function') {
           await fetchAndRenderRadiusWithFixedRadius(center, null, FIXED_RADIUS_KM);
           // fetchAndRenderRadiusWithFixedRadius už nastaví features a zavolá renderCards
+          // Zajistit, že tlačítko "Načíst další" je viditelné v normálním režimu
+          if (window.smartLoadingManager) {
+            window.smartLoadingManager.enableManualLoadButton();
+            window.smartLoadingManager.showManualLoadButton();
+          }
           document.body.classList.remove('db-loading');
           return;
         } else {
           // Fallback pokud funkce není dostupná
+          // Zajistit, že tlačítko "Načíst další" je viditelné v normálním režimu
+          if (window.smartLoadingManager) {
+            window.smartLoadingManager.enableManualLoadButton();
+            window.smartLoadingManager.showManualLoadButton();
+          }
           document.body.classList.remove('db-loading');
           return;
         }
@@ -5739,6 +5749,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Aktualizovat viditelnost reset tlačítka
     updateResetButtonVisibility();
     
+    // Aktualizovat viditelnost tlačítka "Načíst další" podle stavu filtrů
+    const hasSpecialFilters = filterState.free || showOnlyRecommended;
+    if (window.smartLoadingManager) {
+      if (hasSpecialFilters) {
+        window.smartLoadingManager.hideManualLoadButton();
+        window.smartLoadingManager.disableManualLoadButton();
+      } else {
+        window.smartLoadingManager.enableManualLoadButton();
+        window.smartLoadingManager.showManualLoadButton();
+      }
+    }
+    
     // KRITICKÉ: Pokud jsou aktivní speciální filtry (DB doporučuje nebo Zdarma),
     // načíst všechna data místo pouze v radiusu
     if (filterState.free || showOnlyRecommended) {
@@ -5866,7 +5888,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       pMaxR.addEventListener('mouseup', function(e) { e.stopPropagation(); });
     }
     
-    if (resetBtn) resetBtn.addEventListener('click', () => {
+    if (resetBtn) resetBtn.addEventListener('click', async () => {
       filterState.powerMin = 0; filterState.powerMax = 400;
       filterState.connectors = new Set();
       filterState.amenities = new Set();
@@ -5936,17 +5958,35 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Aktualizovat viditelnost reset tlačítka
       updateResetButtonVisibility();
       
-      // Aktualizovat viditelnost tlačítka "načíst další" okamžitě
-      if (window.smartLoadingManager) {
-        window.smartLoadingManager.showManualLoadButton();
-      }
-      
       // Uložit nastavení
       saveFilterSettings();
       
-      // Okamžitě zobrazit všechna data (bez filtrování) - instantní reakce
-      if (typeof renderCards === 'function') {
-        renderCards('', null, false);
+      // Pokud byly aktivní speciální filtry, vypnout special režim a načíst standardní data
+      const wasSpecialActive = specialDatasetActive;
+      if (wasSpecialActive) {
+        specialDatasetActive = false;
+        // Načíst standardní dataset pomocí fetchAndRenderAll
+        if (typeof fetchAndRenderAll === 'function') {
+          await fetchAndRenderAll();
+        } else if (typeof fetchAndRenderRadiusWithFixedRadius === 'function' && map) {
+          const center = map.getCenter();
+          if (center) {
+            await fetchAndRenderRadiusWithFixedRadius(center, null, FIXED_RADIUS_KM);
+          }
+        } else if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
+      } else {
+        // Pokud nebyly aktivní speciální filtry, pouze zobrazit aktuální data
+        if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
+      }
+      
+      // Zajistit, aby tlačítko "Načíst další" bylo viditelné po resetu
+      if (window.smartLoadingManager) {
+        window.smartLoadingManager.enableManualLoadButton();
+        window.smartLoadingManager.showManualLoadButton();
       }
       
       // ZRUŠENO: Automatický fetch po resetu filtrů - čekáme na explicitní klik na "Načíst další"
@@ -5981,20 +6021,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         const hasSpecialFilters = filterState.free || showOnlyRecommended;
         
-        // Aktualizovat viditelnost tlačítka "načíst další" - použít setTimeout, aby se hodnoty aktualizovaly
-        setTimeout(() => {
-          if (window.smartLoadingManager) {
-            if (hasSpecialFilters) {
-              window.smartLoadingManager.hideManualLoadButton();
-              window.smartLoadingManager.disableManualLoadButton();
-            } else {
-              window.smartLoadingManager.enableManualLoadButton();
-              window.smartLoadingManager.showManualLoadButton();
-            }
-          }
-        }, 0);
-        
         // Pokud je aktivní filtr "Zdarma" nebo "DB doporučuje", načíst special dataset
+        // fetchAndRenderAll už správně nastaví viditelnost tlačítka podle hasSpecialFilters
         if (hasSpecialFilters) {
           // Vždy volat fetchAndRenderAll pro načtení special datasetu s nearby
           if (typeof fetchAndRenderAll === 'function') {
@@ -6032,20 +6060,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         const hasSpecialFilters = filterState.free || showOnlyRecommended;
         
-        // Aktualizovat viditelnost tlačítka "načíst další" - použít setTimeout, aby se hodnoty aktualizovaly
-        setTimeout(() => {
-          if (window.smartLoadingManager) {
-            if (hasSpecialFilters) {
-              window.smartLoadingManager.hideManualLoadButton();
-              window.smartLoadingManager.disableManualLoadButton();
-            } else {
-              window.smartLoadingManager.enableManualLoadButton();
-              window.smartLoadingManager.showManualLoadButton();
-            }
-          }
-        }, 0);
-        
         // Pokud je aktivní filtr "Zdarma" nebo "DB doporučuje", načíst special dataset
+        // fetchAndRenderAll už správně nastaví viditelnost tlačítka podle hasSpecialFilters
         if (hasSpecialFilters) {
           // Vždy volat fetchAndRenderAll pro načtení special datasetu s nearby
           if (typeof fetchAndRenderAll === 'function') {
