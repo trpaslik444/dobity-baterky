@@ -10952,6 +10952,15 @@ document.addEventListener('DOMContentLoaded', async function() {
       return true;
     });
 
+    // Pokud je aktivní filtr "db doporučuje", filtrovat pouze db_recommended charging_location body
+    if (showOnlyRecommended) {
+      filteredCharging = filteredCharging.filter(fc => {
+        const p = fc.properties || {};
+        const dbRecommended = p.db_recommended || p._db_recommended;
+        return dbRecommended === 1 || dbRecommended === '1' || dbRecommended === true;
+      });
+    }
+    
     const filteredChargingIds = new Set(filteredCharging.map(fc => fc.properties?.id));
     // Aktualizovat specialDatasetActive podle aktuálního stavu filtrů
     // Pokud jsou aktivní speciální filtry, ale specialDatasetActive není nastaveno, nastavit ho
