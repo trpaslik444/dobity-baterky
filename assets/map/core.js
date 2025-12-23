@@ -5815,12 +5815,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     } catch(_) {}
   }
   function attachFilterHandlers() {
+    // Ochrana proti duplicitním listenerům - pokud už jsou připojené, odstranit staré
+    const recommendedEl = document.getElementById('db-map-toggle-recommended');
+    if (recommendedEl && recommendedEl._dbChangeHandler) {
+      recommendedEl.removeEventListener('change', recommendedEl._dbChangeHandler);
+      recommendedEl._dbChangeHandler = null;
+    }
+    
+    const freeCheckbox = document.getElementById('db-filter-free');
+    if (freeCheckbox && freeCheckbox._dbChangeHandler) {
+      freeCheckbox.removeEventListener('change', freeCheckbox._dbChangeHandler);
+      freeCheckbox._dbChangeHandler = null;
+    }
+    
+    const resetBtn = document.getElementById('db-filter-reset');
+    if (resetBtn && resetBtn._dbClickHandler) {
+      resetBtn.removeEventListener('click', resetBtn._dbClickHandler);
+      resetBtn._dbClickHandler = null;
+    }
+    
     const pMinR = document.getElementById('db-power-min');
     const pMaxR = document.getElementById('db-power-max');
     const pMinValue = document.getElementById('db-power-min-value');
     const pMaxValue = document.getElementById('db-power-max-value');
     const pRangeFill = document.getElementById('db-power-range-fill');
-    const resetBtn = document.getElementById('db-filter-reset');
 
     // Jezdec s vizuálním vyplněním
     function updatePowerSlider() {
@@ -5888,7 +5906,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       pMaxR.addEventListener('mouseup', function(e) { e.stopPropagation(); });
     }
     
-    if (resetBtn) resetBtn.addEventListener('click', async () => {
+    if (resetBtn) {
+      const resetBtnHandler = async () => {
       filterState.powerMin = 0; filterState.powerMax = 400;
       filterState.connectors = new Set();
       filterState.amenities = new Set();
@@ -6008,12 +6027,14 @@ document.addEventListener('DOMContentLoaded', async function() {
       //     });
       //   }, 0);
       // }
-    });
+      };
+      resetBtn.addEventListener('click', resetBtnHandler);
+      resetBtn._dbClickHandler = resetBtnHandler;
+    }
     
     // Event listener pro "Zdarma" checkbox
-    const freeCheckbox = document.getElementById('db-filter-free');
     if (freeCheckbox) {
-      freeCheckbox.addEventListener('change', async () => {
+      const freeCheckboxHandler = async () => {
         const wasSpecialActive = specialDatasetActive;
         filterState.free = !!freeCheckbox.checked;
         updateResetButtonVisibility();
@@ -6046,13 +6067,14 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
           }
         }
-      });
+      };
+      freeCheckbox.addEventListener('change', freeCheckboxHandler);
+      freeCheckbox._dbChangeHandler = freeCheckboxHandler;
     }
     
     // Event listener pro "DB doporučuje" checkbox
-    const recommendedEl = document.getElementById('db-map-toggle-recommended');
     if (recommendedEl) {
-      recommendedEl.addEventListener('change', async () => {
+      const recommendedElHandler = async () => {
         const wasSpecialActive = specialDatasetActive;
         showOnlyRecommended = !!recommendedEl.checked;
         updateResetButtonVisibility();
@@ -6085,7 +6107,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
           }
         }
-      });
+      };
+      recommendedEl.addEventListener('change', recommendedElHandler);
+      recommendedEl._dbChangeHandler = recommendedElHandler;
     }
     
     // Inicializace jezdce - NE volat updatePowerSlider() zde, protože resetuje filterState
