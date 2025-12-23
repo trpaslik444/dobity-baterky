@@ -4038,7 +4038,12 @@ class REST_Map {
                 $query = new \WP_Query($fallback_args);
                 
                 // Synchronizovat db_recommended_ids z meta hodnot při fallbacku
-                $this->sync_recommended_ids_from_meta();
+                try {
+                    $this->sync_recommended_ids_from_meta();
+                } catch (\Exception $e) {
+                    // Logovat chybu, ale nepřerušit běh aplikace
+                    error_log('Failed to sync recommended IDs during fallback: ' . $e->getMessage());
+                }
             }
         } else {
             // Pokud není db_recommended, použít standardní WP_Query s meta
@@ -4256,45 +4261,69 @@ class REST_Map {
     /**
      * Synchronizovat db_recommended_ids option z meta hodnot _db_recommended
      * Volá se při fallbacku a po uložení postu s _db_recommended flagem
+     * 
+     * Používá batch processing pro velký počet postů (limit 1000 na batch)
      */
     public function sync_recommended_ids_from_meta() {
-        $args = [
-            'post_type' => 'charging_location',
-            'post_status' => 'publish',
-            'posts_per_page' => -1,
-            'no_found_rows' => true,
-            'fields' => 'ids', // Pouze ID, ne celé objekty
-            'meta_query' => [
-                [
-                    'key' => '_db_recommended',
-                    'value' => '1',
-                    'compare' => '='
-                ]
-            ]
-        ];
-        
-        $query = new \WP_Query($args);
-        $ids = $query->posts;
-        
-        // Sanitizovat na pole int
-        $ids = array_map('intval', $ids);
-        $ids = array_filter($ids, function($id) {
-            return $id > 0;
-        });
-        
-        // Aktualizovat option pouze pokud se změnilo
-        $current_ids = get_option('db_recommended_ids', []);
-        $current_ids = is_array($current_ids) ? array_map('intval', $current_ids) : [];
-        $current_ids = array_filter($current_ids, function($id) {
-            return $id > 0;
-        });
-        
-        // Porovnat seřazené pole
-        sort($ids);
-        sort($current_ids);
-        
-        if ($ids !== $current_ids) {
-            update_option('db_recommended_ids', array_values($ids), false);
+        try {
+            $all_ids = [];
+            $page = 1;
+            $per_page = 1000; // Rozumný limit pro batch processing
+            
+            do {
+                $args = [
+                    'post_type' => 'charging_location',
+                    'post_status' => 'publish',
+                    'posts_per_page' => $per_page,
+                    'paged' => $page,
+                    'no_found_rows' => false, // Potřebujeme zjistit celkový počet
+                    'fields' => 'ids', // Pouze ID, ne celé objekty
+                    'meta_query' => [
+                        [
+                            'key' => '_db_recommended',
+                            'value' => '1',
+                            'compare' => '='
+                        ]
+                    ]
+                ];
+                
+                $query = new \WP_Query($args);
+                $ids = $query->posts;
+                
+                // Sanitizovat na pole int
+                $ids = array_map('intval', $ids);
+                $ids = array_filter($ids, function($id) {
+                    return $id > 0;
+                });
+                
+                $all_ids = array_merge($all_ids, $ids);
+                
+                $page++;
+            } while ($query->found_posts > ($page - 1) * $per_page);
+            
+            // Odfiltrovat duplicity a neplatné hodnoty
+            $all_ids = array_unique($all_ids);
+            $all_ids = array_filter($all_ids, function($id) {
+                return $id > 0;
+            });
+            
+            // Aktualizovat option pouze pokud se změnilo
+            $current_ids = get_option('db_recommended_ids', []);
+            $current_ids = is_array($current_ids) ? array_map('intval', $current_ids) : [];
+            $current_ids = array_filter($current_ids, function($id) {
+                return $id > 0;
+            });
+            
+            // Porovnat seřazené pole
+            sort($all_ids);
+            sort($current_ids);
+            
+            if ($all_ids !== $current_ids) {
+                update_option('db_recommended_ids', array_values($all_ids), false);
+            }
+        } catch (\Exception $e) {
+            // Logovat chybu, ale nepřerušit běh aplikace
+            error_log('Failed to sync recommended IDs: ' . $e->getMessage());
         }
     }
 } 

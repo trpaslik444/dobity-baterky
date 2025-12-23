@@ -2563,11 +2563,16 @@ class Charging_Location_Form {
         
         // Synchronizovat db_recommended_ids option z meta hodnot (pouze pro charging_location)
         if (get_post_type($post_id) === 'charging_location') {
-            if (class_exists('\\DB\\REST_Map')) {
-                $rest_map = \DB\REST_Map::get_instance();
-                if (method_exists($rest_map, 'sync_recommended_ids_from_meta')) {
-                    $rest_map->sync_recommended_ids_from_meta();
+            try {
+                if (class_exists('\\DB\\REST_Map')) {
+                    $rest_map = \DB\REST_Map::get_instance();
+                    if (method_exists($rest_map, 'sync_recommended_ids_from_meta')) {
+                        $rest_map->sync_recommended_ids_from_meta();
+                    }
                 }
+            } catch (\Exception $e) {
+                // Logovat chybu, ale nepřerušit běh aplikace
+                error_log('Failed to sync recommended IDs: ' . $e->getMessage());
             }
         }
 
