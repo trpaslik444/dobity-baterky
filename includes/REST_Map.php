@@ -4115,50 +4115,13 @@ class REST_Map {
             ];
         }
         
-        // Pokud je aktivní db_recommended filtr, načíst také POI s db_recommended=1
+        // Pokud je aktivní db_recommended filtr, načíst také POI a RV spots s db_recommended=1
         if ($db_recommended === '1') {
-            $poi_args = [
-                'post_type' => 'poi',
-                'post_status' => 'publish',
-                'posts_per_page' => $limit,
-                'no_found_rows' => true,
-                'orderby' => 'date',
-                'order' => 'DESC',
-                'meta_query' => [
-                    [
-                        'key' => '_db_recommended',
-                        'value' => '1',
-                        'compare' => '='
-                    ]
-                ]
-            ];
+            // Načíst POI s db_recommended=1 pomocí předpočítané option
+            $this->load_recommended_posts_by_type('poi', 'db_recommended_poi_ids', $limit, $fields_mode, $favorite_assignments, $favorite_folders_index, $features);
             
-            $poi_query = new \WP_Query($poi_args);
-            
-            foreach ($poi_query->posts as $post) {
-                $keys = $this->get_latlng_keys_for_type('poi');
-                $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
-                $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
-                
-                if (!$lat || !$lng) continue;
-                
-                $properties = $this->build_minimal_properties($post, 'poi', $fields_mode, $favorite_assignments, $favorite_folders_index);
-                
-                // Explicitně nastavit db_recommended=1 pro POI s db_recommended=1
-                if ($db_recommended === '1') {
-                    $properties['db_recommended'] = 1;
-                    $properties['_db_recommended'] = 1; // Pro kompatibilitu s frontendem
-                }
-                
-                $features[] = [
-                    'type' => 'Feature',
-                    'geometry' => [
-                        'type' => 'Point',
-                        'coordinates' => [$lng, $lat]
-                    ],
-                    'properties' => $properties
-                ];
-            }
+            // Načíst RV spots s db_recommended=1 pomocí předpočítané option
+            $this->load_recommended_posts_by_type('rv_spot', 'db_recommended_rv_ids', $limit, $fields_mode, $favorite_assignments, $favorite_folders_index, $features);
         }
         
         $response_data = [
@@ -4265,71 +4228,197 @@ class REST_Map {
     }
 
     /**
-     * Synchronizovat db_recommended_ids option z meta hodnot _db_recommended
+     * Načte recommended posts daného typu a přidá je do features array
+     * 
+     * @param string $post_type Typ postu ('poi' nebo 'rv_spot')
+     * @param string $option_name Název option pro předpočítané IDs (např. 'db_recommended_poi_ids')
+     * @param int $limit Limit počtu postů
+     * @param string $fields_mode Režim polí ('minimal' nebo 'full')
+     * @param array $favorite_assignments Assignments oblíbených
+     * @param array $favorite_folders_index Index složek oblíbených
+     * @param array &$features Reference na features array, kam se přidají výsledky
+     */
+    private function load_recommended_posts_by_type($post_type, $option_name, $limit, $fields_mode, $favorite_assignments, $favorite_folders_index, &$features) {
+        // Načíst recommended IDs pomocí předpočítané option
+        $recommended_ids_raw = get_option($option_name, []);
+        $recommended_ids = [];
+        if (is_string($recommended_ids_raw)) {
+            $recommended_ids = array_filter(array_map('intval', explode(',', $recommended_ids_raw)));
+        } elseif (is_array($recommended_ids_raw)) {
+            $recommended_ids = array_filter(array_map('intval', $recommended_ids_raw));
+        }
+        $recommended_ids = array_filter($recommended_ids, function($id) {
+            return $id > 0;
+        });
+        
+        if (!empty($recommended_ids)) {
+            // Použít předpočítané IDs
+            $args = [
+                'post_type' => $post_type,
+                'post_status' => 'publish',
+                'post__in' => array_values($recommended_ids),
+                'posts_per_page' => $limit,
+                'no_found_rows' => true,
+                'orderby' => 'post__in',
+            ];
+            
+            $query = new \WP_Query($args);
+            
+            foreach ($query->posts as $post) {
+                $keys = $this->get_latlng_keys_for_type($post_type);
+                $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
+                $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
+                
+                if (!$lat || !$lng) continue;
+                
+                $properties = $this->build_minimal_properties($post, $post_type, $fields_mode, $favorite_assignments, $favorite_folders_index);
+                
+                // Explicitně nastavit db_recommended=1
+                $properties['db_recommended'] = 1;
+                $properties['_db_recommended'] = 1;
+                
+                $features[] = [
+                    'type' => 'Feature',
+                    'geometry' => [
+                        'type' => 'Point',
+                        'coordinates' => [$lng, $lat]
+                    ],
+                    'properties' => $properties
+                ];
+            }
+        } else {
+            // Fallback na meta_query pokud option neexistuje
+            $args = [
+                'post_type' => $post_type,
+                'post_status' => 'publish',
+                'posts_per_page' => $limit,
+                'no_found_rows' => true,
+                'orderby' => 'date',
+                'order' => 'DESC',
+                'meta_query' => [
+                    [
+                        'key' => '_db_recommended',
+                        'value' => '1',
+                        'compare' => '='
+                    ]
+                ]
+            ];
+            
+            $query = new \WP_Query($args);
+            
+            foreach ($query->posts as $post) {
+                $keys = $this->get_latlng_keys_for_type($post_type);
+                $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
+                $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
+                
+                if (!$lat || !$lng) continue;
+                
+                $properties = $this->build_minimal_properties($post, $post_type, $fields_mode, $favorite_assignments, $favorite_folders_index);
+                
+                $properties['db_recommended'] = 1;
+                $properties['_db_recommended'] = 1;
+                
+                $features[] = [
+                    'type' => 'Feature',
+                    'geometry' => [
+                        'type' => 'Point',
+                        'coordinates' => [$lng, $lat]
+                    ],
+                    'properties' => $properties
+                ];
+            }
+            
+            // Synchronizovat option při fallbacku
+            try {
+                $this->sync_recommended_ids_from_meta();
+            } catch (\Exception $e) {
+                error_log("Failed to sync recommended {$post_type} IDs during fallback: " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Synchronizovat db_recommended_ids options z meta hodnot _db_recommended
      * Volá se při fallbacku a po uložení postu s _db_recommended flagem
+     * 
+     * Synchronizuje charging_location, POI a RV spots do samostatných options:
+     * - db_recommended_ids (charging_location)
+     * - db_recommended_poi_ids (poi)
+     * - db_recommended_rv_ids (rv_spot)
      * 
      * Používá batch processing pro velký počet postů (limit 1000 na batch)
      */
     public function sync_recommended_ids_from_meta() {
-        try {
-            $all_ids = [];
-            $page = 1;
-            $per_page = 1000; // Rozumný limit pro batch processing
-            
-            do {
-                $args = [
-                    'post_type' => 'charging_location',
-                    'post_status' => 'publish',
-                    'posts_per_page' => $per_page,
-                    'paged' => $page,
-                    'no_found_rows' => false, // Potřebujeme zjistit celkový počet
-                    'fields' => 'ids', // Pouze ID, ne celé objekty
-                    'meta_query' => [
-                        [
-                            'key' => '_db_recommended',
-                            'value' => '1',
-                            'compare' => '='
+        $post_types = ['charging_location', 'poi', 'rv_spot'];
+        $option_names = [
+            'charging_location' => 'db_recommended_ids',
+            'poi' => 'db_recommended_poi_ids',
+            'rv_spot' => 'db_recommended_rv_ids'
+        ];
+        
+        foreach ($post_types as $post_type) {
+            try {
+                $all_ids = [];
+                $page = 1;
+                $per_page = 1000; // Rozumný limit pro batch processing
+                
+                do {
+                    $args = [
+                        'post_type' => $post_type,
+                        'post_status' => 'publish',
+                        'posts_per_page' => $per_page,
+                        'paged' => $page,
+                        'no_found_rows' => false, // Potřebujeme zjistit celkový počet
+                        'fields' => 'ids', // Pouze ID, ne celé objekty
+                        'meta_query' => [
+                            [
+                                'key' => '_db_recommended',
+                                'value' => '1',
+                                'compare' => '='
+                            ]
                         ]
-                    ]
-                ];
+                    ];
+                    
+                    $query = new \WP_Query($args);
+                    $ids = $query->posts;
+                    
+                    // Sanitizovat na pole int
+                    $ids = array_map('intval', $ids);
+                    $ids = array_filter($ids, function($id) {
+                        return $id > 0;
+                    });
+                    
+                    $all_ids = array_merge($all_ids, $ids);
+                    
+                    $page++;
+                    // Pokračovat dokud vracíme plný batch (pokud je méně, jsme na konci)
+                } while (count($ids) === $per_page);
                 
-                $query = new \WP_Query($args);
-                $ids = $query->posts;
-                
-                // Sanitizovat na pole int
-                $ids = array_map('intval', $ids);
-                $ids = array_filter($ids, function($id) {
+                // Odfiltrovat duplicity a neplatné hodnoty
+                $all_ids = array_unique($all_ids);
+                $all_ids = array_filter($all_ids, function($id) {
                     return $id > 0;
                 });
                 
-                $all_ids = array_merge($all_ids, $ids);
+                // Aktualizovat option pouze pokud se změnilo
+                $option_name = $option_names[$post_type];
+                $current_ids = get_option($option_name, []);
+                $current_ids = is_array($current_ids) ? array_map('intval', $current_ids) : [];
+                $current_ids = array_filter($current_ids, function($id) {
+                    return $id > 0;
+                });
                 
-                $page++;
-            } while ($query->found_posts > ($page - 1) * $per_page);
-            
-            // Odfiltrovat duplicity a neplatné hodnoty
-            $all_ids = array_unique($all_ids);
-            $all_ids = array_filter($all_ids, function($id) {
-                return $id > 0;
-            });
-            
-            // Aktualizovat option pouze pokud se změnilo
-            $current_ids = get_option('db_recommended_ids', []);
-            $current_ids = is_array($current_ids) ? array_map('intval', $current_ids) : [];
-            $current_ids = array_filter($current_ids, function($id) {
-                return $id > 0;
-            });
-            
-            // Porovnat seřazené pole
-            sort($all_ids);
-            sort($current_ids);
-            
-            if ($all_ids !== $current_ids) {
-                update_option('db_recommended_ids', array_values($all_ids), false);
+                // Porovnat seřazené pole
+                sort($all_ids);
+                sort($current_ids);
+                
+                if ($all_ids !== $current_ids) {
+                    update_option($option_name, array_values($all_ids), false);
+                }
+            } catch (\Exception $e) {
+                // Logovat chybu, ale nepřerušit běh aplikace
+                error_log("Failed to sync recommended IDs for {$post_type}: " . $e->getMessage());
             }
-        } catch (\Exception $e) {
-            // Logovat chybu, ale nepřerušit běh aplikace
-            error_log('Failed to sync recommended IDs: ' . $e->getMessage());
         }
     }
 } 

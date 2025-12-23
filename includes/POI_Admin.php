@@ -479,10 +479,17 @@ class POI_Admin {
             }
         }
         
-        // POZNÁMKA: Synchronizace db_recommended_ids není nutná pro POI posty,
-        // protože sync_recommended_ids_from_meta() filtruje pouze charging_location posty.
-        // Pokud se v budoucnu změní logika a POI budou také v db_recommended_ids,
-        // bude potřeba upravit synchronizaci.
+        // Synchronizovat db_recommended_poi_ids option z meta hodnot
+        try {
+            if (class_exists('\\DB\\REST_Map')) {
+                $rest_map = \DB\REST_Map::get_instance();
+                if (method_exists($rest_map, 'sync_recommended_ids_from_meta')) {
+                    $rest_map->sync_recommended_ids_from_meta();
+                }
+            }
+        } catch (\Exception $e) {
+            error_log('Failed to sync recommended POI IDs: ' . $e->getMessage());
+        }
 
         wp_send_json_success([
             'message' => "Úspěšně aktualizováno {$updated} POI",
