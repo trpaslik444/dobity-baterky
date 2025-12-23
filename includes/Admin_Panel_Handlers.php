@@ -61,9 +61,8 @@ class Admin_Panel_Handlers {
                     }
                 }
             } catch (\Exception $e) {
-                    // Logovat chybu, ale nepřerušit běh aplikace
-                    error_log('Failed to sync recommended IDs: ' . $e->getMessage());
-                }
+                // Logovat chybu, ale nepřerušit běh aplikace
+                error_log('Failed to sync recommended IDs: ' . $e->getMessage());
             }
             
             wp_send_json_success([
