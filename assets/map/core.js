@@ -3819,9 +3819,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         
         // Pokud cache neexistuje nebo expirovala, fetchnout přes special endpoint
+        // Použít rozumný limit místo 2000 - db doporučených bodů je obvykle ~70-100
         const chargingUrl = new URL(base, window.location.origin);
         chargingUrl.searchParams.set('mode', 'special');
-        chargingUrl.searchParams.set('limit', '2000');
+        chargingUrl.searchParams.set('limit', '200'); // Sníženo z 2000 na 200 - dostatečné pro db doporučené body
         chargingUrl.searchParams.set('fields', 'minimal');
         if (showOnlyRecommended) {
           chargingUrl.searchParams.set('db_recommended', '1');
@@ -11013,17 +11014,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Charging_location: zobrazit pouze vyfiltrované
       if (p.post_type === 'charging_location') {
         if (specialModeActive) {
-          // V specialModeActive: pokud je flagged charger, vždy povolit
-          // Pokud není flagged, ale má nearby_of obsahující flagged POI, povolit
-          if (flaggedChargers.has(p.id)) {
-            return true;
-          }
-          const relations = p.nearby_of instanceof Set ? Array.from(p.nearby_of) :
-            (Array.isArray(p.nearby_of) ? p.nearby_of : []);
-          if (relations && relations.length > 0) {
-            return relations.some(anchorId => flaggedPois.has(anchorId));
-          }
-          return false;
+          // V specialModeActive: zobrazit pouze flagged chargers (s db_recommended nebo free)
+          // NEOBRAZOVAT nearby charging_location body bez db_recommended
+          return flaggedChargers.has(p.id);
         }
         return filteredChargingIds.has(p.id);
       }
