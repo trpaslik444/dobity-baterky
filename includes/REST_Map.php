@@ -4118,196 +4118,10 @@ class REST_Map {
         // Pokud je aktivní db_recommended filtr, načíst také POI a RV spots s db_recommended=1
         if ($db_recommended === '1') {
             // Načíst POI s db_recommended=1 pomocí předpočítané option
-            $poi_recommended_ids_raw = get_option('db_recommended_poi_ids', []);
-            $poi_recommended_ids = [];
-            if (is_string($poi_recommended_ids_raw)) {
-                $poi_recommended_ids = array_filter(array_map('intval', explode(',', $poi_recommended_ids_raw)));
-            } elseif (is_array($poi_recommended_ids_raw)) {
-                $poi_recommended_ids = array_filter(array_map('intval', $poi_recommended_ids_raw));
-            }
-            $poi_recommended_ids = array_filter($poi_recommended_ids, function($id) {
-                return $id > 0;
-            });
-            
-            if (!empty($poi_recommended_ids)) {
-                $poi_args = [
-                    'post_type' => 'poi',
-                    'post_status' => 'publish',
-                    'post__in' => array_values($poi_recommended_ids),
-                    'posts_per_page' => $limit,
-                    'no_found_rows' => true,
-                    'orderby' => 'post__in',
-                ];
-                
-                $poi_query = new \WP_Query($poi_args);
-                
-                foreach ($poi_query->posts as $post) {
-                    $keys = $this->get_latlng_keys_for_type('poi');
-                    $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
-                    $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
-                    
-                    if (!$lat || !$lng) continue;
-                    
-                    $properties = $this->build_minimal_properties($post, 'poi', $fields_mode, $favorite_assignments, $favorite_folders_index);
-                    
-                    // Explicitně nastavit db_recommended=1 pro POI s db_recommended=1
-                    $properties['db_recommended'] = 1;
-                    $properties['_db_recommended'] = 1; // Pro kompatibilitu s frontendem
-                    
-                    $features[] = [
-                        'type' => 'Feature',
-                        'geometry' => [
-                            'type' => 'Point',
-                            'coordinates' => [$lng, $lat]
-                        ],
-                        'properties' => $properties
-                    ];
-                }
-            } else {
-                // Fallback na meta_query pokud option neexistuje
-                $poi_args = [
-                    'post_type' => 'poi',
-                    'post_status' => 'publish',
-                    'posts_per_page' => $limit,
-                    'no_found_rows' => true,
-                    'orderby' => 'date',
-                    'order' => 'DESC',
-                    'meta_query' => [
-                        [
-                            'key' => '_db_recommended',
-                            'value' => '1',
-                            'compare' => '='
-                        ]
-                    ]
-                ];
-                
-                $poi_query = new \WP_Query($poi_args);
-                
-                foreach ($poi_query->posts as $post) {
-                    $keys = $this->get_latlng_keys_for_type('poi');
-                    $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
-                    $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
-                    
-                    if (!$lat || !$lng) continue;
-                    
-                    $properties = $this->build_minimal_properties($post, 'poi', $fields_mode, $favorite_assignments, $favorite_folders_index);
-                    
-                    $properties['db_recommended'] = 1;
-                    $properties['_db_recommended'] = 1;
-                    
-                    $features[] = [
-                        'type' => 'Feature',
-                        'geometry' => [
-                            'type' => 'Point',
-                            'coordinates' => [$lng, $lat]
-                        ],
-                        'properties' => $properties
-                    ];
-                }
-                
-                // Synchronizovat option při fallbacku
-                try {
-                    $this->sync_recommended_ids_from_meta();
-                } catch (\Exception $e) {
-                    error_log('Failed to sync recommended POI IDs during fallback: ' . $e->getMessage());
-                }
-            }
+            $this->load_recommended_posts_by_type('poi', 'db_recommended_poi_ids', $limit, $fields_mode, $favorite_assignments, $favorite_folders_index, $features);
             
             // Načíst RV spots s db_recommended=1 pomocí předpočítané option
-            $rv_recommended_ids_raw = get_option('db_recommended_rv_ids', []);
-            $rv_recommended_ids = [];
-            if (is_string($rv_recommended_ids_raw)) {
-                $rv_recommended_ids = array_filter(array_map('intval', explode(',', $rv_recommended_ids_raw)));
-            } elseif (is_array($rv_recommended_ids_raw)) {
-                $rv_recommended_ids = array_filter(array_map('intval', $rv_recommended_ids_raw));
-            }
-            $rv_recommended_ids = array_filter($rv_recommended_ids, function($id) {
-                return $id > 0;
-            });
-            
-            if (!empty($rv_recommended_ids)) {
-                $rv_args = [
-                    'post_type' => 'rv_spot',
-                    'post_status' => 'publish',
-                    'post__in' => array_values($rv_recommended_ids),
-                    'posts_per_page' => $limit,
-                    'no_found_rows' => true,
-                    'orderby' => 'post__in',
-                ];
-                
-                $rv_query = new \WP_Query($rv_args);
-                
-                foreach ($rv_query->posts as $post) {
-                    $keys = $this->get_latlng_keys_for_type('rv_spot');
-                    $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
-                    $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
-                    
-                    if (!$lat || !$lng) continue;
-                    
-                    $properties = $this->build_minimal_properties($post, 'rv_spot', $fields_mode, $favorite_assignments, $favorite_folders_index);
-                    
-                    // Explicitně nastavit db_recommended=1 pro RV spot s db_recommended=1
-                    $properties['db_recommended'] = 1;
-                    $properties['_db_recommended'] = 1;
-                    
-                    $features[] = [
-                        'type' => 'Feature',
-                        'geometry' => [
-                            'type' => 'Point',
-                            'coordinates' => [$lng, $lat]
-                        ],
-                        'properties' => $properties
-                    ];
-                }
-            } else {
-                // Fallback na meta_query pokud option neexistuje
-                $rv_args = [
-                    'post_type' => 'rv_spot',
-                    'post_status' => 'publish',
-                    'posts_per_page' => $limit,
-                    'no_found_rows' => true,
-                    'orderby' => 'date',
-                    'order' => 'DESC',
-                    'meta_query' => [
-                        [
-                            'key' => '_db_recommended',
-                            'value' => '1',
-                            'compare' => '='
-                        ]
-                    ]
-                ];
-                
-                $rv_query = new \WP_Query($rv_args);
-                
-                foreach ($rv_query->posts as $post) {
-                    $keys = $this->get_latlng_keys_for_type('rv_spot');
-                    $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
-                    $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
-                    
-                    if (!$lat || !$lng) continue;
-                    
-                    $properties = $this->build_minimal_properties($post, 'rv_spot', $fields_mode, $favorite_assignments, $favorite_folders_index);
-                    
-                    $properties['db_recommended'] = 1;
-                    $properties['_db_recommended'] = 1;
-                    
-                    $features[] = [
-                        'type' => 'Feature',
-                        'geometry' => [
-                            'type' => 'Point',
-                            'coordinates' => [$lng, $lat]
-                        ],
-                        'properties' => $properties
-                    ];
-                }
-                
-                // Synchronizovat option při fallbacku
-                try {
-                    $this->sync_recommended_ids_from_meta();
-                } catch (\Exception $e) {
-                    error_log('Failed to sync recommended RV IDs during fallback: ' . $e->getMessage());
-                }
-            }
+            $this->load_recommended_posts_by_type('rv_spot', 'db_recommended_rv_ids', $limit, $fields_mode, $favorite_assignments, $favorite_folders_index, $features);
         }
         
         $response_data = [
@@ -4414,6 +4228,116 @@ class REST_Map {
     }
 
     /**
+     * Načte recommended posts daného typu a přidá je do features array
+     * 
+     * @param string $post_type Typ postu ('poi' nebo 'rv_spot')
+     * @param string $option_name Název option pro předpočítané IDs (např. 'db_recommended_poi_ids')
+     * @param int $limit Limit počtu postů
+     * @param string $fields_mode Režim polí ('minimal' nebo 'full')
+     * @param array $favorite_assignments Assignments oblíbených
+     * @param array $favorite_folders_index Index složek oblíbených
+     * @param array &$features Reference na features array, kam se přidají výsledky
+     */
+    private function load_recommended_posts_by_type($post_type, $option_name, $limit, $fields_mode, $favorite_assignments, $favorite_folders_index, &$features) {
+        // Načíst recommended IDs pomocí předpočítané option
+        $recommended_ids_raw = get_option($option_name, []);
+        $recommended_ids = [];
+        if (is_string($recommended_ids_raw)) {
+            $recommended_ids = array_filter(array_map('intval', explode(',', $recommended_ids_raw)));
+        } elseif (is_array($recommended_ids_raw)) {
+            $recommended_ids = array_filter(array_map('intval', $recommended_ids_raw));
+        }
+        $recommended_ids = array_filter($recommended_ids, function($id) {
+            return $id > 0;
+        });
+        
+        if (!empty($recommended_ids)) {
+            // Použít předpočítané IDs
+            $args = [
+                'post_type' => $post_type,
+                'post_status' => 'publish',
+                'post__in' => array_values($recommended_ids),
+                'posts_per_page' => $limit,
+                'no_found_rows' => true,
+                'orderby' => 'post__in',
+            ];
+            
+            $query = new \WP_Query($args);
+            
+            foreach ($query->posts as $post) {
+                $keys = $this->get_latlng_keys_for_type($post_type);
+                $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
+                $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
+                
+                if (!$lat || !$lng) continue;
+                
+                $properties = $this->build_minimal_properties($post, $post_type, $fields_mode, $favorite_assignments, $favorite_folders_index);
+                
+                // Explicitně nastavit db_recommended=1
+                $properties['db_recommended'] = 1;
+                $properties['_db_recommended'] = 1;
+                
+                $features[] = [
+                    'type' => 'Feature',
+                    'geometry' => [
+                        'type' => 'Point',
+                        'coordinates' => [$lng, $lat]
+                    ],
+                    'properties' => $properties
+                ];
+            }
+        } else {
+            // Fallback na meta_query pokud option neexistuje
+            $args = [
+                'post_type' => $post_type,
+                'post_status' => 'publish',
+                'posts_per_page' => $limit,
+                'no_found_rows' => true,
+                'orderby' => 'date',
+                'order' => 'DESC',
+                'meta_query' => [
+                    [
+                        'key' => '_db_recommended',
+                        'value' => '1',
+                        'compare' => '='
+                    ]
+                ]
+            ];
+            
+            $query = new \WP_Query($args);
+            
+            foreach ($query->posts as $post) {
+                $keys = $this->get_latlng_keys_for_type($post_type);
+                $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
+                $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
+                
+                if (!$lat || !$lng) continue;
+                
+                $properties = $this->build_minimal_properties($post, $post_type, $fields_mode, $favorite_assignments, $favorite_folders_index);
+                
+                $properties['db_recommended'] = 1;
+                $properties['_db_recommended'] = 1;
+                
+                $features[] = [
+                    'type' => 'Feature',
+                    'geometry' => [
+                        'type' => 'Point',
+                        'coordinates' => [$lng, $lat]
+                    ],
+                    'properties' => $properties
+                ];
+            }
+            
+            // Synchronizovat option při fallbacku
+            try {
+                $this->sync_recommended_ids_from_meta();
+            } catch (\Exception $e) {
+                error_log("Failed to sync recommended {$post_type} IDs during fallback: " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
      * Synchronizovat db_recommended_ids options z meta hodnot _db_recommended
      * Volá se při fallbacku a po uložení postu s _db_recommended flagem
      * 
@@ -4467,7 +4391,8 @@ class REST_Map {
                     $all_ids = array_merge($all_ids, $ids);
                     
                     $page++;
-                } while ($query->found_posts > ($page - 1) * $per_page);
+                    // Pokračovat dokud vracíme plný batch (pokud je méně, jsme na konci)
+                } while (count($ids) === $per_page);
                 
                 // Odfiltrovat duplicity a neplatné hodnoty
                 $all_ids = array_unique($all_ids);
