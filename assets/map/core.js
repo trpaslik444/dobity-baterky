@@ -10963,14 +10963,19 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Flagged chargers: ty, které prošly filtry (free/recommended)
       flaggedChargers = filteredChargingIds;
       
-      // Flagged POI: POI s db_recommended=1 (pokud je aktivní showOnlyRecommended)
+      // Flagged POI a RV spots: s db_recommended=1 (pokud je aktivní showOnlyRecommended)
       if (showOnlyRecommended) {
         features.forEach(f => {
           const p = f.properties || {};
-          if (p.post_type === 'poi') {
+          if (p.post_type === 'poi' || p.post_type === 'rv_spot') {
             const dbRecommended = p.db_recommended || p._db_recommended;
             if (dbRecommended === 1 || dbRecommended === '1' || dbRecommended === true) {
-              flaggedPois.add(p.id);
+              if (p.post_type === 'poi') {
+                flaggedPois.add(p.id);
+              } else if (p.post_type === 'rv_spot') {
+                // RV spots také přidat do flaggedPois pro kompatibilitu s logikou filtrování
+                flaggedPois.add(p.id);
+              }
             }
           }
         });
