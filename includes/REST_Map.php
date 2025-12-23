@@ -4144,6 +4144,12 @@ class REST_Map {
                 
                 $properties = $this->build_minimal_properties($post, 'poi', $fields_mode, $favorite_assignments, $favorite_folders_index);
                 
+                // Explicitně nastavit db_recommended=1 pro POI s db_recommended=1
+                if ($db_recommended === '1') {
+                    $properties['db_recommended'] = 1;
+                    $properties['_db_recommended'] = 1; // Pro kompatibilitu s frontendem
+                }
+                
                 $features[] = [
                     'type' => 'Feature',
                     'geometry' => [
