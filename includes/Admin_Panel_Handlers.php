@@ -52,16 +52,15 @@ class Admin_Panel_Handlers {
         $result = update_post_meta($post_id, '_db_recommended', $recommended ? '1' : '0');
         
         if ($result !== false) {
-            // Synchronizovat db_recommended_ids option z meta hodnot (pouze pro charging_location)
-            if (get_post_type($post_id) === 'charging_location') {
-                try {
-                    if (class_exists('\\DB\\REST_Map')) {
-                        $rest_map = \DB\REST_Map::get_instance();
-                        if (method_exists($rest_map, 'sync_recommended_ids_from_meta')) {
-                            $rest_map->sync_recommended_ids_from_meta();
-                        }
+            // Synchronizovat db_recommended_ids options z meta hodnot (pro všechny typy: charging_location, poi, rv_spot)
+            try {
+                if (class_exists('\\DB\\REST_Map')) {
+                    $rest_map = \DB\REST_Map::get_instance();
+                    if (method_exists($rest_map, 'sync_recommended_ids_from_meta')) {
+                        $rest_map->sync_recommended_ids_from_meta();
                     }
-                } catch (\Exception $e) {
+                }
+            } catch (\Exception $e) {
                     // Logovat chybu, ale nepřerušit běh aplikace
                     error_log('Failed to sync recommended IDs: ' . $e->getMessage());
                 }
