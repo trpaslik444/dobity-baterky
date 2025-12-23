@@ -478,6 +478,11 @@ class POI_Admin {
                 $errors[] = "POI ID {$poi_id}: " . $e->getMessage();
             }
         }
+        
+        // POZNÁMKA: Synchronizace db_recommended_ids není nutná pro POI posty,
+        // protože sync_recommended_ids_from_meta() filtruje pouze charging_location posty.
+        // Pokud se v budoucnu změní logika a POI budou také v db_recommended_ids,
+        // bude potřeba upravit synchronizaci.
 
         wp_send_json_success([
             'message' => "Úspěšně aktualizováno {$updated} POI",

@@ -2560,6 +2560,21 @@ class Charging_Location_Form {
         // DB doporučuje (flag pro mapu)
         $recommended_flag = isset($_POST['_db_recommended']) && $_POST['_db_recommended'] === '1' ? '1' : '0';
         update_post_meta($post_id, '_db_recommended', $recommended_flag);
+        
+        // Synchronizovat db_recommended_ids option z meta hodnot (pouze pro charging_location)
+        if (get_post_type($post_id) === 'charging_location') {
+            try {
+                if (class_exists('\\DB\\REST_Map')) {
+                    $rest_map = \DB\REST_Map::get_instance();
+                    if (method_exists($rest_map, 'sync_recommended_ids_from_meta')) {
+                        $rest_map->sync_recommended_ids_from_meta();
+                    }
+                }
+            } catch (\Exception $e) {
+                // Logovat chybu, ale nepřerušit běh aplikace
+                error_log('Failed to sync recommended IDs: ' . $e->getMessage());
+            }
+        }
 
         // Poskytovatel
         if (isset($_POST['_db_provider']) && is_numeric($_POST['_db_provider'])) {
