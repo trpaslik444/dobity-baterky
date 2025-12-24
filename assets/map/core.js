@@ -10953,6 +10953,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
 
     const filteredChargingIds = new Set(filteredCharging.map(fc => fc.properties?.id));
+    // Aktualizovat specialDatasetActive podle aktuálního stavu filtrů
+    // Pokud jsou aktivní speciální filtry, ale specialDatasetActive není nastaveno, nastavit ho
+    const hasSpecialFilters = filterState.free || showOnlyRecommended;
+    if (hasSpecialFilters && !specialDatasetActive) {
+      specialDatasetActive = true;
+    } else if (!hasSpecialFilters && specialDatasetActive) {
+      specialDatasetActive = false;
+    }
     const specialModeActive = specialDatasetActive && (filterState.free || showOnlyRecommended);
     
     // V specialModeActive pracujeme s flaggedChargers a flaggedPois
