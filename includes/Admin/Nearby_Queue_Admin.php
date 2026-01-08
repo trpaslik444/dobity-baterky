@@ -19,14 +19,16 @@ class Nearby_Queue_Admin {
     private $auto_processor;
     private $quota_manager;
     
-    public function __construct() {
+    public function __construct($register_menu = true) {
         $this->queue_manager = new Nearby_Queue_Manager();
         $this->processed_manager = new \DB\Jobs\Nearby_Processed_Manager();
         $this->batch_processor = new Nearby_Batch_Processor();
         $this->auto_processor = new Nearby_Auto_Processor();
         $this->quota_manager = new API_Quota_Manager();
         
-        add_action('admin_menu', array($this, 'add_admin_menu'));
+        if ($register_menu) {
+            add_action('admin_menu', array($this, 'add_admin_menu'));
+        }
         add_action('wp_ajax_db_process_nearby_batch', array($this, 'ajax_process_batch'));
         add_action('wp_ajax_db_enqueue_all_points', array($this, 'ajax_enqueue_all_points'));
         add_action('wp_ajax_db_reset_failed_items', array($this, 'ajax_reset_failed_items'));
@@ -73,7 +75,7 @@ class Nearby_Queue_Admin {
         );
     }
     
-    public function render_isochrones_settings_page() {
+    public function render_isochrones_settings_page($embedded = false) {
         // Zpracovat POST požadavek
         if (isset($_POST['submit']) && wp_verify_nonce($_POST['isochrones_nonce'], 'isochrones_settings')) {
             $isochrones_enabled = isset($_POST['isochrones_enabled']) ? 1 : 0;
@@ -98,21 +100,23 @@ class Nearby_Queue_Admin {
         ]);
         ?>
         <div class="wrap">
+            <?php if (!$embedded): ?>
             <h1>Isochrones Settings</h1>
             <nav class="nav-tab-wrapper" style="margin-top: 10px;">
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-icon-admin') ); ?>" class="nav-tab">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-icon-admin') ); ?>" class="nav-tab">
                     Správa ikon
                 </a>
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-queue') ); ?>" class="nav-tab">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-nearby&tab=queue') ); ?>" class="nav-tab">
                     Nearby Queue
                 </a>
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-settings') ); ?>" class="nav-tab">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-nearby&tab=settings') ); ?>" class="nav-tab">
                     Nearby Settings
                 </a>
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-isochrones-settings') ); ?>" class="nav-tab nav-tab-active">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-nearby&tab=isochrones') ); ?>" class="nav-tab nav-tab-active">
                     Isochrones Settings
                 </a>
             </nav>
+            <?php endif; ?>
             
             <div class="notice notice-info" style="margin: 20px 0; padding: 15px; background: #e7f3ff; border-left: 4px solid #0073aa;">
                 <h3 style="margin: 0 0 10px 0; color: #0073aa;">ℹ️ Isochrones (Dochozí okruhy)</h3>
@@ -184,28 +188,30 @@ class Nearby_Queue_Admin {
         <?php
     }
     
-    public function render_queue_page() {
+    public function render_queue_page($embedded = false) {
         $stats = $this->queue_manager->get_stats();
         $auto_status = $this->auto_processor->get_auto_status();
         $quota_stats = $this->quota_manager->get_usage_stats();
         $retry_until = $this->quota_manager->get_retry_until();
         ?>
         <div class="wrap">
+            <?php if (!$embedded): ?>
             <h1>Nearby Queue Management</h1>
             <nav class="nav-tab-wrapper" style="margin-top: 10px;">
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-icon-admin') ); ?>" class="nav-tab">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-icon-admin') ); ?>" class="nav-tab">
                     Správa ikon
                 </a>
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-queue') ); ?>" class="nav-tab nav-tab-active">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-nearby&tab=queue') ); ?>" class="nav-tab nav-tab-active">
                     Nearby Queue
                 </a>
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-settings') ); ?>" class="nav-tab">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-nearby&tab=settings') ); ?>" class="nav-tab">
                     Nearby Settings
                 </a>
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-isochrones-settings') ); ?>" class="nav-tab">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-nearby&tab=isochrones') ); ?>" class="nav-tab">
                     Isochrones Settings
                 </a>
             </nav>
+            <?php endif; ?>
             <p>Správa fronty pro batch zpracování nearby bodů.</p>
             
             <div class="notice notice-info" style="margin: 20px 0; padding: 15px; background: #e7f3ff; border-left: 4px solid #0073aa;">
@@ -1288,7 +1294,12 @@ class Nearby_Queue_Admin {
     /**
      * Renderovat stránku zpracovaných míst
      */
-    public function render_processed_page() {
+    public function render_processed_page($embedded = false) {
+        // Nastavit URL parametry podle embedded režimu
+        $page_slug = $embedded ? 'db-nearby' : 'db-nearby-processed';
+        $base_admin = $embedded ? admin_url('admin.php') : admin_url('tools.php');
+        $tab_args = $embedded ? array('tab' => 'processed') : array();
+        
         $stats = $this->processed_manager->get_processed_stats();
         $current_page = isset($_GET['paged']) ? max(1, (int)$_GET['paged']) : 1;
         $limit = 50;
@@ -1318,7 +1329,9 @@ class Nearby_Queue_Admin {
         $pagination = $this->processed_manager->get_processed_pagination($limit, $offset, $filters);
         ?>
         <div class="wrap">
+            <?php if (!$embedded): ?>
             <h1>Zpracovaná místa (Nearby Data)</h1>
+            <?php endif; ?>
             <p>Správa míst, která už mají zpracovaná nearby data přes API.</p>
             
             <!-- Statistiky -->
@@ -1361,8 +1374,11 @@ class Nearby_Queue_Admin {
             <!-- Filtry -->
             <div class="db-filters" style="margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 8px;">
                 <h3>Filtry</h3>
-                <form method="get" style="display: flex; gap: 15px; align-items: end; flex-wrap: wrap;">
-                    <input type="hidden" name="page" value="db-nearby-processed">
+                <form method="get" action="<?php echo esc_url($base_admin); ?>" style="display: flex; gap: 15px; align-items: end; flex-wrap: wrap;">
+                    <input type="hidden" name="page" value="<?php echo esc_attr($page_slug); ?>">
+                    <?php if ($embedded): ?>
+                    <input type="hidden" name="tab" value="processed">
+                    <?php endif; ?>
                     <div>
                         <label for="origin_type">Typ původu:</label>
                         <select name="origin_type" id="origin_type">
@@ -1398,7 +1414,16 @@ class Nearby_Queue_Admin {
                     <!-- Datové filtry odstraněny -->
                     <div>
                         <input type="submit" class="button" value="Filtrovat">
-                        <a href="?page=db-nearby-processed" class="button">Reset</a>
+                        <?php
+                        $reset_url = add_query_arg(
+                            array_merge(
+                                array('page' => $page_slug),
+                                $tab_args
+                            ),
+                            $base_admin
+                        );
+                        ?>
+                        <a href="<?php echo esc_url($reset_url); ?>" class="button">Reset</a>
                     </div>
                 </form>
             </div>
@@ -1468,13 +1493,17 @@ class Nearby_Queue_Admin {
             <?php if ($pagination['total_pages'] > 1): ?>
                 <div class="db-pagination" style="margin: 20px 0; text-align: center;">
                     <?php
-                    $base_url = add_query_arg(array(
-                        'page' => 'db-nearby-processed',
-                        'origin_type' => $filters['origin_type'] ?? '',
-                        'api_provider' => $filters['api_provider'] ?? '',
-                        'has_nearby' => $has_nearby_selected,
-                        'has_isochrones' => $has_iso_selected
-                    ), admin_url('tools.php'));
+                    $pagination_args = array_merge(
+                        array(
+                            'page' => $page_slug,
+                            'origin_type' => $filters['origin_type'] ?? '',
+                            'api_provider' => $filters['api_provider'] ?? '',
+                            'has_nearby' => $has_nearby_selected,
+                            'has_isochrones' => $has_iso_selected
+                        ),
+                        $tab_args
+                    );
+                    $base_url = add_query_arg($pagination_args, $base_admin);
                     
                     echo paginate_links(array(
                         'base' => $base_url . '&paged=%#%',

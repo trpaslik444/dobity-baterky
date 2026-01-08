@@ -483,13 +483,8 @@ add_action('plugins_loaded', function() {
     }
 });
 
-// Administrační stránka pro správu ikon (na konec)
-if ( file_exists( __DIR__ . '/includes/Icon_Admin.php' ) ) {
-    require_once __DIR__ . '/includes/Icon_Admin.php';
-    if ( class_exists( 'DB\Icon_Admin' ) ) {
-        DB\Icon_Admin::get_instance();
-    }
-}
+// Administrační stránka pro správu ikon - registrace přes Nearby_Admin_Shell
+// (Icon_Admin se načítá v shellu s vypnutou registrací menu)
 
 // Charging Icon Manager - správa SVG ikon pro typy konektorů
 if ( file_exists( __DIR__ . '/includes/Charging_Icon_Manager.php' ) ) {
@@ -1070,20 +1065,16 @@ if (is_admin()) {
             }
         }
         
-        // Nearby Settings - routing konfigurace
-        if ( file_exists( __DIR__ . '/includes/Admin/Nearby_Settings.php' ) ) {
-            require_once __DIR__ . '/includes/Admin/Nearby_Settings.php';
-            if ( class_exists( 'DB\Admin\Nearby_Settings' ) ) {
-                new DB\Admin\Nearby_Settings();
+        // Nearby Admin Shell - centralizované UI pro Nearby
+        if ( file_exists( __DIR__ . '/includes/Admin/Nearby_Admin_Shell.php' ) ) {
+            require_once __DIR__ . '/includes/Admin/Nearby_Admin_Shell.php';
+            if ( class_exists( 'DB\Admin\Nearby_Admin_Shell' ) ) {
+                new DB\Admin\Nearby_Admin_Shell();
             }
         }
         
-        if ( file_exists( __DIR__ . '/includes/Admin/Nearby_Queue_Admin.php' ) ) {
-            require_once __DIR__ . '/includes/Admin/Nearby_Queue_Admin.php';
-            if ( class_exists( 'DB\Admin\Nearby_Queue_Admin' ) ) {
-                new DB\Admin\Nearby_Queue_Admin();
-            }
-        }
+        // Nearby Settings a Nearby_Queue_Admin se načítají přes shell s vypnutou registrací menu
+        // (shell je instancuje s $register_menu = false)
         
         if ( file_exists( __DIR__ . '/includes/Admin/POI_Nearby_Queue_Admin.php' ) ) {
             require_once __DIR__ . '/includes/Admin/POI_Nearby_Queue_Admin.php';
@@ -1157,13 +1148,8 @@ if ( file_exists( __DIR__ . '/includes/Services/POI_Microservice_Client.php' ) )
     require_once __DIR__ . '/includes/Services/POI_Microservice_Client.php';
 }
 
-// POI Microservice Admin rozhraní
-if ( file_exists( __DIR__ . '/includes/Admin/POI_Service_Admin.php' ) ) {
-    require_once __DIR__ . '/includes/Admin/POI_Service_Admin.php';
-    if ( class_exists( 'DB\Admin\POI_Service_Admin' ) ) {
-        DB\Admin\POI_Service_Admin::get_instance();
-    }
-}
+// POI Microservice Admin rozhraní - registrace přes Nearby_Admin_Shell
+// (POI_Service_Admin se načítá v shellu s vypnutou registrací menu)
 
 // REST API pro synchronizaci POIs z POI microservice (volitelné - pro externí integrace)
 if ( file_exists( __DIR__ . '/includes/REST_POI_Sync.php' ) ) {

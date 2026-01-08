@@ -8,8 +8,10 @@ namespace DB\Admin;
 
 class Nearby_Settings {
     
-    public function __construct() {
-        add_action('admin_menu', array($this, 'add_admin_menu'));
+    public function __construct($register_menu = true) {
+        if ($register_menu) {
+            add_action('admin_menu', array($this, 'add_admin_menu'));
+        }
         add_action('admin_init', array($this, 'register_settings'));
     }
     
@@ -62,7 +64,7 @@ class Nearby_Settings {
     }
 
 
-    public function render_settings_page() {
+    public function render_settings_page($embedded = false) {
         $config = get_option('db_nearby_config', array(
             'provider' => 'ors',
             'ors_api_key' => '',
@@ -79,18 +81,20 @@ class Nearby_Settings {
 
         ?>
         <div class="wrap">
+            <?php if (!$embedded): ?>
             <h1>Nearby Places Settings</h1>
             <nav class="nav-tab-wrapper" style="margin-top: 10px;">
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-icon-admin') ); ?>" class="nav-tab">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-icon-admin') ); ?>" class="nav-tab">
                     Správa ikon
                 </a>
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-queue') ); ?>" class="nav-tab">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-nearby&tab=queue') ); ?>" class="nav-tab">
                     Nearby Queue
                 </a>
-                <a href="<?php echo esc_url( admin_url('tools.php?page=db-nearby-settings') ); ?>" class="nav-tab nav-tab-active">
+                <a href="<?php echo esc_url( admin_url('admin.php?page=db-nearby&tab=settings') ); ?>" class="nav-tab nav-tab-active">
                     Nearby Settings
                 </a>
             </nav>
+            <?php endif; ?>
             <p>Konfigurace pro walking distance routing a cache.</p>
 
             <form method="post" action="options.php">
