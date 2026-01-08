@@ -12,22 +12,35 @@ if (!defined('ABSPATH')) {
 class POI_Service_Admin {
     private static $instance = null;
 
-    public static function get_instance() {
+    public static function get_instance($register_menu = true) {
         if (self::$instance === null) {
-            self::$instance = new self();
+            self::$instance = new self($register_menu);
         }
         return self::$instance;
     }
 
-    public function __construct() {
-        add_action('admin_menu', array($this, 'add_admin_menu'));
+    public function __construct($register_menu = true) {
+        if ($register_menu) {
+            add_action('admin_menu', array($this, 'add_admin_menu'));
+        }
         add_action('admin_init', array($this, 'register_settings'));
+        add_action('admin_init', array($this, 'redirect_old_url'));
         add_action('admin_post_db_poi_service_test', array($this, 'handle_test_connection'));
+    }
+    
+    public function redirect_old_url() {
+        if (isset($_GET['page']) && $_GET['page'] === 'db-poi-service') {
+            $request_uri = isset($_SERVER['REQUEST_URI']) ? $_SERVER['REQUEST_URI'] : '';
+            if (strpos($request_uri, 'tools.php') !== false) {
+                wp_safe_redirect(admin_url('admin.php?page=db-poi-service'));
+                exit;
+            }
+        }
     }
 
     public function add_admin_menu() {
         add_submenu_page(
-            'tools.php',
+            'db-admin',
             'POI Microservice',
             'POI Microservice',
             'manage_options',
@@ -140,14 +153,14 @@ class POI_Service_Admin {
                 'page' => 'db-poi-service',
                 'test_result' => 'error',
                 'test_message' => urlencode($result->get_error_message()),
-            ), admin_url('tools.php')));
+            ), admin_url('admin.php')));
         } else {
             $count = isset($result['pois']) ? count($result['pois']) : 0;
             wp_redirect(add_query_arg(array(
                 'page' => 'db-poi-service',
                 'test_result' => 'success',
                 'test_message' => urlencode(sprintf('Úspěšně připojeno! Nalezeno %d POIs.', $count)),
-            ), admin_url('tools.php')));
+            ), admin_url('admin.php')));
         }
         exit;
     }

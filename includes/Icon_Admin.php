@@ -9,9 +9,9 @@ namespace DB;
 class Icon_Admin {
     private static $instance = null;
 
-    public static function get_instance() {
+    public static function get_instance($register_menu = true) {
         if ( self::$instance === null ) {
-            self::$instance = new self();
+            self::$instance = new self($register_menu);
         }
         return self::$instance;
     }
@@ -171,14 +171,27 @@ class Icon_Admin {
         <?php
     }
 
-    private function __construct() {
-        add_action( 'admin_menu', array( $this, 'add_menu_page' ) );
+    public function __construct($register_menu = true) {
+        if ($register_menu) {
+            add_action( 'admin_menu', array( $this, 'add_menu_page' ) );
+        }
         add_action( 'admin_init', array( $this, 'handle_form' ) );
+        add_action( 'admin_init', array( $this, 'redirect_old_url' ) );
+    }
+    
+    public function redirect_old_url() {
+        if ( isset( $_GET['page'] ) && $_GET['page'] === 'db-icon-admin' ) {
+            $request_uri = isset( $_SERVER['REQUEST_URI'] ) ? $_SERVER['REQUEST_URI'] : '';
+            if ( strpos( $request_uri, 'tools.php' ) !== false ) {
+                wp_safe_redirect( admin_url( 'admin.php?page=db-icon-admin' ) );
+                exit;
+            }
+        }
     }
 
     public function add_menu_page() {
         add_submenu_page(
-            'tools.php', // Parent slug - Tools menu
+            'db-admin', // Parent slug - Dobitý Baterky menu
             __( 'Správa ikon', 'dobity-baterky' ),
             __( 'Správa ikon', 'dobity-baterky' ),
             'manage_options',
