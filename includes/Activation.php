@@ -39,6 +39,9 @@ class Activation {
         self::create_ev_sources_table();
         self::create_ev_import_files_table();
         
+        // Seedování základních zdrojů do tabulky ev_sources
+        self::seed_ev_sources();
+        
         // Vypnout automatické zpracování při aktivaci
         update_option('db_nearby_auto_enabled', false);
         
@@ -166,6 +169,13 @@ class Activation {
         if ( $exists_ev_import_files !== $ev_import_files_table ) {
             self::create_ev_import_files_table();
         }
+        
+        // Zajistit seedování zdrojů (pokud tabulka existuje, ale je prázdná)
+        $ev_sources_table = $wpdb->prefix . 'ev_sources';
+        $source_count = $wpdb->get_var("SELECT COUNT(*) FROM {$ev_sources_table}");
+        if ($source_count == 0) {
+            self::seed_ev_sources();
+        }
     }
     
     /**
@@ -285,5 +295,79 @@ class Activation {
         ) {$charset_collate};";
         
         dbDelta($sql);
+    }
+    
+    /**
+     * Seeduje základní zdroje dat do tabulky ev_sources
+     */
+    private static function seed_ev_sources(): void {
+        global $wpdb;
+        $table = $wpdb->prefix . 'ev_sources';
+        
+        // Zkontrolovat, zda tabulka existuje
+        $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            return; // Tabulka ještě neexistuje, seedování proběhne později
+        }
+        
+        // Základní zdroje dat - implementované adaptéry
+        $sources = [
+            [
+                'country_code' => 'CZ',
+                'adapter_key' => 'cz_mpo',
+                'landing_url' => 'https://www.mpo.gov.cz/cz/energetika/statistika/evidence-dobijecich-stanic/',
+                'fetch_type' => 'xlsx',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+            [
+                'country_code' => 'DE',
+                'adapter_key' => 'de_bnetza',
+                'landing_url' => 'https://www.bundesnetzagentur.de/DE/Sachgebiete/ElektrizitaetundGas/Unternehmen_Institutionen/HandelundVermarktung/Ladesaeulenregister/Ladesaeulenregister.html',
+                'fetch_type' => 'csv',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+            [
+                'country_code' => 'FR',
+                'adapter_key' => 'fr_irve',
+                'landing_url' => 'https://www.data.gouv.fr/fr/datasets/fichier-consolide-des-bornes-de-recharge-pour-vehicules-electriques/',
+                'fetch_type' => 'rest',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+            [
+                'country_code' => 'ES',
+                'adapter_key' => 'es_arcgis',
+                'landing_url' => 'https://services.arcgis.com/HRPe58bUySqysFmQ/arcgis/rest/services/Red_Recarga/FeatureServer/0',
+                'fetch_type' => 'arcgis',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+            [
+                'country_code' => 'AT',
+                'adapter_key' => 'at_econtrol',
+                'landing_url' => 'https://www.e-control.at/',
+                'fetch_type' => 'rest',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+        ];
+        
+        foreach ($sources as $source) {
+            // Použít INSERT ... ON DUPLICATE KEY UPDATE pro idempotentní seedování
+            $wpdb->replace(
+                $table,
+                $source,
+                [
+                    '%s', // country_code
+                    '%s', // adapter_key
+                    '%s', // landing_url
+                    '%s', // fetch_type
+                    '%s', // update_frequency
+                    '%d'  // enabled
+                ]
+            );
+        }
     }
 }
