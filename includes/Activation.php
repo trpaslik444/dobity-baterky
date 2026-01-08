@@ -35,6 +35,13 @@ class Activation {
         // Vytvoření tabulky pro sledování denní kvóty Places API
         self::create_places_usage_table();
         
+        // Vytvoření tabulek pro EV Data Bridge
+        self::create_ev_sources_table();
+        self::create_ev_import_files_table();
+        
+        // Seedování základních zdrojů do tabulky ev_sources
+        self::seed_ev_sources();
+        
         // Vypnout automatické zpracování při aktivaci
         update_option('db_nearby_auto_enabled', false);
         
@@ -149,6 +156,26 @@ class Activation {
         if ( $exists_poi_queue !== $poi_queue_table ) {
             self::create_poi_nearby_queue_table();
         }
+        
+        // Zajistit existenci tabulek pro EV Data Bridge
+        $ev_sources_table = $wpdb->prefix . 'ev_sources';
+        $exists_ev_sources = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ev_sources_table ) );
+        if ( $exists_ev_sources !== $ev_sources_table ) {
+            self::create_ev_sources_table();
+        }
+        
+        $ev_import_files_table = $wpdb->prefix . 'ev_import_files';
+        $exists_ev_import_files = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ev_import_files_table ) );
+        if ( $exists_ev_import_files !== $ev_import_files_table ) {
+            self::create_ev_import_files_table();
+        }
+        
+        // Zajistit seedování zdrojů (pokud tabulka existuje, ale je prázdná)
+        $ev_sources_table = $wpdb->prefix . 'ev_sources';
+        $source_count = $wpdb->get_var("SELECT COUNT(*) FROM {$ev_sources_table}");
+        if ($source_count == 0) {
+            self::seed_ev_sources();
+        }
     }
     
     /**
@@ -203,5 +230,144 @@ class Activation {
             KEY api_name_idx (api_name)
         ) {$charset_collate};";
         dbDelta($sql);
+    }
+    
+    /**
+     * Vytvoří tabulku pro EV Data Bridge zdroje (ev_sources)
+     */
+    private static function create_ev_sources_table() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'ev_sources';
+        $charset_collate = $wpdb->get_charset_collate();
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        
+        $sql = "CREATE TABLE {$table_name} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            country_code VARCHAR(2) NOT NULL,
+            adapter_key VARCHAR(50) NOT NULL,
+            landing_url TEXT DEFAULT NULL,
+            fetch_type VARCHAR(20) NOT NULL DEFAULT 'rest',
+            update_frequency VARCHAR(20) NOT NULL DEFAULT 'monthly',
+            enabled TINYINT(1) NOT NULL DEFAULT 1,
+            last_version_label VARCHAR(255) DEFAULT NULL,
+            last_success_at DATETIME DEFAULT NULL,
+            last_error_at DATETIME DEFAULT NULL,
+            last_error_message TEXT DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY unique_country_adapter (country_code, adapter_key),
+            KEY country_code_idx (country_code),
+            KEY adapter_key_idx (adapter_key),
+            KEY enabled_idx (enabled)
+        ) {$charset_collate};";
+        
+        dbDelta($sql);
+    }
+    
+    /**
+     * Vytvoří tabulku pro EV Data Bridge import soubory (ev_import_files)
+     */
+    private static function create_ev_import_files_table() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'ev_import_files';
+        $charset_collate = $wpdb->get_charset_collate();
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        
+        $sql = "CREATE TABLE {$table_name} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            source_id BIGINT(20) UNSIGNED NOT NULL,
+            source_url TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_size BIGINT(20) UNSIGNED NOT NULL,
+            file_sha256 VARCHAR(64) NOT NULL,
+            content_type VARCHAR(255) DEFAULT NULL,
+            etag VARCHAR(255) DEFAULT NULL,
+            last_modified VARCHAR(255) DEFAULT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            download_completed_at DATETIME DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY source_id_idx (source_id),
+            KEY file_sha256_idx (file_sha256),
+            KEY status_idx (status),
+            KEY download_completed_at_idx (download_completed_at)
+        ) {$charset_collate};";
+        
+        dbDelta($sql);
+    }
+    
+    /**
+     * Seeduje základní zdroje dat do tabulky ev_sources
+     */
+    private static function seed_ev_sources(): void {
+        global $wpdb;
+        $table = $wpdb->prefix . 'ev_sources';
+        
+        // Zkontrolovat, zda tabulka existuje
+        $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            return; // Tabulka ještě neexistuje, seedování proběhne později
+        }
+        
+        // Základní zdroje dat - implementované adaptéry
+        $sources = [
+            [
+                'country_code' => 'CZ',
+                'adapter_key' => 'cz_mpo',
+                'landing_url' => 'https://www.mpo.gov.cz/cz/energetika/statistika/evidence-dobijecich-stanic/',
+                'fetch_type' => 'xlsx',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+            [
+                'country_code' => 'DE',
+                'adapter_key' => 'de_bnetza',
+                'landing_url' => 'https://www.bundesnetzagentur.de/DE/Sachgebiete/ElektrizitaetundGas/Unternehmen_Institutionen/HandelundVermarktung/Ladesaeulenregister/Ladesaeulenregister.html',
+                'fetch_type' => 'csv',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+            [
+                'country_code' => 'FR',
+                'adapter_key' => 'fr_irve',
+                'landing_url' => 'https://www.data.gouv.fr/fr/datasets/fichier-consolide-des-bornes-de-recharge-pour-vehicules-electriques/',
+                'fetch_type' => 'rest',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+            [
+                'country_code' => 'ES',
+                'adapter_key' => 'es_arcgis',
+                'landing_url' => 'https://services.arcgis.com/HRPe58bUySqysFmQ/arcgis/rest/services/Red_Recarga/FeatureServer/0',
+                'fetch_type' => 'arcgis',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+            [
+                'country_code' => 'AT',
+                'adapter_key' => 'at_econtrol',
+                'landing_url' => 'https://www.e-control.at/',
+                'fetch_type' => 'rest',
+                'update_frequency' => 'monthly',
+                'enabled' => 1
+            ],
+        ];
+        
+        foreach ($sources as $source) {
+            // Použít INSERT ... ON DUPLICATE KEY UPDATE pro idempotentní seedování
+            $wpdb->replace(
+                $table,
+                $source,
+                [
+                    '%s', // country_code
+                    '%s', // adapter_key
+                    '%s', // landing_url
+                    '%s', // fetch_type
+                    '%s', // update_frequency
+                    '%d'  // enabled
+                ]
+            );
+        }
     }
 }

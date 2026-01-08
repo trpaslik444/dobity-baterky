@@ -246,6 +246,43 @@ spl_autoload_register( function ( $class ) {
     }
 } );
 
+// PSR-4 Autoloader pro EVDataBridge namespace
+spl_autoload_register( function ( $class ) {
+    try {
+        // Namespace prefix
+        $prefix = 'EVDataBridge\\';
+        $base_dir = DB_PLUGIN_DIR . 'includes/';
+
+        // Kontrola namespace
+        $len = strlen( $prefix );
+        if ( strncmp( $prefix, $class, $len ) !== 0 ) {
+            return;
+        }
+
+        // Získání relativní třídy
+        $relative_class = substr( $class, $len );
+
+        // Nahrazení namespace separátorů za directory separátory
+        $file = $base_dir . str_replace( '\\', '/', $relative_class ) . '.php';
+
+        // Načtení souboru pokud existuje
+        if ( file_exists( $file ) ) {
+            require_once $file;
+        }
+        // Pokud soubor neexistuje, mlčky ignoruj
+    } catch ( Exception $e ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( "[AUTOLOADER ERROR] Chyba při načítání {$class}: " . $e->getMessage() );
+        }
+        return;
+    } catch ( Error $e ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( "[AUTOLOADER FATAL] Fatal error při načítání {$class}: " . $e->getMessage() );
+        }
+        return;
+    }
+} );
+
 // Načtení Database Optimizer
 require_once DB_PLUGIN_DIR . 'includes/Database_Optimizer.php';
 
@@ -1070,6 +1107,14 @@ if (is_admin()) {
             }
         }
         
+        // EV Data Bridge Admin rozhraní
+        if ( file_exists( __DIR__ . '/includes/Admin/Admin_Manager.php' ) ) {
+            require_once __DIR__ . '/includes/Admin/Admin_Manager.php';
+            if ( class_exists( 'EVDataBridge\Admin\Admin_Manager' ) ) {
+                new EVDataBridge\Admin\Admin_Manager();
+            }
+        }
+        
         // Inicializovat automatické zpracování
         if ( file_exists( __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php' ) ) {
             require_once __DIR__ . '/includes/Jobs/Nearby_Auto_Processor.php';
@@ -1196,6 +1241,13 @@ if (defined('WP_CLI') && WP_CLI) {
         require_once __DIR__ . '/includes/CLI/Nearby_Queue_Command.php';
         if ( class_exists( 'DB\\CLI\\Nearby_Queue_Command' ) ) {
             \WP_CLI::add_command('db-nearby', 'DB\\CLI\\Nearby_Queue_Command');
+        }
+    }
+    // EV Data Bridge WP-CLI commands
+    if ( file_exists( __DIR__ . '/includes/CLI/EV_Bridge_Command.php' ) ) {
+        require_once __DIR__ . '/includes/CLI/EV_Bridge_Command.php';
+        if ( class_exists( 'EVDataBridge\\CLI\\EV_Bridge_Command' ) ) {
+            \WP_CLI::add_command('ev-bridge', 'EVDataBridge\\CLI\\EV_Bridge_Command');
         }
     }
 }

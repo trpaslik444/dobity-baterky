@@ -39,33 +39,65 @@ class Admin_Manager {
         
         wp_enqueue_style(
             'ev-data-bridge-admin',
-            EV_DATA_BRIDGE_PLUGIN_URL . 'assets/admin.css',
+            DB_PLUGIN_URL . 'assets/admin.css',
             [],
-            EV_DATA_BRIDGE_VERSION
+            DB_PLUGIN_VERSION
         );
         
         wp_enqueue_script(
             'ev-data-bridge-admin',
-            EV_DATA_BRIDGE_PLUGIN_URL . 'assets/admin.js',
+            DB_PLUGIN_URL . 'assets/admin.js',
             ['jquery'],
-            EV_DATA_BRIDGE_VERSION,
+            DB_PLUGIN_VERSION,
             true
         );
     }
     
     public function admin_page(): void {
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to access this page.'));
+        }
+        
         echo '<div class="wrap">';
         echo '<h1>EV Data Bridge</h1>';
         echo '<p>WordPress plugin for importing and normalizing EV charging station data from national sources across EU27+ countries.</p>';
-        echo '<p><a href="' . admin_url('admin.php?page=ev-data-bridge-sources') . '" class="button button-primary">View Sources</a></p>';
+        echo '<p><a href="' . esc_url(admin_url('admin.php?page=ev-data-bridge-sources')) . '" class="button button-primary">View Sources</a></p>';
         echo '</div>';
     }
     
     public function sources_page(): void {
+        // Check user capabilities
+        if (!current_user_can('manage_options')) {
+            wp_die(__('You do not have sufficient permissions to access this page.'));
+        }
+        
         global $wpdb;
         
         $table = $wpdb->prefix . 'ev_sources';
-        $sources = $wpdb->get_results("SELECT * FROM $table ORDER BY country_code, adapter_key");
+        
+        // Check if table exists
+        $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $table));
+        if ($table_exists !== $table) {
+            echo '<div class="wrap">';
+            echo '<h1>EV Data Bridge - Sources</h1>';
+            echo '<div class="notice notice-error"><p>Database table not found. Please deactivate and reactivate the plugin.</p></div>';
+            echo '</div>';
+            return;
+        }
+        
+        // Escape table name for SQL query (WordPress prefix is safe, but we'll use backticks for consistency)
+        $table_escaped = '`' . str_replace('`', '``', $table) . '`';
+        $sources = $wpdb->get_results("SELECT * FROM {$table_escaped} ORDER BY country_code, adapter_key");
+        
+        // Check for database errors
+        if ($wpdb->last_error) {
+            echo '<div class="wrap">';
+            echo '<h1>EV Data Bridge - Sources</h1>';
+            echo '<div class="notice notice-error"><p>Database error: ' . esc_html($wpdb->last_error) . '</p></div>';
+            echo '</div>';
+            return;
+        }
         
         echo '<div class="wrap">';
         echo '<h1>EV Data Bridge - Sources</h1>';
@@ -73,6 +105,7 @@ class Admin_Manager {
         
         if (empty($sources)) {
             echo '<div class="notice notice-warning"><p>No sources found. Please activate the plugin to seed the registry.</p></div>';
+            echo '</div>';
             return;
         }
         
@@ -99,10 +132,16 @@ class Admin_Manager {
             echo '<tr>';
             echo '<td><strong>' . esc_html($source->country_code) . '</strong></td>';
             echo '<td><code>' . esc_html($source->adapter_key) . '</code></td>';
-            echo '<td>' . esc_html($source->landing_url) . '</td>';
+            echo '<td>';
+            if (!empty($source->landing_url)) {
+                echo '<a href="' . esc_url($source->landing_url) . '" target="_blank" rel="noopener noreferrer">' . esc_html($source->landing_url) . '</a>';
+            } else {
+                echo 'N/A';
+            }
+            echo '</td>';
             echo '<td>' . esc_html(strtoupper($source->fetch_type)) . '</td>';
             echo '<td>' . esc_html($source->update_frequency) . '</td>';
-            echo '<td><span class="status-' . $status_class . '">' . esc_html($status_text) . '</span></td>';
+            echo '<td><span class="status-' . esc_attr($status_class) . '">' . esc_html($status_text) . '</span></td>';
             echo '<td>' . esc_html($source->last_version_label ?? 'N/A') . '</td>';
             echo '<td>' . esc_html($source->last_success_at ?? 'Never') . '</td>';
             echo '<td>';
