@@ -123,9 +123,9 @@ define('DB_POI_SERVICE_URL', 'https://dobitybaterky.cz/api/pois');
 
 ### 2. WP-CLI
 
-```bash
-wp eval-file scripts/test-poi-sync.php
-```
+Testování lze provést pomocí:
+- Admin rozhraní: `Tools > POI Microservice > Testovat připojení`
+- Přímé volání API: `curl https://your-site.com:3333/api/pois/nearby?lat=50.0755&lon=14.4378&radius=2000`
 
 ### 3. Manuální test
 

@@ -35,6 +35,10 @@ class Activation {
         // Vytvoření tabulky pro sledování denní kvóty Places API
         self::create_places_usage_table();
         
+        // Vytvoření tabulek pro EV Data Bridge
+        self::create_ev_sources_table();
+        self::create_ev_import_files_table();
+        
         // Vypnout automatické zpracování při aktivaci
         update_option('db_nearby_auto_enabled', false);
         
@@ -149,6 +153,19 @@ class Activation {
         if ( $exists_poi_queue !== $poi_queue_table ) {
             self::create_poi_nearby_queue_table();
         }
+        
+        // Zajistit existenci tabulek pro EV Data Bridge
+        $ev_sources_table = $wpdb->prefix . 'ev_sources';
+        $exists_ev_sources = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ev_sources_table ) );
+        if ( $exists_ev_sources !== $ev_sources_table ) {
+            self::create_ev_sources_table();
+        }
+        
+        $ev_import_files_table = $wpdb->prefix . 'ev_import_files';
+        $exists_ev_import_files = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $ev_import_files_table ) );
+        if ( $exists_ev_import_files !== $ev_import_files_table ) {
+            self::create_ev_import_files_table();
+        }
     }
     
     /**
@@ -202,6 +219,71 @@ class Activation {
             PRIMARY KEY  (usage_date, api_name),
             KEY api_name_idx (api_name)
         ) {$charset_collate};";
+        dbDelta($sql);
+    }
+    
+    /**
+     * Vytvoří tabulku pro EV Data Bridge zdroje (ev_sources)
+     */
+    private static function create_ev_sources_table() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'ev_sources';
+        $charset_collate = $wpdb->get_charset_collate();
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        
+        $sql = "CREATE TABLE {$table_name} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            country_code VARCHAR(2) NOT NULL,
+            adapter_key VARCHAR(50) NOT NULL,
+            landing_url TEXT DEFAULT NULL,
+            fetch_type VARCHAR(20) NOT NULL DEFAULT 'rest',
+            update_frequency VARCHAR(20) NOT NULL DEFAULT 'monthly',
+            enabled TINYINT(1) NOT NULL DEFAULT 1,
+            last_version_label VARCHAR(255) DEFAULT NULL,
+            last_success_at DATETIME DEFAULT NULL,
+            last_error_at DATETIME DEFAULT NULL,
+            last_error_message TEXT DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            UNIQUE KEY unique_country_adapter (country_code, adapter_key),
+            KEY country_code_idx (country_code),
+            KEY adapter_key_idx (adapter_key),
+            KEY enabled_idx (enabled)
+        ) {$charset_collate};";
+        
+        dbDelta($sql);
+    }
+    
+    /**
+     * Vytvoří tabulku pro EV Data Bridge import soubory (ev_import_files)
+     */
+    private static function create_ev_import_files_table() {
+        global $wpdb;
+        $table_name = $wpdb->prefix . 'ev_import_files';
+        $charset_collate = $wpdb->get_charset_collate();
+        require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+        
+        $sql = "CREATE TABLE {$table_name} (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            source_id BIGINT(20) UNSIGNED NOT NULL,
+            source_url TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_size BIGINT(20) UNSIGNED NOT NULL,
+            file_sha256 VARCHAR(64) NOT NULL,
+            content_type VARCHAR(255) DEFAULT NULL,
+            etag VARCHAR(255) DEFAULT NULL,
+            last_modified VARCHAR(255) DEFAULT NULL,
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            download_completed_at DATETIME DEFAULT NULL,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY  (id),
+            KEY source_id_idx (source_id),
+            KEY file_sha256_idx (file_sha256),
+            KEY status_idx (status),
+            KEY download_completed_at_idx (download_completed_at)
+        ) {$charset_collate};";
+        
         dbDelta($sql);
     }
 }

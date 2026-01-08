@@ -39,16 +39,16 @@ class Admin_Manager {
         
         wp_enqueue_style(
             'ev-data-bridge-admin',
-            EV_DATA_BRIDGE_PLUGIN_URL . 'assets/admin.css',
+            DB_PLUGIN_URL . 'assets/admin.css',
             [],
-            EV_DATA_BRIDGE_VERSION
+            DB_PLUGIN_VERSION
         );
         
         wp_enqueue_script(
             'ev-data-bridge-admin',
-            EV_DATA_BRIDGE_PLUGIN_URL . 'assets/admin.js',
+            DB_PLUGIN_URL . 'assets/admin.js',
             ['jquery'],
-            EV_DATA_BRIDGE_VERSION,
+            DB_PLUGIN_VERSION,
             true
         );
     }

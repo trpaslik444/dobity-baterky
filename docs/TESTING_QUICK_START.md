@@ -43,9 +43,9 @@ define('DB_POI_SERVICE_URL', 'http://localhost:3333');
 
 ### 4. Test synchronizace (WP-CLI)
 
-```bash
-wp eval-file scripts/test-poi-sync.php
-```
+Testování synchronizace lze provést pomocí:
+- Admin rozhraní: `Tools > POI Microservice > Testovat připojení`
+- WP-CLI: `wp db poi sync --lat=50.0755 --lon=14.4378` (pokud je příkaz dostupný)
 
 **Očekávaný výstup**:
 ```

@@ -501,7 +501,7 @@ class EV_Bridge_Command {
      * Validate transform output against schema
      */
     private function validate_transform_output(array $result): void {
-        $schemaFile = EV_DATA_BRIDGE_PLUGIN_DIR . 'docs/schema/station.schema.json';
+        $schemaFile = DB_PLUGIN_DIR . 'docs/schema/station.schema.json';
         
         if (!file_exists($schemaFile)) {
             \WP_CLI::warning("Schema file not found, skipping validation");
