@@ -2897,9 +2897,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         lastSearchRadiusKm = MINI_RADIUS_KM;
 
         // Renderovat markery okamžitě
-        if (typeof clearMarkers === 'function') {
-          clearMarkers();
-        }
+        // NEMAŽEME markery předem (clearMarkers() odstraněn), aby nezmizely během renderu
+        // Markery se aktualizují přímo v renderCards() bez viditelného "bliknutí"
         if (typeof renderCards === 'function') {
           renderCards('', null, false);
         }

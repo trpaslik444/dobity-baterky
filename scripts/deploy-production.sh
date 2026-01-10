@@ -42,7 +42,5 @@ if [ "$confirm" != "ano" ]; then
 fi
 
 echo ""
-echo "🚀 Nasazuji na produkci..."
-"$SCRIPT_DIR/deploy-production.expect" "$BUILD_DIR"
-
-echo "✅ Hotovo. Zkontroluj https://dobitybaterky.cz/ a aktivuj plugin v administraci, pokud je vypnutý."
+echo "🚀 Nasazuji na produkci s bezpečnou aktivací..."
+"$SCRIPT_DIR/deploy-production-safe.expect" "$BUILD_DIR"
