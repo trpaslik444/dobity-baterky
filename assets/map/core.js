@@ -4349,14 +4349,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       const currentIsMobile = window.innerWidth <= DB_MOBILE_BREAKPOINT_PX;
       const topbarExists = document.querySelector('.db-map-topbar');
       
-      // Odstranit duplicitní search icon na desktopu
-      if (!currentIsMobile) {
-        const duplicateSearchIcon = document.querySelector('.db-search-icon');
-        if (duplicateSearchIcon) {
-          duplicateSearchIcon.remove();
-        }
-      }
-      
       if (topbarExists) {
 
         
@@ -12792,119 +12784,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
   // Zavřít filtry při kliknutí mimo panel - už je řešeno v backdrop click handleru
 
-  // Nové vyhledávací pole s lupou ikonou
-  function createSearchOverlay() {
-    const searchOverlay = document.createElement('div');
-    searchOverlay.className = 'db-search-overlay';
-    searchOverlay.innerHTML = `
-      <div class="db-search-container">
-        <input type="text" class="db-search-input" placeholder="Objevuji víc než jen cíl cesty..." />
-        <div class="db-search-actions">
-          <button type="button" class="db-search-confirm">Hledat</button>
-          <button type="button" class="db-search-cancel">Zrušit</button>
-        </div>
-      </div>
-    `;
-    
-    document.body.appendChild(searchOverlay);
-    
-    // Event listeners
-    const searchInput = searchOverlay.querySelector('.db-search-input');
-    const confirmBtn = searchOverlay.querySelector('.db-search-confirm');
-    const cancelBtn = searchOverlay.querySelector('.db-search-cancel');
-    
-    // Zavřít při kliknutí mimo
-    searchOverlay.addEventListener('click', (e) => {
-      if (e.target === searchOverlay) {
-        closeSearchOverlay();
-      }
-    });
-    
-    // Zavřít při kliknutí na zrušit
-    cancelBtn.addEventListener('click', closeSearchOverlay);
-    
-    // Potvrdit vyhledávání
-    confirmBtn.addEventListener('click', () => {
-      const query = searchInput.value.trim();
-      if (query) {
-        // Zde implementovat vyhledávání
-
-        closeSearchOverlay();
-      }
-    });
-    
-    // Enter pro potvrzení
-    searchInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        confirmBtn.click();
-      }
-    });
-    
-    return searchOverlay;
-  }
-  
-  const searchOverlay = createSearchOverlay();
-  
-  function openSearchOverlay() {
-    searchOverlay.classList.add('open');
-    const searchInput = searchOverlay.querySelector('.db-search-input');
-    // Vyhnout se auto-fokusu na mobilech kvůli iOS zoomu okna
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-    if (!isMobile) {
-      searchInput.focus();
-    }
-  }
-  
-  function closeSearchOverlay() {
-    searchOverlay.classList.remove('open');
-    const searchInput = searchOverlay.querySelector('.db-search-input');
-    searchInput.value = '';
-  }
-  
-  // Přidání lupové ikony do topbaru - pouze na mobilu (na desktopu je search form přímo v topbaru)
-  function addSearchIcon() {
-    const isMobile = window.innerWidth <= DB_MOBILE_BREAKPOINT_PX;
-    // Na desktopu není potřeba - už je tam search form
-    if (!isMobile) {
-      return;
-    }
-    
-    const topbar = document.querySelector('.db-map-topbar');
-    // Zkontrolovat, zda už není tlačítko db-search-toggle (mobilní verze ho už má)
-    if (topbar && !document.querySelector('.db-search-icon') && !document.querySelector('#db-search-toggle')) {
-      const searchIcon = document.createElement('button');
-      searchIcon.className = 'db-map-topbar-btn db-search-icon';
-      searchIcon.setAttribute('data-db-action', 'open-search');
-      searchIcon.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="11" cy="11" r="8"></circle>
-          <path d="m21 21-4.35-4.35"></path>
-        </svg>
-      `;
-      searchIcon.addEventListener('click', openSearchOverlay);
-      
-      // Vložit před poslední tlačítko
-      const lastBtn = topbar.querySelector('.db-map-topbar-btn:last-child');
-      if (lastBtn) {
-        topbar.insertBefore(searchIcon, lastBtn);
-      } else {
-        topbar.appendChild(searchIcon);
-      }
-    }
-  }
-  
-  // Spustit po načtení DOM
-  document.addEventListener('DOMContentLoaded', () => {
-    // Odstranit duplicitní search icon na desktopu, pokud existuje
-    const isMobile = window.innerWidth <= DB_MOBILE_BREAKPOINT_PX;
-    if (!isMobile) {
-      const duplicateSearchIcon = document.querySelector('.db-search-icon');
-      if (duplicateSearchIcon) {
-        duplicateSearchIcon.remove();
-      }
-    }
-    addSearchIcon();
-  });
+  // Mobilní search používá topbar toggle (#db-search-toggle) a stejný search box.
   
 
 
