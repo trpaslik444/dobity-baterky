@@ -16,7 +16,13 @@ class PluginBuilderSimple {
         echo "\n🏗️  Vytvářím produkční build verze {$this->version}...\n\n";
         $this->create_build_dir();
         $this->copy_files_rsync();
-        $this->update_cache_bust_tag();
+        
+        // Aktualizovat cache bust tag (pokud selže, pokračujeme, ale varujeme)
+        $cache_bust_success = $this->update_cache_bust_tag();
+        if (!$cache_bust_success) {
+            echo "⚠️  Build pokračuje, ale cache busting nebyl aktualizován. Může to způsobit problémy s cachováním prohlížeče.\n";
+        }
+        
         $this->clean_debug_code();
         $zip = $this->create_zip();
         $size = $this->human_filesize(filesize($zip));
@@ -119,20 +125,24 @@ class PluginBuilderSimple {
 
     private function update_cache_bust_tag() {
         // Automaticky aktualizovat CACHE_BUST_TAG v loader.js při každém buildu
-        // Formát: YYYYMMDDHHmm (rok-měsíc-den-hodina-minuta)
-        $cache_bust_tag = date('YmdHi');
+        // POZNÁMKA: Aktualizuje se pouze v build kopii, zdrojový loader.js zůstává nezměněn
+        // Formát: YYYYMMDDHHmmss (rok-měsíc-den-hodina-minuta-sekunda) pro lepší jedinečnost
+        // při častých buildích (např. během CI/CD)
+        $cache_bust_tag = date('YmdHis');
         $plugin_name = basename($this->plugin_dir);
         $loader_js_path = $this->build_dir . '/' . $plugin_name . '/assets/map/loader.js';
         
         if (!file_exists($loader_js_path)) {
-            echo "⚠️  VAROVÁNÍ: loader.js nenalezen na cestě: {$loader_js_path}\n";
-            return;
+            echo "❌ CHYBA: loader.js nenalezen na cestě: {$loader_js_path}\n";
+            echo "   Cache busting nemůže být aktualizován. Build pokračuje, ale cache busting nebude fungovat.\n";
+            return false;
         }
         
         $content = file_get_contents($loader_js_path);
         if ($content === false) {
-            echo "⚠️  VAROVÁNÍ: Nelze načíst loader.js\n";
-            return;
+            echo "❌ CHYBA: Nelze načíst loader.js z cesty: {$loader_js_path}\n";
+            echo "   Cache busting nemůže být aktualizován. Build pokračuje, ale cache busting nebude fungovat.\n";
+            return false;
         }
         
         // Nahradit CACHE_BUST_TAG novým timestampem
@@ -143,10 +153,17 @@ class PluginBuilderSimple {
         );
         
         if ($updated !== $content) {
-            file_put_contents($loader_js_path, $updated);
+            $write_result = file_put_contents($loader_js_path, $updated);
+            if ($write_result === false) {
+                echo "❌ CHYBA: Nepodařilo se zapsat aktualizovaný loader.js\n";
+                return false;
+            }
             echo "🔄 Aktualizován CACHE_BUST_TAG na: {$cache_bust_tag}\n";
+            return true;
         } else {
             echo "⚠️  VAROVÁNÍ: CACHE_BUST_TAG nebyl nalezen v loader.js\n";
+            echo "   Možná se změnil formát nebo soubor neobsahuje očekávaný pattern.\n";
+            return false;
         }
     }
 

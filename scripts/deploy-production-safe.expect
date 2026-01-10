@@ -76,27 +76,52 @@ send "cd wp-content/plugins\r"
 
 expect "sftp>"
 # Zkontrolovat, zda existuje aktuální verze
+puts "🔍 Kontroluji existenci aktuální verze pluginu..."
 send "ls dobity-baterky\r"
 
-expect "sftp>"
-# Přejmenovat na zálohu
-puts "📦 Vytvářím backup: $backup_dir"
-send "rename dobity-baterky $backup_dir\r"
-
+set backup_exists 1
 expect {
-    "sftp>" {
-        puts "✅ Záloha vytvořena: $backup_dir"
-    }
-    -re "No such file" {
+    -re "Cannot find|No such file|not found" {
         puts "⚠️  Aktuální plugin složka neexistuje, vytvářím novou..."
         expect "sftp>"
+        set backup_exists 0
+    }
+    "sftp>" {
+        # Pokud jsme dostali přímo prompt, složka pravděpodobně existuje
+        # (výpis souborů může být prázdný, ale složka je tam)
+        # Zkusíme vytvořit zálohu
+        puts "📦 Vytvářím backup: $backup_dir"
+        send "rename dobity-baterky $backup_dir\r"
+        expect {
+            -re "Cannot find|No such file|not found" {
+                puts "⚠️  Složka neexistuje, vytvářím novou..."
+                expect "sftp>"
+                set backup_exists 0
+            }
+            "sftp>" {
+                puts "✅ Záloha vytvořena: $backup_dir"
+                set backup_exists 1
+            }
+            timeout {
+                puts "⚠️  Timeout při vytváření zálohy, pokračuji s vytvořením nové..."
+                expect "sftp>"
+                set backup_exists 0
+            }
+        }
+    }
+    timeout {
+        puts "⚠️  Timeout při kontrole existence složky, pokračuji s vytvořením nové..."
+        expect "sftp>"
+        set backup_exists 0
     }
 }
 
-expect "sftp>"
-send "mkdir dobity-baterky\r"
-
-expect "sftp>"
+# Vytvořit novou složku pouze pokud neexistuje (při prvním deployi)
+if { $backup_exists == 0 } {
+    expect "sftp>"
+    send "mkdir dobity-baterky\r"
+    expect "sftp>"
+}
 send "lcd $local_dir\r"
 
 expect "sftp>"
