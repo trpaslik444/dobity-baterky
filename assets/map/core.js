@@ -2316,6 +2316,17 @@ document.addEventListener('DOMContentLoaded', async function() {
   let showOnlyRecommended = false;
   let specialDatasetActive = false;
   
+  // FIX 6: Centralizovaná funkce pro správu specialDatasetActive
+  function updateSpecialDatasetActive() {
+    const hasSpecialFilters = filterState.free || showOnlyRecommended;
+    if (hasSpecialFilters && !specialDatasetActive) {
+      specialDatasetActive = true;
+    } else if (!hasSpecialFilters && specialDatasetActive) {
+      specialDatasetActive = false;
+    }
+    return specialDatasetActive;
+  }
+  
   // Zpřístupnit pro testování - použít getter/setter pro synchronizaci
   Object.defineProperty(window, 'showOnlyRecommended', {
     get: function() { return showOnlyRecommended; },
@@ -2772,6 +2783,38 @@ document.addEventListener('DOMContentLoaded', async function() {
       return;
     }
 
+    // FIX 3: Načíst filtry PŘED fetch, ne až v renderCards
+    // Toto zabraňuje aplikování filtrů z localStorage až po vykreslení markerů
+    if (!window.__db_filters_loaded__) {
+      const wasRecommendedBefore = showOnlyRecommended;
+      
+      if (userHasInteractedWithFilters) {
+        // Pouze pokud uživatel už interagoval s filtry, načíst z localStorage
+        loadFilterSettings();
+      } else {
+        // Pokud uživatel ještě neinteragoval, resetovat na výchozí hodnoty
+        filterState.powerMin = 0;
+        filterState.powerMax = 400;
+        filterState.connectors = new Set();
+        filterState.amenities = new Set();
+        filterState.access = new Set();
+        filterState.providers = new Set();
+        filterState.poiTypes = new Set();
+        filterState.free = false;
+      }
+      
+      window.__db_filters_loaded__ = true;
+      
+      // FIX: Obnovit showOnlyRecommended pouze pokud uživatel už interagoval s filtry
+      // Toto zabraňuje aktivaci filtru bez user inputu
+      if (wasRecommendedBefore && userHasInteractedWithFilters) {
+        showOnlyRecommended = true;
+      } else if (!userHasInteractedWithFilters) {
+        // Pokud uživatel ještě neinteragoval, zajišťujeme, že showOnlyRecommended je false
+        showOnlyRecommended = false;
+      }
+    }
+
     // Zrušit předchozí fetchy
     if (inFlightController) {
       try { inFlightController.abort(); } catch(_) {}
@@ -2826,6 +2869,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         const geo = await res.json();
         const incoming = Array.isArray(geo?.features) ? geo.features : [];
 
+        // DEBUG: Logovat počet features z quick fetchu
+        console.log('[DB Map Debug] Quick fetch: incoming features count:', incoming.length);
+
         // Pokud už plný fetch dokončil a zrušil mini-fetch, přeskočit render
         if (quickController.signal.aborted) {
           return;
@@ -2838,8 +2884,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (id != null) featureCache.set(id, f);
         }
 
-        // Načíst všechny unikátní ikony paralelně před renderováním
-        await preloadIconsFromFeatures(incoming);
+        // Nečekat na preload ikon - rychlé renderování bez "bliknutí"
+        // Ikony se doplní asynchronně přes cache a <img> fallbacky.
+        preloadIconsFromFeatures(incoming);
 
         // Nastavit features a renderovat okamžitě
         features = incoming;
@@ -2895,6 +2942,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         const geo = await res.json();
         const incoming = Array.isArray(geo?.features) ? geo.features : [];
 
+        // DEBUG: Logovat počet features z full fetchu
+        console.log('[DB Map Debug] Full fetch: incoming features count:', incoming.length);
+
         // Sloučit do cache
         for (let i = 0; i < incoming.length; i++) {
           const f = incoming[i];
@@ -2902,8 +2952,9 @@ document.addEventListener('DOMContentLoaded', async function() {
           if (id != null) featureCache.set(id, f);
         }
 
-        // Načíst všechny unikátní ikony paralelně před renderováním
-        await preloadIconsFromFeatures(incoming);
+        // Nečekat na preload ikon - render proběhne hned, ikony se doplní asynchronně
+        // Tím se odstraní "bliknutí / zmizení" při přechodu z quick na full
+        preloadIconsFromFeatures(incoming);
 
         // Nahradit features plným datasetem
         features = incoming;
@@ -2928,9 +2979,8 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         // Znovu renderovat s plným datasetem
-        if (typeof clearMarkers === 'function') {
-          clearMarkers();
-        }
+        // NEMAŽEME markery předem (clearMarkers() odstraněn), aby nezmizely během preloadu ikon
+        // Markery se aktualizují přímo v renderCards() bez viditelného "bliknutí"
         if (typeof renderCards === 'function') {
           renderCards('', null, false);
         }
@@ -2980,7 +3030,9 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   async function fetchAndRenderRadiusInternal(center, includedTypesCsv, radiusKm, url) {
+    // FIX 6: Použít centralizovanou funkci pro správu specialDatasetActive
     specialDatasetActive = false;
+    updateSpecialDatasetActive();
     if (favoritesState.isActive) {
       return;
     }
@@ -3599,7 +3651,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       
       // Pokud jsou aktivní speciální filtry, použít cache nebo special endpoint
       if (hasSpecialFilters) {
-        specialDatasetActive = true;
+        updateSpecialDatasetActive(); // FIX 6: Použít centralizovanou funkci
         // Schovat a disable tlačítko "Načíst další" v special dataset režimu
         if (window.smartLoadingManager) {
           window.smartLoadingManager.hideManualLoadButton();
@@ -3698,7 +3750,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         
         // Po načtení special dataset zůstává tlačítko skryté a disabled
       } else {
-        specialDatasetActive = false;
+        updateSpecialDatasetActive(); // FIX 6: Použít centralizovanou funkci
         // Po ukončení special dataset režimu znovu zobrazit tlačítko
         if (window.smartLoadingManager) {
           window.smartLoadingManager.enableManualLoadButton();
@@ -4758,8 +4810,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Načíst globální katalog filtrů z celé DB před renderem filtrů
       populateFilterOptions();
       
-      // Načíst uložená nastavení PO inicializaci
-      loadFilterSettings();
+      // FIX: Načíst uložená nastavení pouze pokud uživatel už interagoval s filtry
+      // Zabránit automatickému načtení filtrů z localStorage při prvním otevření modalu
+      if (userHasInteractedWithFilters) {
+        loadFilterSettings();
+      }
       
       // Aplikovat načtená nastavení na UI s delay
       setTimeout(async () => {
@@ -4921,6 +4976,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         // Aktualizovat filterState
         filterState.connectors = new Set(Array.from(container.querySelectorAll('.selected')).map(el => el.dataset.value));
+        userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
         updateResetButtonVisibility();
         saveFilterSettings();
         renderCards('', null, false);
@@ -4948,6 +5004,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else {
           filterState.amenities.delete(option.value);
         }
+        userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
         updateResetButtonVisibility();
         saveFilterSettings();
         renderCards('', null, false);
@@ -4974,6 +5031,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else {
           filterState.access.delete(option.value);
         }
+        userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
         updateResetButtonVisibility();
         saveFilterSettings();
         renderCards('', null, false);
@@ -5049,6 +5107,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   function applyProviderFilter() {
+    userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
     saveFilterSettings();
     renderCards('', null, false);
     closeProviderModal();
@@ -5115,6 +5174,7 @@ document.addEventListener('DOMContentLoaded', async function() {
           poiTypeDiv.style.border = '2px solid #FF6A4B';
           poiTypeDiv.style.background = '#FFF1F5';
         }
+        userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
         updatePoiTypeSelectedCount();
       });
       
@@ -5141,6 +5201,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   function applyPoiTypeFilter() {
+    userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
     saveFilterSettings();
     renderCards('', null, false);
     closePoiTypeModal();
@@ -5337,19 +5398,29 @@ document.addEventListener('DOMContentLoaded', async function() {
       pMinR.max = Math.ceil(maxPower);
       pMaxR.max = Math.ceil(maxPower);
       
-      // Nastavit výchozí hodnoty pouze pokud nejsou uložené hodnoty
-      if (filterState.powerMin === 0 && filterState.powerMax === 400) {
+      // FIX: Aktualizovat pouze UI, NESMÍ měnit filterState bez user inputu
+      // Toto zabraňuje tomu, aby updatePowerRange aktivoval filtr (powerMax < 400)
+      // pokud uživatel ještě neinteragoval s filtry
+      let displayMin, displayMax;
+      if (filterState.powerMin === 0 && filterState.powerMax === 400 && !userHasInteractedWithFilters) {
+        // Nastavit UI hodnoty na min/max, ale NESMÍ měnit filterState
         pMinR.value = Math.floor(minPower);
         pMaxR.value = Math.ceil(maxPower);
-        
-        // Aktualizovat filterState pouze pokud nejsou uložené hodnoty
-        filterState.powerMin = Math.floor(minPower);
-        filterState.powerMax = Math.ceil(maxPower);
+        displayMin = Math.floor(minPower);
+        displayMax = Math.ceil(maxPower);
+        // filterState zůstane 0/400 - toto zabraňuje aktivaci filtru
+      } else {
+        // Pokud uživatel už interagoval nebo jsou uložené hodnoty, použít filterState
+        pMinR.value = filterState.powerMin;
+        pMaxR.value = filterState.powerMax;
+        displayMin = filterState.powerMin;
+        displayMax = filterState.powerMax;
       }
       
-      // Aktualizovat zobrazení
-      if (pMinValue) pMinValue.textContent = `${filterState.powerMin} kW`;
-      if (pMaxValue) pMaxValue.textContent = `${filterState.powerMax} kW`;
+      // FIX: Aktualizovat zobrazení - použít hodnoty ze slideru, ne z filterState
+      // Toto zabraňuje vizuálnímu nesouladu při prvním loadu
+      if (pMinValue) pMinValue.textContent = `${displayMin} kW`;
+      if (pMaxValue) pMaxValue.textContent = `${displayMax} kW`;
       
       // Aktualizovat vizuální vyplnění
       const pRangeFill = document.getElementById('db-power-range-fill');
@@ -5403,14 +5474,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         filterState.providers = new Set(settings.providers || []);
         filterState.poiTypes = new Set(settings.poiTypes || []);
         filterState.free = settings.free || false;
-        // KRITICKÉ: Pokud uživatel aktivně zapnul filtr, NIKDY ho neresetovat
+        // FIX: Načíst showOnlyRecommended pouze pokud uživatel už interagoval s filtry
+        // Pokud uživatel aktivně zapnul filtr, NIKDY ho neresetovat
         // Toto zabraňuje resetování při opakovaných voláních renderCards
-        if (!wasRecommendedBefore) {
+        if (!wasRecommendedBefore && userHasInteractedWithFilters) {
           showOnlyRecommended = settings.showOnlyRecommended || false;
-        } else {
+        } else if (wasRecommendedBefore) {
           // Pokud už byl aktivní, zachovat ho i když v localStorage je false
           showOnlyRecommended = true;
         }
+        // Pokud uživatel ještě neinteragoval, showOnlyRecommended zůstane false
         return true;
       }
     } catch (e) {
@@ -5620,6 +5693,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Aktualizovat filterState
       filterState.powerMin = minVal;
       filterState.powerMax = maxVal;
+      userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
       
       // Aktualizovat viditelnost reset tlačítka
       updateResetButtonVisibility();
@@ -5732,7 +5806,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Pokud byly aktivní speciální filtry, vypnout special režim a načíst standardní data
       const wasSpecialActive = specialDatasetActive;
       if (wasSpecialActive) {
-        specialDatasetActive = false;
+        updateSpecialDatasetActive(); // FIX 6: Použít centralizovanou funkci
         // Načíst standardní dataset pomocí fetchAndRenderAll
         if (typeof fetchAndRenderAll === 'function') {
           await fetchAndRenderAll();
@@ -5786,6 +5860,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const freeCheckboxHandler = async () => {
         const wasSpecialActive = specialDatasetActive;
         filterState.free = !!freeCheckbox.checked;
+        userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
         updateResetButtonVisibility();
         saveFilterSettings();
         
@@ -5803,7 +5878,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else {
           // Pokud byly aktivní speciální filtry a teď se vypnuly, načíst standardní dataset
           if (wasSpecialActive) {
-            specialDatasetActive = false;
+            updateSpecialDatasetActive(); // FIX 6: Použít centralizovanou funkci
             if (typeof fetchAndRenderAll === 'function') {
               await fetchAndRenderAll();
             } else if (typeof renderCards === 'function') {
@@ -5826,6 +5901,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       const recommendedElHandler = async () => {
         const wasSpecialActive = specialDatasetActive;
         showOnlyRecommended = !!recommendedEl.checked;
+        userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
         updateResetButtonVisibility();
         saveFilterSettings();
         
@@ -5843,7 +5919,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         } else {
           // Pokud byly aktivní speciální filtry a teď se vypnuly, načíst standardní dataset
           if (wasSpecialActive) {
-            specialDatasetActive = false;
+            updateSpecialDatasetActive(); // FIX 6: Použít centralizovanou funkci
             if (typeof fetchAndRenderAll === 'function') {
               await fetchAndRenderAll();
             } else if (typeof renderCards === 'function') {
@@ -9930,6 +10006,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     free: false
   };
   
+  // Flag pro sledování, zda uživatel explicitně interagoval s filtry
+  // Používá se k ignorování localStorage filtrů do prvního user inputu
+  let userHasInteractedWithFilters = false;
+  
   // Zpřístupnit pro testování
   window.filterState = filterState;
   
@@ -10423,32 +10503,59 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Upravíme renderCards, aby synchronizovala markery s panelem
   function renderCards(filterText = '', activeId = null, isSearch = false) {
     
-    // Načíst filtry při prvním volání, pokud nejsou ještě načtené
-    // POZOR: Neresetovat showOnlyRecommended, pokud už byl aktivován uživatelem
-    // (např. přes window.activateRecommendedFilter())
-    // Kontrola, zda už byly filtry načteny (aby se nenačítaly opakovaně)
-    if (!window.__db_filters_loaded__ && 
-        filterState.powerMin === 0 && filterState.powerMax === 400 && 
-        filterState.connectors.size === 0 && filterState.amenities.size === 0 && 
-        filterState.access.size === 0) {
+    // FIX 1.1: Ignorovat localStorage filtry do prvního user inputu
+    // Načíst filtry pouze pokud uživatel už explicitně interagoval s filtry
+    // Toto zabraňuje automatickému aplikování filtrů z localStorage při prvním načtení
+    if (!window.__db_filters_loaded__) {
       const wasRecommendedBefore = showOnlyRecommended; // Uložit stav před načtením
-      loadFilterSettings();
+      
+      if (userHasInteractedWithFilters) {
+        // Pouze pokud uživatel už interagoval s filtry, načíst z localStorage
+        loadFilterSettings();
+      } else {
+        // Pokud uživatel ještě neinteragoval, resetovat na výchozí hodnoty
+        // (ignorovat localStorage, aby se zabránilo "Pyšely bug")
+        filterState.powerMin = 0;
+        filterState.powerMax = 400;
+        filterState.connectors = new Set();
+        filterState.amenities = new Set();
+        filterState.access = new Set();
+        filterState.providers = new Set();
+        filterState.poiTypes = new Set();
+        filterState.free = false;
+      }
+      
       window.__db_filters_loaded__ = true; // Označit, že byly filtry načteny
-      // KRITICKÉ: Pokud uživatel aktivně zapnul filtr, NIKDY ho neresetovat
+      
+      // FIX: Obnovit showOnlyRecommended pouze pokud uživatel už interagoval s filtry
       // Toto zabraňuje resetování při opakovaných voláních renderCards
-      if (wasRecommendedBefore) {
+      if (wasRecommendedBefore && userHasInteractedWithFilters) {
         showOnlyRecommended = true; // Obnovit hodnotu
         const recommendedEl = document.getElementById('db-map-toggle-recommended');
         if (recommendedEl) {
           recommendedEl.checked = true;
         }
+      } else if (!userHasInteractedWithFilters) {
+        // Pokud uživatel ještě neinteragoval, zajistit, že showOnlyRecommended je false
+        showOnlyRecommended = false;
+        const recommendedEl = document.getElementById('db-map-toggle-recommended');
+        if (recommendedEl) {
+          recommendedEl.checked = false;
+        }
       }
-    } else if (window.__db_filters_loaded__ && showOnlyRecommended) {
+    } else if (window.__db_filters_loaded__ && showOnlyRecommended && userHasInteractedWithFilters) {
       // Pokud už byly filtry načteny, ale showOnlyRecommended je true,
-      // zajistit, že zůstane true i po dalších voláních
+      // zajistit, že zůstane true i po dalších voláních (pouze pokud uživatel interagoval)
       const recommendedEl = document.getElementById('db-map-toggle-recommended');
       if (recommendedEl && !recommendedEl.checked) {
         recommendedEl.checked = true;
+      }
+    } else if (window.__db_filters_loaded__ && !userHasInteractedWithFilters) {
+      // Pokud uživatel ještě neinteragoval, zajistit, že showOnlyRecommended je false
+      showOnlyRecommended = false;
+      const recommendedEl = document.getElementById('db-map-toggle-recommended');
+      if (recommendedEl && recommendedEl.checked) {
+        recommendedEl.checked = false;
       }
     }
     
@@ -10498,23 +10605,77 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     cardsWrap.innerHTML = '';
     
-    // Synchronizovat showOnlyRecommended s window objektem a checkboxem
+    // FIX: Synchronizovat showOnlyRecommended s window objektem a checkboxem
+    // NESMÍ aktivovat filtr bez user inputu - pouze pokud uživatel už interagoval s filtry
     const recommendedCheckbox = document.getElementById('db-map-toggle-recommended');
-    if (recommendedCheckbox && recommendedCheckbox.checked && !showOnlyRecommended) {
+    if (recommendedCheckbox && recommendedCheckbox.checked && !showOnlyRecommended && userHasInteractedWithFilters) {
+      // Aktivovat pouze pokud uživatel už interagoval s filtry
       showOnlyRecommended = true;
+    } else if (recommendedCheckbox && !recommendedCheckbox.checked && showOnlyRecommended && !userHasInteractedWithFilters) {
+      // Pokud uživatel ještě neinteragoval a checkbox není checked, zajistit, že showOnlyRecommended je false
+      showOnlyRecommended = false;
     }
-    if (typeof window.showOnlyRecommended !== 'undefined' && window.showOnlyRecommended !== showOnlyRecommended) {
+    // Window objekt override pouze pokud uživatel už interagoval
+    if (typeof window.showOnlyRecommended !== 'undefined' && window.showOnlyRecommended !== showOnlyRecommended && userHasInteractedWithFilters) {
       showOnlyRecommended = window.showOnlyRecommended;
     }
     
     // Zjistit, jestli je aktivní jakýkoli filtr
-    const hasAnyFilter = filterState.powerMin > 0 || 
-                         filterState.powerMax < 400 || 
-                         (filterState.connectors && filterState.connectors.size > 0) ||
-                         (filterState.providers && filterState.providers.size > 0) ||
-                         (filterState.poiTypes && filterState.poiTypes.size > 0) ||
-                         filterState.free || 
-                         showOnlyRecommended;
+    // FIX: Oddělit "UI default" od "aktivního filtru"
+    // hasAnyFilter musí být true pouze pokud uživatel skutečně aktivoval filtr
+    // Všechny filtry musí být gateované přes userHasInteractedWithFilters
+    // aby se zabránilo aktivaci filtrů z localStorage bez user inputu
+    const hasAnyFilter = (userHasInteractedWithFilters && filterState.powerMin > 0) || 
+                         (userHasInteractedWithFilters && filterState.powerMax < 400) || 
+                         (userHasInteractedWithFilters && filterState.connectors && filterState.connectors.size > 0) ||
+                         (userHasInteractedWithFilters && filterState.providers && filterState.providers.size > 0) ||
+                         (userHasInteractedWithFilters && filterState.poiTypes && filterState.poiTypes.size > 0) ||
+                         (userHasInteractedWithFilters && filterState.amenities && filterState.amenities.size > 0) ||
+                         (userHasInteractedWithFilters && filterState.access && filterState.access.size > 0) ||
+                         (userHasInteractedWithFilters && filterState.free) || 
+                         (userHasInteractedWithFilters && showOnlyRecommended);
+    
+    // DEBUG: Logovat stav filtrů při renderu pouze pokud jsou aktivní filtry nebo při změně
+    if (hasAnyFilter || window.__db_last_logged_filter_state !== JSON.stringify({
+      powerMin: filterState.powerMin,
+      powerMax: filterState.powerMax,
+      connectors: filterState.connectors.size,
+      providers: filterState.providers.size,
+      poiTypes: filterState.poiTypes.size,
+      amenities: filterState.amenities.size,
+      access: filterState.access.size,
+      free: filterState.free,
+      showOnlyRecommended
+    })) {
+      console.log('[DB Map Debug] renderCards:', {
+      featuresCount: features.length,
+      showOnlyRecommended,
+      filterState: {
+        powerMin: filterState.powerMin,
+        powerMax: filterState.powerMax,
+        connectors: filterState.connectors.size,
+        providers: filterState.providers.size,
+        poiTypes: filterState.poiTypes.size,
+        amenities: filterState.amenities.size,
+        access: filterState.access.size,
+        free: filterState.free
+      },
+      hasAnyFilter,
+      userHasInteractedWithFilters
+    });
+      // Uložit stav pro příští kontrolu
+      window.__db_last_logged_filter_state = JSON.stringify({
+        powerMin: filterState.powerMin,
+        powerMax: filterState.powerMax,
+        connectors: filterState.connectors.size,
+        providers: filterState.providers.size,
+        poiTypes: filterState.poiTypes.size,
+        amenities: filterState.amenities.size,
+        access: filterState.access.size,
+        free: filterState.free,
+        showOnlyRecommended
+      });
+    }
     
     // JEDNODUCHÁ LOGIKA FILTROVÁNÍ - OD ZAČÁTKU
     
@@ -10541,8 +10702,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
       
       // Výkon
+      // FIX 2: Neaplikovat powerMin na body s power=0 (neznámý výkon)
       const maxKw = getStationMaxKw(p);
-      if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) {
+      if (maxKw === 0) {
+        // Neznámý výkon (0) - zobrazit vždy, aby se nezahazovaly body bez výkonu
+        // Toto zabraňuje zmizení velkého množství bodů při powerMin > 0
+      } else if (maxKw < filterState.powerMin || maxKw > filterState.powerMax) {
         return false;
       }
       
@@ -10570,14 +10735,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
 
     const filteredChargingIds = new Set(filteredCharging.map(fc => fc.properties?.id));
-    // Aktualizovat specialDatasetActive podle aktuálního stavu filtrů
-    // Pokud jsou aktivní speciální filtry, ale specialDatasetActive není nastaveno, nastavit ho
-    const hasSpecialFilters = filterState.free || showOnlyRecommended;
-    if (hasSpecialFilters && !specialDatasetActive) {
-      specialDatasetActive = true;
-    } else if (!hasSpecialFilters && specialDatasetActive) {
-      specialDatasetActive = false;
-    }
+    // FIX 6: Použít centralizovanou funkci pro správu specialDatasetActive
+    updateSpecialDatasetActive();
     const specialModeActive = specialDatasetActive && (filterState.free || showOnlyRecommended);
     
     // V specialModeActive pracujeme s flaggedChargers a flaggedPois
@@ -10828,10 +10987,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     
     const neededMarkerIds = new Set(filtered.map(f => f.properties.id));
     
-    // Debug: zkontrolovat, kolik markerů je v clusterech
+    // FIX 5: Optimalizovat clearMarkers - používat inteligentní aktualizaci
     // Odstranit markery, které nejsou v filtered array
-    if (hasAnyFilter) {
-      // Pokud je aktivní filtr, vyčistit clustery a znovu přidat jen potřebné markery
+    // Pouze pokud uživatel explicitně změnil filtry, použít clearLayers
+    // Jinak odstraňovat pouze nepotřebné markery (lepší výkon a UX)
+    if (hasAnyFilter && userHasInteractedWithFilters) {
+      // Pokud je aktivní filtr A uživatel ho změnil, vyčistit clustery a znovu přidat jen potřebné markery
       [clusterChargers, clusterRV, clusterPOI].forEach(cluster => {
         if (cluster && cluster.clearLayers) {
           cluster.clearLayers();
@@ -10839,7 +11000,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
       currentMarkerIds.clear();
     } else {
-      // Pokud není aktivní filtr, odstraňovat jen ty, které nejsou potřeba
+      // Pokud není aktivní filtr NEBO filtry nebyly změněny uživatelem,
+      // odstraňovat jen ty, které nejsou potřeba (inteligentní aktualizace)
       [clusterChargers, clusterRV, clusterPOI].forEach(cluster => {
         if (cluster && cluster.getAllChildMarkers) {
           const allMarkers = cluster.getAllChildMarkers();
@@ -12172,13 +12334,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     async loadNewAreaData() {
       if (!map) return;
       
-      // Pokud jsou aktivní speciální filtry (DB doporučuje nebo Zdarma), nenačítat data v radiusu
-      // protože se načítají všechna data
-      if (filterState.free || showOnlyRecommended) {
-        return;
-      }
-      
+      // FIX 7: Odstranit duplicitní kontroly - použít pouze jednu kontrolu
       // GUARD: Pokud je aktivní special dataset režim (DB doporučuje/Zdarma), nevolat radius fetch
+      // Aktualizovat specialDatasetActive před kontrolou
+      updateSpecialDatasetActive();
       if (specialDatasetActive || filterState.free || showOnlyRecommended) {
         return; // V special dataset režimu není radius fetch povolen
       }
@@ -12341,8 +12500,11 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (!map) return;
       if (!window.smartLoadingManager) return;
       
-      // Pokud jsou aktivní speciální filtry, nenačítat data v radiusu
-      loadFilterSettings();
+      // FIX: Načíst filtry pouze pokud uživatel už interagoval s filtry
+      // Zabránit automatickému přepsání filtrů z localStorage při pohybu mapy
+      if (userHasInteractedWithFilters) {
+        loadFilterSettings();
+      }
       if (filterState.free || showOnlyRecommended) {
         return;
       }
@@ -12415,8 +12577,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     initialDataLoadRunning = true;
     
     try {
-      // Nejdřív načíst filtry z localStorage, abychom věděli, zda jsou aktivní speciální filtry
-      loadFilterSettings();
+      // FIX: Načíst filtry pouze pokud uživatel už interagoval s filtry
+      // Zabránit automatickému přepsání filtrů z localStorage při prvním načtení
+      if (userHasInteractedWithFilters) {
+        loadFilterSettings();
+      } else {
+        // Resetovat na výchozí hodnoty, aby se zabránilo "Pyšely bug"
+        filterState.powerMin = 0;
+        filterState.powerMax = 400;
+        filterState.connectors = new Set();
+        filterState.amenities = new Set();
+        filterState.access = new Set();
+        filterState.providers = new Set();
+        filterState.poiTypes = new Set();
+        filterState.free = false;
+        showOnlyRecommended = false;
+      }
     
     // Zkontrolovat, zda jsou aktivní speciální filtry (DB doporučuje nebo Zdarma)
     // Pokud ano, načíst všechna data místo pouze v radiusu
@@ -12497,8 +12673,22 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
   
-  // Nejdřív načíst filtry z localStorage, abychom věděli, zda jsou aktivní speciální filtry
-  loadFilterSettings();
+  // FIX: Načíst filtry pouze pokud uživatel už interagoval s filtry
+  // Zabránit automatickému načtení filtrů z localStorage při startu
+  if (userHasInteractedWithFilters) {
+    loadFilterSettings();
+  } else {
+    // Resetovat na výchozí hodnoty, aby se zabránilo "Pyšely bug"
+    filterState.powerMin = 0;
+    filterState.powerMax = 400;
+    filterState.connectors = new Set();
+    filterState.amenities = new Set();
+    filterState.access = new Set();
+    filterState.providers = new Set();
+    filterState.poiTypes = new Set();
+    filterState.free = false;
+    showOnlyRecommended = false;
+  }
   const hasSpecialFilters = filterState.free || showOnlyRecommended;
   
   // Funkce pro pokus o spuštění initialDataLoad s kontrolou map ready stavu
