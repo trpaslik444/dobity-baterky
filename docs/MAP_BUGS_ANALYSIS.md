@@ -4,6 +4,8 @@
 **Soubor:** `assets/map/core.js`  
 **Problém:** U lokality Pyšely se po kliknutí na "Načíst místa v okolí" body na vteřinu vykreslí, ale cca 90% jich hned zmizí.
 
+**Status:** Tento dokument popisuje analýzu provedenou během řešení problému. Některé problémy byly již opraveny (např. problém s `clearMarkers()` v mini-fetch sekci - viz řádek 2900 v `core.js`). Dokument slouží jako historická reference a dokumentace procesu identifikace problému.
+
 ---
 
 ## Přehled nalezených chyb
@@ -180,9 +182,10 @@ const hasAnyFilter = filterState.powerMin > 0 ||
 
 #### 6. **clearMarkers() se volá před každým renderCards v progressive loading**
 
-**Umístění:** `2853:2854:assets/map/core.js` a `2931:2932:assets/map/core.js`
+**Umístění:** `2853:2854:assets/map/core.js` a `2931:2932:assets/map/core.js` (původní problém)  
+**Status:** ✅ **OPRAVENO** - `clearMarkers()` byl odstraněn z mini-fetch sekce (viz řádek 2900)
 
-**Problém:**
+**Problém (historický):**
 ```javascript
 // Mini-fetch
 if (typeof clearMarkers === 'function') {
@@ -204,10 +207,10 @@ renderCards('', null, false); // Vykreslí znovu
 
 **Riziko:** 🟡 STŘEDNÍ - špatná UX, ale ne přímo bug
 
-**Fix návrh:**
-- Použít inteligentní aktualizaci markerů (jako v řádcích 10833-10854)
-- Odstraňovat pouze markery, které už nejsou potřeba
-- Přidávat pouze nové markery
+**Fix implementován:**
+- `clearMarkers()` byl odstraněn z mini-fetch sekce (řádek ~2900)
+- Markery se nyní aktualizují přímo v `renderCards()` bez viditelného "blikání"
+- Komentář v kódu: "NEMAŽEME markery předem (clearMarkers() odstraněn), aby nezmizely během renderu"
 
 ---
 
