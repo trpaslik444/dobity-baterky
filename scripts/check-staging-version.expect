@@ -1,0 +1,37 @@
+#!/usr/bin/expect -f
+
+# Usage: STAGING_PASS=heslo ./scripts/check-staging-version.expect
+
+set timeout 60
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+
+set user "staging-f576-dobitybaterky.wordpress.com"
+set host "ssh.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+# Příkaz pro kontrolu verze a dalších informací
+set check_cmd {cd /srv/htdocs/wp-content/plugins/dobity-baterky 2>/dev/null || cd wp-content/plugins/dobity-baterky 2>/dev/null || pwd && if test -f dobity-baterky.php; then echo "=== Plugin Header ===" && head -15 dobity-baterky.php | grep -E "(Plugin Name|Version|Author)"; echo ""; echo "=== DB_PLUGIN_VERSION ===" && grep "define.*DB_PLUGIN_VERSION" dobity-baterky.php; echo ""; echo "=== Core.js info ===" && if test -f assets/map/core.js; then echo "Soubor existuje:" && ls -lh assets/map/core.js | awk '{print "Velikost:", $5, "- Datum:", $6, $7, $8}'; echo "První řádka:" && head -1 assets/map/core.js; else echo "Core.js nenalezen"; fi; echo ""; echo "=== Build backup složky ===" && ls -d dobity-baterky.backup-* 2>/dev/null | tail -3 || echo "Žádné backup složky"; echo ""; echo "=== Kontrola změn z PR #102 ===" && if test -f assets/map/core.js; then echo "Kontroluji komentáře o NEMAŽEME markery:" && grep -n "NEMAŽEME markery" assets/map/core.js | head -3 || echo "Komentař 'NEMAŽEME markery' nenalezen (možná stará verze)"; echo ""; echo "=== Mini-fetch sekce (řádek ~2895-2910) ===" && sed -n '2890,2915p' assets/map/core.js | head -20; echo ""; echo "=== Full-fetch sekce (řádek ~2918-2935) ===" && sed -n '2918,2945p' assets/map/core.js | head -25; echo ""; echo "=== Kontrola clearMarkers() volání v fetch sekcích ===" && sed -n '2880,2950p' assets/map/core.js | grep -n "clearMarkers" || echo "clearMarkers() nenalezen v této sekci (správně!)"; fi; else echo "Plugin soubor nenalezen!"; fi}
+
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${host} $check_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        catch wait result
+        set exit_code [lindex $result 3]
+        exit $exit_code
+    }
+    timeout {
+        puts "❌ Timeout při připojování na staging"
+        exit 1
+    }
+}

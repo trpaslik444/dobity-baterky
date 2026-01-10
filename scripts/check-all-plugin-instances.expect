@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+
+# Usage: STAGING_PASS=heslo ./scripts/check-all-plugin-instances.expect
+
+set timeout 120
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+
+set user "staging-f576-dobitybaterky.wordpress.com"
+set host "ssh.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+set check_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null || pwd; echo "=== VŠECHNY INSTANCE PLUGINU ==="; ls -ld wp-content/plugins/dobity-baterky* 2>/dev/null | while read line; do dir=$(echo "$line" | awk '{print $NF}' | xargs basename); echo ""; echo "📁 Plugin složka: $dir"; if [ -f "wp-content/plugins/$dir/dobity-baterky.php" ]; then echo "  ✅ Plugin soubor existuje"; echo "  📄 Verze:"; grep "Version:" "wp-content/plugins/$dir/dobity-baterky.php" | head -1 | sed 's/^/    /'; echo "  📅 Datum:"; echo "$line" | awk '{print "    ", $6, $7, $8}'; echo "  📏 Velikost core.js:"; if [ -f "wp-content/plugins/$dir/assets/map/core.js" ]; then ls -lh "wp-content/plugins/$dir/assets/map/core.js" | awk '{print "    ", $5}'; grep -n "NEMAŽEME markery" "wp-content/plugins/$dir/assets/map/core.js" | head -1 | sed 's/^/    Řádek: /' || echo "    ❌ Oprava NEMAŽEME markery NENÍ v této verzi"; else echo "    ❌ core.js neexistuje"; fi; else echo "  ❌ Plugin soubor neexistuje"; fi; done; echo ""; echo "=== WP-CLI - KTERÝ PLUGIN JE AKTIVNÍ ==="; wp plugin list --name=dobity-baterky --format=table 2>/dev/null || echo "WP-CLI chyba"; echo ""; echo "=== WordPress active_plugins option ==="; wp option get active_plugins --format=json 2>/dev/null | grep -o "dobity-baterky/[^\"']*" || echo "Plugin není v active_plugins"; echo ""; echo "=== Který soubor WordPress skutečně načítá ==="; wp eval "echo plugin_dir_path(plugin_basename(DB_PLUGIN_FILE ?? '')) . PHP_EOL;" 2>/dev/null | grep "dobity-baterky" || wp eval "echo defined('DB_PLUGIN_DIR') ? DB_PLUGIN_DIR : 'DB_PLUGIN_DIR není definováno' . PHP_EOL;" 2>/dev/null}
+
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${host} $check_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        catch wait result
+        exit [lindex $result 3]
+    }
+    timeout {
+        puts "❌ Timeout"
+        exit 1
+    }
+}

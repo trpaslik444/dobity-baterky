@@ -1,0 +1,144 @@
+#!/usr/bin/expect -f
+
+# Usage: PROD_PASS=heslo ./scripts/deploy-production-safe.expect /cesta/k/build/dobity-baterky
+
+set timeout 900
+
+if { [llength $argv] < 1 } {
+    puts "ERROR: Musíš předat cestu k build složce (např. build/dobity-baterky)."
+    exit 2
+}
+
+set local_dir [lindex $argv 0]
+
+if { ! [file isdirectory $local_dir] } {
+    puts "ERROR: Složka $local_dir neexistuje nebo není adresář."
+    exit 2
+}
+
+if { ! [info exists env(PROD_PASS)] || $env(PROD_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou PROD_PASS s passphrase/heslem pro klíč."
+    exit 2
+}
+
+set password $env(PROD_PASS)
+set timestamp [clock format [clock seconds] -format "%Y%m%d%H%M%S"]
+set backup_dir "dobity-baterky.backup-$timestamp"
+
+set user "dobitybaterky.wordpress.com"
+set sftp_host "sftp.wp.com"
+set ssh_host "ssh.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+puts "🔍 Krok 1: Kontroluji aktuální stav pluginu..."
+
+# Krok 1: Kontrola stavu pluginu přes SSH
+set check_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null || pwd; wp plugin list --name=dobity-baterky --format=json 2>/dev/null || echo "WP-CLI_ERROR"}
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $check_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        catch wait result
+    }
+}
+
+# Krok 2: Deaktivovat plugin přes SSH
+puts ""
+puts "🔄 Krok 2: Deaktivuji plugin (pro bezpečné nahrazení)..."
+set deactivate_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null; wp plugin deactivate dobity-baterky 2>&1 || echo "DEACTIVATE_ERROR"}
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $deactivate_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        catch wait result
+    }
+}
+
+# Krok 3: Záloha a nahrání nové verze přes SFTP
+puts ""
+puts "💾 Krok 3: Zálohuji aktuální verzi a nahrávám novou..."
+
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${sftp_host}
+
+expect "Enter passphrase for key"
+send "$password\r"
+
+expect "sftp>"
+send "cd wp-content/plugins\r"
+
+expect "sftp>"
+# Zkontrolovat, zda existuje aktuální verze
+send "ls dobity-baterky\r"
+
+expect "sftp>"
+# Přejmenovat na zálohu
+puts "📦 Vytvářím backup: $backup_dir"
+send "rename dobity-baterky $backup_dir\r"
+
+expect {
+    "sftp>" {
+        puts "✅ Záloha vytvořena: $backup_dir"
+    }
+    -re "No such file" {
+        puts "⚠️  Aktuální plugin složka neexistuje, vytvářím novou..."
+        expect "sftp>"
+    }
+}
+
+expect "sftp>"
+send "mkdir dobity-baterky\r"
+
+expect "sftp>"
+send "lcd $local_dir\r"
+
+expect "sftp>"
+puts "📤 Nahrávám soubory..."
+send "put -r * dobity-baterky/\r"
+
+expect "sftp>"
+puts "✅ Soubory nahrány"
+send "exit\r"
+
+expect eof
+
+# Krok 4: Aktivovat plugin znovu přes SSH a vymazat cache
+puts ""
+puts "✅ Krok 4: Aktivuji plugin znovu a mažu cache..."
+
+set activate_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null; wp plugin activate dobity-baterky 2>&1; wp cache flush 2>&1; wp rewrite flush 2>&1}
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $activate_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    "Success: Activated" {
+        puts "✅ Plugin aktivován"
+        exp_continue
+    }
+    "Success: The cache was flushed" {
+        puts "✅ Cache vymazána"
+        exp_continue
+    }
+    "Success: Rewrite rules flushed" {
+        puts "✅ Rewrite rules aktualizovány"
+        exp_continue
+    }
+    eof {
+        catch wait result
+    }
+}
+
+puts ""
+puts "✅ Hotovo! Plugin nasazen a aktivován."
+puts "📦 Záloha: $backup_dir"
+puts "🌐 Ověř produkci na https://dobitybaterky.cz/"

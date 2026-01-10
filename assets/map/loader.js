@@ -1,7 +1,7 @@
 (function () {
   const data = window.dbMapData || {};
   const baseUrl = data.assetsBase || (data.pluginUrl ? data.pluginUrl + 'assets/map/' : '');
-  const CACHE_BUST_TAG = '20241120a';
+  const CACHE_BUST_TAG = '20250110a';
   const baseVersion = data.version ? String(data.version) : '';
   const versionString = baseVersion ? baseVersion + '-' + CACHE_BUST_TAG : CACHE_BUST_TAG;
   const versionSuffix = '?ver=' + encodeURIComponent(versionString);

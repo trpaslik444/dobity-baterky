@@ -16,6 +16,7 @@ class PluginBuilderSimple {
         echo "\n🏗️  Vytvářím produkční build verze {$this->version}...\n\n";
         $this->create_build_dir();
         $this->copy_files_rsync();
+        $this->update_cache_bust_tag();
         $this->clean_debug_code();
         $zip = $this->create_zip();
         $size = $this->human_filesize(filesize($zip));
@@ -114,6 +115,39 @@ class PluginBuilderSimple {
             throw new Exception("Rsync selhal s kódem: {$code}\n" . implode("\n", $output));
         }
         echo "📋 Zkopírovány soubory pluginu\n";
+    }
+
+    private function update_cache_bust_tag() {
+        // Automaticky aktualizovat CACHE_BUST_TAG v loader.js při každém buildu
+        // Formát: YYYYMMDDHHmm (rok-měsíc-den-hodina-minuta)
+        $cache_bust_tag = date('YmdHi');
+        $plugin_name = basename($this->plugin_dir);
+        $loader_js_path = $this->build_dir . '/' . $plugin_name . '/assets/map/loader.js';
+        
+        if (!file_exists($loader_js_path)) {
+            echo "⚠️  VAROVÁNÍ: loader.js nenalezen na cestě: {$loader_js_path}\n";
+            return;
+        }
+        
+        $content = file_get_contents($loader_js_path);
+        if ($content === false) {
+            echo "⚠️  VAROVÁNÍ: Nelze načíst loader.js\n";
+            return;
+        }
+        
+        // Nahradit CACHE_BUST_TAG novým timestampem
+        $updated = preg_replace(
+            "/const CACHE_BUST_TAG = '([^']+)';/",
+            "const CACHE_BUST_TAG = '{$cache_bust_tag}';",
+            $content
+        );
+        
+        if ($updated !== $content) {
+            file_put_contents($loader_js_path, $updated);
+            echo "🔄 Aktualizován CACHE_BUST_TAG na: {$cache_bust_tag}\n";
+        } else {
+            echo "⚠️  VAROVÁNÍ: CACHE_BUST_TAG nebyl nalezen v loader.js\n";
+        }
     }
 
     private function clean_debug_code() {

@@ -30,7 +30,5 @@ if [ -z "${STAGING_PASS:-}" ]; then
   exit 1
 fi
 
-echo "🚀 Nasazuji na staging..."
-"$SCRIPT_DIR/deploy-staging.expect" "$BUILD_DIR"
-
-echo "✅ Hotovo. Ověř staging na https://staging-f576-dobitybaterky.wpcomstaging.com/"
+echo "🚀 Nasazuji na staging s bezpečnou aktivací..."
+"$SCRIPT_DIR/deploy-staging-safe.expect" "$BUILD_DIR"
