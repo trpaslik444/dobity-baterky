@@ -1,0 +1,35 @@
+#!/usr/bin/expect -f
+
+# Usage: STAGING_PASS=heslo ./scripts/clear-staging-cache.expect
+
+set timeout 120
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+
+set user "staging-f576-dobitybaterky.wordpress.com"
+set host "ssh.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+set cache_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null; echo "=== Vymazání všech cache ==="; wp cache flush 2>&1; echo "---"; wp rewrite flush 2>&1; echo "---"; if command -v php >/dev/null 2>&1; then php -r "if (function_exists('opcache_reset')) { opcache_reset(); echo 'OPcache resetován' . PHP_EOL; } else { echo 'OPcache není dostupný' . PHP_EOL; }" 2>&1; else echo "PHP není dostupné"; fi}
+
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${host} $cache_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        catch wait result
+        exit [lindex $result 3]
+    }
+    timeout {
+        puts "❌ Timeout"
+        exit 1
+    }
+}

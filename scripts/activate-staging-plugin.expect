@@ -1,0 +1,56 @@
+#!/usr/bin/expect -f
+
+# Usage: STAGING_PASS=heslo ./scripts/activate-staging-plugin.expect
+
+set timeout 120
+
+if { ! [info exists env(STAGING_PASS)] || $env(STAGING_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou STAGING_PASS s passphrase/heslem pro klíč."
+    exit 2
+}
+
+set password $env(STAGING_PASS)
+
+set user "staging-f576-dobitybaterky.wordpress.com"
+set host "ssh.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+set activate_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null; wp plugin activate dobity-baterky 2>&1; wp cache flush 2>&1; wp rewrite flush 2>&1}
+
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${host} $activate_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    "Success: Activated" {
+        puts "✅ Plugin aktivován"
+        exp_continue
+    }
+    "already active" {
+        puts "✅ Plugin je již aktivní"
+        exp_continue
+    }
+    "Success: Cache flushed" {
+        puts "✅ Cache vymazána"
+        exp_continue
+    }
+    "Success: Rewrite rules flushed" {
+        puts "✅ Rewrite rules aktualizovány"
+        exp_continue
+    }
+    eof {
+        catch wait result
+        set exit_code [lindex $result 3]
+        if { $exit_code == 0 } {
+            puts ""
+            puts "✅ Hotovo! Plugin aktivován a cache vymazána."
+        }
+        exit $exit_code
+    }
+    timeout {
+        puts "❌ Timeout při aktivaci pluginu"
+        exit 1
+    }
+}
