@@ -128,11 +128,34 @@ expect {
         # Složka byla úspěšně vytvořena
     }
 }
-send "lcd $local_dir\r"
+send "lcd \"$local_dir\"\r"
+
+expect "sftp>"
+send "lpwd\r"
+expect {
+    -re {(.+)} {
+        set lpwd_output $expect_out(0,string)
+        if { [string match "*$local_dir*" $lpwd_output] } {
+            # OK
+        } else {
+            puts "❌ LCD selhalo nebo je špatná cesta: $local_dir"
+            send "exit\r"
+            exit 1
+        }
+    }
+    timeout {
+        puts "❌ LCD timeout – nelze ověřit lpwd"
+        send "exit\r"
+        exit 1
+    }
+}
 
 expect "sftp>"
 puts "📤 Nahrávám soubory..."
-send "put -r * dobity-baterky/\r"
+send "cd dobity-baterky\r"
+
+expect "sftp>"
+send "put -r .\r"
 
 expect "sftp>"
 puts "✅ Soubory nahrány"
