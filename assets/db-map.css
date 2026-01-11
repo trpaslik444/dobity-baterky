@@ -380,8 +380,15 @@ html, body {
   outline: none;
 }
 
+/* Scroll lock pro všechny modaly - jednotná třída */
+body.db-modal-open {
+  overflow: hidden !important;
+}
+
+/* Kompatibilita se starými třídami - mapovat na db-modal-open */
+body.db-filter-modal-open,
 body.db-license-modal-open {
-  overflow: hidden;
+  overflow: hidden !important;
 }
 
 #db-license-modal {
@@ -390,7 +397,7 @@ body.db-license-modal-open {
   display: none;
   align-items: center;
   justify-content: center;
-  z-index: 11000;
+  z-index: 12000; /* Jednotný z-index pro všechny modaly */
   font-family: 'Montserrat', sans-serif;
 }
 
@@ -680,7 +687,7 @@ body.db-license-modal-open {
   position: absolute;
   top: calc(1em + env(safe-area-inset-top, 0px));
   right: 2em;
-  z-index: 1000;
+  z-index: 1000; /* Pod modaly (12000) */
 }
 
 /* Mobilní topbar - fullscreen mapa s ovládacími prvky */
@@ -701,7 +708,7 @@ body.db-license-modal-open {
     box-shadow: none !important;
     padding: 0.75rem 1rem !important;
     gap: 0.5rem !important;
-  z-index: 900; /* topbar mobile */
+  z-index: 900 !important; /* Pod modaly (12000) */
     /* PWA safe area pro notchy */
     padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
     padding-left: max(1rem, env(safe-area-inset-left)) !important;
@@ -1651,7 +1658,17 @@ body.has-attribution #db-mobile-sheet.open {
 }
 
 /* Detail modal (80% výšky od spodní hrany) */
-#db-detail-modal { position: fixed; inset: 0; background: rgba(4,159,232,0.12); display: none; align-items: flex-end; justify-content: center; z-index: 1200; overflow: hidden; }
+#db-detail-modal { 
+  position: fixed; 
+  inset: 0; 
+  background: rgba(4,159,232,0.12); 
+  display: none; 
+  align-items: flex-end; 
+  justify-content: center; 
+  z-index: 12000; /* Jednotný z-index pro všechny modaly */
+  overflow: hidden; 
+  font-family: 'Montserrat', sans-serif;
+}
 #db-detail-modal.open { display: flex; }
 #db-detail-modal .modal-card { 
   width: 100%; 
@@ -2050,7 +2067,12 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 #db-map-filter-panel {
   pointer-events: auto;
   touch-action: none;
-  z-index: 20000 !important; /* nad listview */
+  z-index: 12000; /* Jednotný z-index pro všechny modaly */
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
 }
 
 #db-map-filter-panel.open {
@@ -2404,6 +2426,210 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
 
 #db-provider-toggle:active {
   transform: scale(0.95);
+}
+
+/* ===== PROVIDER A POI TYPE MODALY - SJEDNOCENÉ STYLY ===== */
+/* Provider a POI Type modaly používají stejnou strukturu a CSS třídy */
+.db-provider-modal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 12000; /* Jednotný z-index pro všechny modaly, nižší než kritické overlaye */
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-provider-modal.open {
+  display: flex;
+}
+
+.db-provider-modal__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: -1;
+}
+
+.db-provider-modal__content {
+  position: relative;
+  width: min(90vw, 600px);
+  max-height: 80vh;
+  background: #FEF9E8; /* Brand beige */
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 16px 60px rgba(4,159,232,0.18), 0 10px 30px rgba(0,0,0,0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.db-provider-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-shrink: 0;
+}
+
+.db-provider-modal__title {
+  margin: 0;
+  color: #049FE8;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.db-provider-modal__close,
+.db-poi-type-modal__close {
+  background: none;
+  border: none;
+  font-size: 28px;
+  cursor: pointer;
+  color: #666;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s ease;
+  padding: 0;
+  line-height: 1;
+}
+
+.db-provider-modal__close:hover,
+.db-poi-type-modal__close:hover {
+  background: #f0f0f0;
+}
+
+.db-provider-modal__close:focus,
+.db-poi-type-modal__close:focus {
+  outline: none;
+  background: #f0f0f0;
+}
+
+.db-provider-modal__body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 12px;
+  padding-right: 8px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.db-provider-modal__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 20px;
+  flex-shrink: 0;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.db-provider-modal__count {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.db-provider-modal__apply {
+  background: #049FE8;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Montserrat', sans-serif;
+}
+
+.db-provider-modal__apply:hover {
+  background: #0378b8;
+}
+
+.db-provider-modal__apply:active {
+  transform: scale(0.98);
+}
+
+/* Provider a POI type item styly */
+.db-provider-item,
+.db-poi-type-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #FEF9E8;
+}
+
+.db-provider-item:hover,
+.db-poi-type-item:hover {
+  border-color: #049FE8;
+  transform: translateY(-1px);
+}
+
+.db-provider-item.selected,
+.db-poi-type-item.selected {
+  border-color: #FF6A4B;
+  background: #FFF1F5;
+}
+
+.db-provider-item__icon {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: block;
+}
+
+.db-provider-item__fallback,
+.db-poi-type-item__fallback {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: #049FE8;
+  border: 2px solid #049FE8;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.db-provider-item__name,
+.db-poi-type-item__name {
+  font-size: 0.75rem;
+  text-align: center;
+  color: #333;
+  margin-top: 4px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+/* Responsivní úpravy pro provider modaly */
+@media (max-width: 768px) {
+  .db-provider-modal__content {
+    width: calc(100vw - 40px);
+    padding: 20px;
+    max-height: 85vh;
+  }
+  
+  .db-provider-modal__body {
+    grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+    gap: 10px;
+  }
+  
+  .db-provider-item,
+  .db-poi-type-item {
+    padding: 10px;
+  }
 }
 
 /* Ikony konektorů */
@@ -3648,23 +3874,45 @@ body.db-loading::after {
   line-height: 1;
 }
 
-.db-favorites-assign-overlay { position: fixed; inset: 0; background: rgba(4, 159, 232, 0.22); z-index: 1300; display: none; }
-
+/* Favorites assign modal - sjednocený styl */
+#db-favorites-assign-modal,
 .db-favorites-assign {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 12000; /* Jednotný z-index pro všechny modaly */
+  font-family: 'Montserrat', sans-serif;
+}
+
+#db-favorites-assign-modal.open,
+.db-favorites-assign.open {
+  display: flex;
+}
+
+.db-favorites-assign__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(4, 159, 232, 0.22);
+  z-index: -1;
+}
+
+.db-favorites-assign__content {
+  position: relative;
   width: min(420px, 92vw);
+  max-height: 90vh;
   background: #FEF9DF; /* Brand beige */
   border-radius: 18px;
   border: 1px solid #FCE67D; /* Brand yellow border */
   box-shadow: 0 16px 60px rgba(4,159,232,0.18), 0 10px 30px rgba(0,0,0,0.2);
   padding: 24px;
-  display: none;
+  display: flex;
   flex-direction: column;
   gap: 20px;
-  z-index: 1310;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .db-favorites-assign__header {

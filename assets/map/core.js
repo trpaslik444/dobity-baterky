@@ -165,6 +165,213 @@ function t(key, defaultVal = '') {
   return value;
 }
 
+// ===== MODAL HELPER FUNCTIONS =====
+// Jednotný helper pro všechny modaly s ESC, backdrop a scroll lock podporou
+
+/**
+ * Globální registr otevřených modalů pro správné ESC handling
+ */
+const openModals = new Set();
+
+/**
+ * Globální ESC listener - pouze jeden pro všechny modaly
+ */
+let globalEscListener = null;
+
+function initGlobalEscListener() {
+  if (globalEscListener) return;
+  
+  globalEscListener = (event) => {
+    if (event.key === 'Escape' && openModals.size > 0) {
+      // Zavřít poslední otevřený modal (LIFO)
+      const modalsArray = Array.from(openModals);
+      const lastModal = modalsArray[modalsArray.length - 1];
+      if (lastModal) {
+        closeModal(lastModal);
+      }
+    }
+  };
+  
+  document.addEventListener('keydown', globalEscListener);
+}
+
+/**
+ * Otevře modal s jednotným chováním
+ * @param {HTMLElement|string} modal - Modal element nebo selector
+ * @param {Object} opts - Volitelné nastavení
+ * @param {boolean} opts.closeOnBackdrop - Zavřít při kliknutí na backdrop (default: true)
+ * @param {boolean} opts.stopPropagation - Zastavit propagaci kliků uvnitř obsahu (default: true)
+ * @param {Function} opts.onOpen - Callback při otevření
+ * @param {Function} opts.onClose - Callback při zavření
+ */
+function openModal(modal, opts = {}) {
+  if (typeof modal === 'string') {
+    modal = document.querySelector(modal) || document.getElementById(modal);
+  }
+  
+  if (!modal || !(modal instanceof HTMLElement)) {
+    console.warn('[DB Map] openModal: Invalid modal element', modal);
+    return;
+  }
+  
+  // Guard: zabránit duplicitnímu otevření
+  if (modal.dataset.dbModalInitialized === 'true' && modal.classList.contains('open')) {
+    return; // Modal už je otevřený
+  }
+  
+  const {
+    closeOnBackdrop = true,
+    stopPropagation = true,
+    onOpen,
+    onClose
+  } = opts;
+  
+  // Inicializovat modal (pouze jednou)
+  if (modal.dataset.dbModalInitialized !== 'true') {
+    // Uchovat původní display pouze jednou
+    if (!modal.dataset.dbModalOriginalDisplay) {
+      const computedDisplay = window.getComputedStyle(modal).display;
+      modal.dataset.dbModalOriginalDisplay = computedDisplay !== 'none' ? computedDisplay : 'none';
+    }
+    
+    // Přidat backdrop pokud neexistuje
+    const existingBackdrop = modal.querySelector('[data-close="true"]');
+    if (!existingBackdrop && closeOnBackdrop) {
+      const backdrop = document.createElement('div');
+      backdrop.className = 'db-modal__backdrop';
+      backdrop.setAttribute('data-close', 'true');
+      backdrop.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.7);z-index:-1;';
+      modal.insertBefore(backdrop, modal.firstChild);
+    }
+    
+    // Přidat stopPropagation na obsah
+    if (stopPropagation) {
+      const content = modal.querySelector('.db-modal__content, [role="document"], .modal-card, .db-filter-modal__content, .db-provider-modal__content, .db-license-modal__content, .db-favorites-assign, .db-favorites-assign__content');
+      if (content) {
+        content.addEventListener('click', (e) => e.stopPropagation());
+      } else {
+        // Pokud není specifický obsah, přidat na všechny děti kromě backdropu
+        Array.from(modal.children).forEach(child => {
+          if (!child.hasAttribute('data-close')) {
+            child.addEventListener('click', (e) => e.stopPropagation());
+          }
+        });
+      }
+    }
+    
+    // Backdrop click handler
+    if (closeOnBackdrop) {
+      const backdrop = modal.querySelector('[data-close="true"]');
+      if (backdrop) {
+        backdrop.addEventListener('click', () => closeModal(modal));
+      }
+      // Fallback: klik na samotný modal (pokud není backdrop)
+      modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+          closeModal(modal);
+        }
+      });
+    }
+    
+    // Close button handlers
+    const closeButtons = modal.querySelectorAll('.db-modal__close, [aria-label*="close"], [aria-label*="zavřít"], .db-filter-modal__close, .db-provider-modal__close, .db-poi-type-modal__close, .db-license-modal__close, .db-favorites-assign__close, .close-btn');
+    closeButtons.forEach(btn => {
+      btn.addEventListener('click', () => closeModal(modal));
+    });
+    
+    modal.dataset.dbModalInitialized = 'true';
+    modal.dataset.dbModalCloseOnBackdrop = closeOnBackdrop.toString();
+    modal.dataset.dbModalOnClose = onClose ? 'has-callback' : '';
+    if (onClose) {
+      modal._dbModalOnClose = onClose;
+    }
+  }
+  
+  // Inicializovat globální ESC listener
+  initGlobalEscListener();
+  
+  // Přidat modal do registru
+  openModals.add(modal);
+  
+  // Nastavit display - použít default z data-db-modal-default-display nebo 'flex'
+  const defaultDisplay = modal.dataset.dbModalDefaultDisplay || 'flex';
+  modal.style.display = defaultDisplay;
+  modal.classList.add('open');
+  modal.setAttribute('aria-hidden', 'false');
+  
+  // Přidat body třídu pro scroll lock (pouze jednou pro první modal)
+  if (openModals.size === 1) {
+    document.body.classList.add('db-modal-open');
+    // Mapovat staré třídy pro kompatibilitu
+    document.body.classList.remove('db-filter-modal-open', 'db-license-modal-open');
+  }
+  
+  // Callback
+  if (onOpen && typeof onOpen === 'function') {
+    try {
+      onOpen(modal);
+    } catch (err) {
+      console.warn('[DB Map] openModal onOpen callback error:', err);
+    }
+  }
+  
+  // Focus management - zaměřit close button nebo první focusable element
+  try {
+    const closeBtn = modal.querySelector('.db-modal__close, [aria-label*="close"], [aria-label*="zavřít"], .db-filter-modal__close, .db-provider-modal__close, .close-btn');
+    if (closeBtn) {
+      closeBtn.focus({ preventScroll: true });
+    }
+  } catch (_) {}
+}
+
+/**
+ * Zavře modal s jednotným chováním
+ * @param {HTMLElement|string} modal - Modal element nebo selector
+ */
+function closeModal(modal) {
+  if (typeof modal === 'string') {
+    modal = document.querySelector(modal) || document.getElementById(modal);
+  }
+  
+  if (!modal || !(modal instanceof HTMLElement)) {
+    return;
+  }
+  
+  // Odstranit focus z aktivního elementu uvnitř modalu (aby se zabránilo varování o aria-hidden)
+  const activeElement = document.activeElement;
+  if (activeElement && modal.contains(activeElement)) {
+    try {
+      activeElement.blur();
+    } catch (_) {}
+  }
+  
+  // Odstranit z registru
+  openModals.delete(modal);
+  
+  // Odstranit třídy a atributy
+  modal.classList.remove('open');
+  
+  // Vždy nastavit display na none při zavření
+  modal.style.display = 'none';
+  
+  // Nastavit aria-hidden až po odstranění focus a display
+  modal.setAttribute('aria-hidden', 'true');
+  
+  // Odstranit body třídu pro scroll lock (pouze pokud nejsou otevřené žádné další modaly)
+  if (openModals.size === 0) {
+    document.body.classList.remove('db-modal-open', 'db-filter-modal-open', 'db-license-modal-open');
+  }
+  
+  // Callback
+  if (modal._dbModalOnClose && typeof modal._dbModalOnClose === 'function') {
+    try {
+      modal._dbModalOnClose(modal);
+    } catch (err) {
+      console.warn('[DB Map] closeModal onClose callback error:', err);
+    }
+  }
+}
+
 // Optimalizace: Event delegation pro snížení počtu listenerů
 let eventDelegationInitialized = false;
 
@@ -672,6 +879,7 @@ function ensureLicenseModal() {
   if (!modal) {
     modal = document.createElement('div');
     modal.id = 'db-license-modal';
+    modal.className = 'db-license-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-hidden', 'true');
@@ -684,29 +892,6 @@ function ensureLicenseModal() {
       </div>
     `;
     document.body.appendChild(modal);
-
-    const close = () => hideLicenseModal();
-    const closeButton = modal.querySelector('.db-license-modal__close');
-    const backdrop = modal.querySelector('.db-license-modal__backdrop');
-
-    if (closeButton) {
-      closeButton.addEventListener('click', close);
-    }
-    if (backdrop) {
-      backdrop.addEventListener('click', close);
-    }
-
-    modal.addEventListener('click', (event) => {
-      if (event.target === modal) {
-        hideLicenseModal();
-      }
-    });
-
-    document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        hideLicenseModal();
-      }
-    });
   }
   return modal;
 }
@@ -714,23 +899,13 @@ function ensureLicenseModal() {
 function hideLicenseModal() {
   const modal = document.getElementById('db-license-modal');
   if (!modal) return;
-  modal.classList.remove('open');
-  modal.setAttribute('aria-hidden', 'true');
-  document.body.classList.remove('db-license-modal-open');
+  closeModal(modal);
 }
 
 function showLicenseModal() {
   const modal = ensureLicenseModal();
   if (!modal) return;
-  modal.classList.add('open');
-  modal.setAttribute('aria-hidden', 'false');
-  document.body.classList.add('db-license-modal-open');
-  try {
-    const closeButton = modal.querySelector('.db-license-modal__close');
-    if (closeButton) {
-      closeButton.focus({ preventScroll: true });
-    }
-  } catch(_) {}
+  openModal(modal);
 }
 
 function updateLicenseModalContent(entries) {
@@ -926,7 +1101,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   let favoritesExitButton = null;
   let favoritesLists = { default: null, custom: null };
   let favoritesAssignModal = null;
-  let favoritesAssignOverlay = null;
   let favoritesAssignPostId = null;
   let favoritesAssignProps = null;
 
@@ -2144,32 +2318,28 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   function ensureFavoritesAssignModal() {
-    if (!favoritesAssignOverlay) {
-      favoritesAssignOverlay = document.createElement('div');
-      favoritesAssignOverlay.className = 'db-favorites-assign-overlay';
-      favoritesAssignOverlay.style.display = 'none';
-      favoritesAssignOverlay.addEventListener('click', () => closeFavoritesAssignModal());
-      document.body.appendChild(favoritesAssignOverlay);
-    }
     if (!favoritesAssignModal) {
       favoritesAssignModal = document.createElement('div');
+      favoritesAssignModal.id = 'db-favorites-assign-modal';
       favoritesAssignModal.className = 'db-favorites-assign';
-      favoritesAssignModal.style.display = 'none';
+      favoritesAssignModal.setAttribute('role', 'dialog');
+      favoritesAssignModal.setAttribute('aria-modal', 'true');
+      favoritesAssignModal.setAttribute('aria-hidden', 'true');
       favoritesAssignModal.innerHTML = `
-        <div class="db-favorites-assign__header">
-          <div class="db-favorites-assign__title">${t('common.favorites', 'Favorites')}</div>
-          <button type="button" class="db-favorites-assign__close" aria-label="${t('common.close')}">&times;</button>
+        <div class="db-favorites-assign__backdrop" data-close="true"></div>
+        <div class="db-favorites-assign__content" role="document">
+          <div class="db-favorites-assign__header">
+            <div class="db-favorites-assign__title">${t('common.favorites', 'Favorites')}</div>
+            <button type="button" class="db-favorites-assign__close" aria-label="${t('common.close')}">&times;</button>
+          </div>
+          <div class="db-favorites-assign__list"></div>
+          <button type="button" class="db-favorites-assign__create db-favorites-assign__action">${t('favorites.create_folder')}</button>
+          <button type="button" class="db-favorites-assign__remove db-favorites-assign__action">${t('favorites.remove_from_favorites')}</button>
         </div>
-        <div class="db-favorites-assign__list"></div>
-        <button type="button" class="db-favorites-assign__create db-favorites-assign__action">${t('favorites.create_folder')}</button>
-        <button type="button" class="db-favorites-assign__remove db-favorites-assign__action">${t('favorites.remove_from_favorites')}</button>
       `;
-      favoritesAssignModal.addEventListener('click', (event) => event.stopPropagation());
       document.body.appendChild(favoritesAssignModal);
-      const closeBtn = favoritesAssignModal.querySelector('.db-favorites-assign__close');
-      if (closeBtn) {
-        closeBtn.addEventListener('click', () => closeFavoritesAssignModal());
-      }
+      
+      // Handlery jsou v openModal helperu, ale můžeme přidat specifické handlery
       const createBtn = favoritesAssignModal.querySelector('.db-favorites-assign__create');
       if (createBtn) {
         createBtn.addEventListener('click', () => {
@@ -2242,55 +2412,23 @@ document.addEventListener('DOMContentLoaded', async function() {
       removeBtn.style.display = hasAssignment ? 'inline-flex' : 'none';
     }
     
-    // Zobrazit modál
-    if (favoritesAssignOverlay) {
-      favoritesAssignOverlay.style.display = 'block';
-      favoritesAssignOverlay.style.position = 'fixed';
-      favoritesAssignOverlay.style.top = '0';
-      favoritesAssignOverlay.style.left = '0';
-      favoritesAssignOverlay.style.width = '100%';
-      favoritesAssignOverlay.style.height = '100%';
-      favoritesAssignOverlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
-      favoritesAssignOverlay.style.zIndex = '9999';
-    }
-    
-    if (modal) {
-      modal.style.display = 'flex';
-      modal.style.position = 'fixed';
-      modal.style.top = '50%';
-      modal.style.left = '50%';
-      modal.style.transform = 'translate(-50%, -50%)';
-      modal.style.zIndex = '10000';
-      modal.style.backgroundColor = 'white';
-      modal.style.borderRadius = '8px';
-      modal.style.padding = '20px';
-      modal.style.boxShadow = '0 4px 20px rgba(0,0,0,0.3)';
-      modal.style.minWidth = '300px';
-    }
-    
-    // Zamknout scroll stránky při otevřeném modalu
-    try { 
-      document.body.dataset._dbFavoritesScroll = document.body.style.overflow || ''; 
-      document.body.style.overflow = 'hidden'; 
-    } catch (_) {}
+    // Otevřít modal s jednotným helperem
+    openModal(modal, {
+      closeOnBackdrop: true,
+      stopPropagation: true
+    });
   }
   function closeFavoritesAssignModal() {
-    if (favoritesAssignOverlay) favoritesAssignOverlay.style.display = 'none';
-    if (favoritesAssignModal) favoritesAssignModal.style.display = 'none';
+    if (favoritesAssignModal) {
+      closeModal(favoritesAssignModal);
+    }
     favoritesAssignPostId = null;
     favoritesAssignProps = null;
-    // Obnovit scroll stránky
-    try { if (document.body && document.body.dataset) { document.body.style.overflow = document.body.dataset._dbFavoritesScroll || ''; delete document.body.dataset._dbFavoritesScroll; } } catch (_) {}
   }
   
   // Zveřejnit openFavoritesAssignModal na window pro externí přístup
   window.openFavoritesAssignModal = openFavoritesAssignModal;
-  // ESC pro zavření modalu
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && favoritesAssignModal && favoritesAssignModal.style.display === 'flex') {
-      closeFavoritesAssignModal();
-    }
-  });
+  // ESC handler je v globálním ESC listeneru
   function selectFeaturesForView() {
     try {
       if (!map) return [];
@@ -4706,41 +4844,47 @@ document.addEventListener('DOMContentLoaded', async function() {
     </div>
   `;
   
-  // Provider modal
+  // Provider modal - bez inline stylů, použít CSS třídy
   const providerModal = document.createElement('div');
   providerModal.id = 'db-provider-modal';
   providerModal.className = 'db-provider-modal';
-  providerModal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:25000;align-items:center;justify-content:center;';
+  providerModal.setAttribute('role', 'dialog');
+  providerModal.setAttribute('aria-modal', 'true');
+  providerModal.setAttribute('aria-hidden', 'true');
   providerModal.innerHTML = `
-    <div class="db-provider-modal__content" style="background:#FEF9E8;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
-      <div class="db-provider-modal__header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-shrink:0;">
-        <h3 style="margin:0;color:#049FE8;font-size:1.3rem;font-weight:600;">${t('filters.select_provider_title', 'Vyberte provozovatele')}</h3>
-        <button type="button" class="db-provider-modal__close" style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:background 0.2s;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='none'">&times;</button>
+    <div class="db-provider-modal__backdrop" data-close="true"></div>
+    <div class="db-provider-modal__content" role="document">
+      <div class="db-provider-modal__header">
+        <h3 class="db-provider-modal__title">${t('filters.select_provider_title', 'Vyberte provozovatele')}</h3>
+        <button type="button" class="db-provider-modal__close" aria-label="${t('common.close')}">&times;</button>
       </div>
-      <div class="db-provider-modal__body" id="db-provider-grid" style="flex:1;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;padding-right:8px;"></div>
-      <div class="db-provider-modal__footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;flex-shrink:0;padding-top:16px;border-top:1px solid #e5e7eb;">
-        <span id="db-provider-selected-count" style="color:#666;font-size:0.9rem;">0 vybráno</span>
-        <button type="button" id="db-provider-apply" style="background:#049FE8;color:white;border:none;border-radius:8px;padding:10px 24px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0378b8'" onmouseout="this.style.background='#049FE8'">Použít</button>
+      <div class="db-provider-modal__body" id="db-provider-grid"></div>
+      <div class="db-provider-modal__footer">
+        <span id="db-provider-selected-count" class="db-provider-modal__count">0 vybráno</span>
+        <button type="button" id="db-provider-apply" class="db-provider-modal__apply">Použít</button>
       </div>
     </div>
   `;
   document.body.appendChild(providerModal);
   
-  // POI Type modal - vytvořit podobně jako provider modal
+  // POI Type modal - bez inline stylů, použít CSS třídy
   const poiTypeModal = document.createElement('div');
   poiTypeModal.id = 'db-poi-type-modal';
   poiTypeModal.className = 'db-provider-modal';
-  poiTypeModal.style.cssText = 'display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:25000;align-items:center;justify-content:center;';
+  poiTypeModal.setAttribute('role', 'dialog');
+  poiTypeModal.setAttribute('aria-modal', 'true');
+  poiTypeModal.setAttribute('aria-hidden', 'true');
   poiTypeModal.innerHTML = `
-    <div class="db-provider-modal__content" style="background:#FEF9E8;border-radius:16px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
-      <div class="db-provider-modal__header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-shrink:0;">
-        <h3 style="margin:0;color:#049FE8;font-size:1.3rem;font-weight:600;">${t('filters.select_poi_type_title', 'Vyberte typy POI')}</h3>
-        <button type="button" class="db-poi-type-modal__close" style="background:none;border:none;font-size:28px;cursor:pointer;color:#666;width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:4px;transition:background 0.2s;" onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background='none'">&times;</button>
+    <div class="db-provider-modal__backdrop" data-close="true"></div>
+    <div class="db-provider-modal__content" role="document">
+      <div class="db-provider-modal__header">
+        <h3 class="db-provider-modal__title">${t('filters.select_poi_type_title', 'Vyberte typy POI')}</h3>
+        <button type="button" class="db-poi-type-modal__close" aria-label="${t('common.close')}">&times;</button>
       </div>
-      <div class="db-provider-modal__body" id="db-poi-type-grid" style="flex:1;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:12px;padding-right:8px;"></div>
-      <div class="db-provider-modal__footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:20px;flex-shrink:0;padding-top:16px;border-top:1px solid #e5e7eb;">
-        <span id="db-poi-type-selected-count" style="color:#666;font-size:0.9rem;">0 vybráno</span>
-        <button type="button" id="db-poi-type-apply" style="background:#049FE8;color:white;border:none;border-radius:8px;padding:10px 24px;font-weight:600;cursor:pointer;transition:all 0.2s;" onmouseover="this.style.background='#0378b8'" onmouseout="this.style.background='#049FE8'">Použít</button>
+      <div class="db-provider-modal__body" id="db-poi-type-grid"></div>
+      <div class="db-provider-modal__footer">
+        <span id="db-poi-type-selected-count" class="db-provider-modal__count">0 vybráno</span>
+        <button type="button" id="db-poi-type-apply" class="db-provider-modal__apply">Použít</button>
       </div>
     </div>
   `;
@@ -4750,27 +4894,33 @@ document.addEventListener('DOMContentLoaded', async function() {
   document.body.appendChild(filterPanel);
   document.body.appendChild(mapOverlay);
   
-  // Event handlery pro modal
+  // Event handlery pro modal - použít jednotný helper
   const closeFilterModal = () => {
-    filterPanel.style.display = 'none';
-    filterPanel.classList.remove('open');
-    document.body.classList.remove('db-filter-modal-open');
+    closeModal(filterPanel);
     // Po zavření zrekapitulovat skutečný stav filtrů (ponechá žluté zvýraznění, pokud jsou aktivní)
     try { updateResetButtonVisibility(); } catch(_) {}
   };
 
   const openFilterModal = () => {
-    filterPanel.style.display = 'flex';
-    filterPanel.classList.add('open');
-    document.body.classList.add('db-filter-modal-open');
-    // Nech behavioru řídit se podle skutečného stavu filtrů
-    try { updateResetButtonVisibility(); } catch(_) {}
-    
     // Zavřít mobile sheet pokud je otevřený
     const mobileSheet = document.getElementById('db-mobile-sheet');
     if (mobileSheet && mobileSheet.classList.contains('open')) {
       mobileSheet.classList.remove('open');
     }
+    
+    // Otevřít modal s jednotným helperem
+    openModal(filterPanel, {
+      closeOnBackdrop: true,
+      stopPropagation: true,
+      onOpen: () => {
+        // Nech behavioru řídit se podle skutečného stavu filtrů
+        try { updateResetButtonVisibility(); } catch(_) {}
+      },
+      onClose: () => {
+        // Po zavření zrekapitulovat skutečný stav filtrů
+        try { updateResetButtonVisibility(); } catch(_) {}
+      }
+    });
     
     // Inicializovat filtry při otevření modalu
     setTimeout(() => {
@@ -4814,27 +4964,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     }, 100);
   };
 
-  // Close button
-  const closeButton = filterPanel.querySelector('.db-filter-modal__close');
-  if (closeButton) {
-    closeButton.addEventListener('click', closeFilterModal);
-  }
-
-  // Backdrop click
-  const backdrop = filterPanel.querySelector('.db-filter-modal__backdrop');
-  if (backdrop) {
-    backdrop.addEventListener('click', closeFilterModal);
-  }
+  // Close button a backdrop - handler je v openModal helperu
   
-  // Provider modal handlers
+  // Provider modal handlers - close button a backdrop jsou v helperu
   const openProviderBtn = document.getElementById('db-open-provider-modal');
   if (openProviderBtn) {
     openProviderBtn.addEventListener('click', openProviderModal);
-  }
-  
-  const providerModalClose = document.querySelector('.db-provider-modal__close');
-  if (providerModalClose) {
-    providerModalClose.addEventListener('click', closeProviderModal);
   }
   
   const providerModalApply = document.getElementById('db-provider-apply');
@@ -4842,42 +4977,18 @@ document.addEventListener('DOMContentLoaded', async function() {
     providerModalApply.addEventListener('click', applyProviderFilter);
   }
   
-  // Close provider modal on backdrop click
-  providerModal.addEventListener('click', (e) => {
-    if (e.target === providerModal) {
-      closeProviderModal();
-    }
-  });
-  
-  // POI Type modal handlers
+  // POI Type modal handlers - close button a backdrop jsou v helperu
   const openPoiTypeBtn = document.getElementById('db-open-poi-type-modal');
   if (openPoiTypeBtn) {
     openPoiTypeBtn.addEventListener('click', openPoiTypeModal);
-  }
-  
-  const poiTypeModalClose = poiTypeModal.querySelector('.db-poi-type-modal__close');
-  if (poiTypeModalClose) {
-    poiTypeModalClose.addEventListener('click', closePoiTypeModal);
   }
   
   const poiTypeModalApply = document.getElementById('db-poi-type-apply');
   if (poiTypeModalApply) {
     poiTypeModalApply.addEventListener('click', applyPoiTypeFilter);
   }
-  
-  // Close POI type modal on backdrop click
-  poiTypeModal.addEventListener('click', (e) => {
-    if (e.target === poiTypeModal) {
-      closePoiTypeModal();
-    }
-  });
 
-  // Escape key
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && filterPanel.classList.contains('open')) {
-      closeFilterModal();
-    }
-  });
+  // Escape key - handler je v globálním ESC listeneru
 
   // Zabránit posuvání mapy při interakci s filter panelem
   filterPanel.addEventListener('touchstart', function(e) { e.stopPropagation(); }, { passive: true });
@@ -5046,18 +5157,20 @@ document.addEventListener('DOMContentLoaded', async function() {
       providerDiv.className = 'db-provider-item';
       const isSelected = filterState.providers.has(provider.name);
       
-      providerDiv.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px;border:2px solid ${isSelected ? '#FF6A4B' : '#e5e7eb'};border-radius:8px;cursor:pointer;transition:all 0.2s;background:${isSelected ? '#FFF1F5' : '#FEF9E8'};`;
+      if (isSelected) {
+        providerDiv.classList.add('selected');
+      }
       
       if (provider.icon) {
         const iconUrl = getIconUrl(provider.icon);
         providerDiv.innerHTML = `
-          <img src="${iconUrl}" style="width:32px;height:32px;object-fit:contain;" alt="${provider.nickname || provider.name}" />
-          <div style="font-size:0.75rem;text-align:center;color:#333;margin-top:4px;">${provider.nickname || provider.name}</div>
+          <img src="${iconUrl}" class="db-provider-item__icon" alt="${provider.nickname || provider.name}" />
+          <div class="db-provider-item__name">${provider.nickname || provider.name}</div>
         `;
       } else {
         providerDiv.innerHTML = `
-          <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:600;color:#049FE8;border:2px solid #049FE8;border-radius:4px;">${(provider.nickname || provider.name).substring(0,2).toUpperCase()}</div>
-          <div style="font-size:0.75rem;text-align:center;color:#333;margin-top:4px;">${provider.nickname || provider.name}</div>
+          <div class="db-provider-item__fallback">${(provider.nickname || provider.name).substring(0,2).toUpperCase()}</div>
+          <div class="db-provider-item__name">${provider.nickname || provider.name}</div>
         `;
       }
       
@@ -5065,12 +5178,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         const wasSelected = filterState.providers.has(provider.name);
         if (wasSelected) {
           filterState.providers.delete(provider.name);
-          providerDiv.style.border = '2px solid #e5e7eb';
-          providerDiv.style.background = '#FEF9E8';
+          providerDiv.classList.remove('selected');
         } else {
           filterState.providers.add(provider.name);
-          providerDiv.style.border = '2px solid #FF6A4B';
-          providerDiv.style.background = '#FFF1F5';
+          providerDiv.classList.add('selected');
         }
         updateProviderSelectedCount();
       });
@@ -5079,13 +5190,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     
     updateProviderSelectedCount();
-    modal.style.display = 'flex';
+    
+    // Otevřít modal s jednotným helperem
+    openModal(modal);
   }
   
   function closeProviderModal() {
     const modal = document.getElementById('db-provider-modal');
     if (modal) {
-      modal.style.display = 'none';
+      closeModal(modal);
     }
   }
   
@@ -5146,11 +5259,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       poiTypeDiv.className = 'db-poi-type-item';
       const isSelected = filterState.poiTypes && filterState.poiTypes.has(poiType);
       
-      poiTypeDiv.style.cssText = `display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px;border:2px solid ${isSelected ? '#FF6A4B' : '#e5e7eb'};border-radius:8px;cursor:pointer;transition:all 0.2s;background:${isSelected ? '#FFF1F5' : '#FEF9E8'};`;
+      if (isSelected) {
+        poiTypeDiv.classList.add('selected');
+      }
       
       poiTypeDiv.innerHTML = `
-        <div style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-weight:600;color:#049FE8;border:2px solid #049FE8;border-radius:4px;">${poiType.substring(0,2).toUpperCase()}</div>
-        <div style="font-size:0.75rem;text-align:center;color:#333;margin-top:4px;">${poiType}</div>
+        <div class="db-poi-type-item__fallback">${poiType.substring(0,2).toUpperCase()}</div>
+        <div class="db-poi-type-item__name">${poiType}</div>
       `;
       
       poiTypeDiv.addEventListener('click', () => {
@@ -5158,12 +5273,10 @@ document.addEventListener('DOMContentLoaded', async function() {
         const wasSelected = filterState.poiTypes.has(poiType);
         if (wasSelected) {
           filterState.poiTypes.delete(poiType);
-          poiTypeDiv.style.border = '2px solid #e5e7eb';
-          poiTypeDiv.style.background = '#FEF9E8';
+          poiTypeDiv.classList.remove('selected');
         } else {
           filterState.poiTypes.add(poiType);
-          poiTypeDiv.style.border = '2px solid #FF6A4B';
-          poiTypeDiv.style.background = '#FFF1F5';
+          poiTypeDiv.classList.add('selected');
         }
         userHasInteractedWithFilters = true; // FIX 1.1: Označit, že uživatel interagoval s filtry
         updatePoiTypeSelectedCount();
@@ -5173,13 +5286,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
     
     updatePoiTypeSelectedCount();
-    modal.style.display = 'flex';
+    
+    // Otevřít modal s jednotným helperem
+    openModal(modal);
   }
   
   function closePoiTypeModal() {
     const modal = document.getElementById('db-poi-type-modal');
     if (modal) {
-      modal.style.display = 'none';
+      closeModal(modal);
     }
   }
   
@@ -8407,19 +8522,18 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Modal musí být mimo #db-map, aby fungoval i v list režimu, kde je mapa skrytá
   document.body.appendChild(detailModal);
   function closeDetailModal(){ 
-    detailModal.classList.remove('open'); 
+    closeModal(detailModal);
     detailModal.innerHTML = ''; 
-    // Odstranit třídu pro scroll lock
+    // Vyčistit isochrones při zavření modalu
+    clearIsochrones();
+    // Smart loading manager
     try { 
-      document.body.classList.remove('db-modal-open'); 
       if (window.smartLoadingManager && typeof window.smartLoadingManager.setManualButtonHidden === 'function') {
         window.smartLoadingManager.setManualButtonHidden(false);
       }
     } catch(_) {}
-    // Vyčistit isochrones při zavření modalu
-    clearIsochrones();
   }
-  detailModal.addEventListener('click', (e) => { if (e.target === detailModal) closeDetailModal(); });
+  
   // Klientská cache pro detail data
   const detailCache = new Map();
   
@@ -9327,9 +9441,22 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     } catch (_) {}
 
-    detailModal.classList.add('open');
+    // Otevřít modal s jednotným helperem
+    openModal(detailModal, {
+      closeOnBackdrop: true,
+      stopPropagation: true,
+      onClose: () => {
+        detailModal.innerHTML = '';
+        clearIsochrones();
+        try { 
+          if (window.smartLoadingManager && typeof window.smartLoadingManager.setManualButtonHidden === 'function') {
+            window.smartLoadingManager.setManualButtonHidden(false);
+          }
+        } catch(_) {}
+      }
+    });
     
-    // Event listener pro close tlačítko
+    // Event listener pro close tlačítko (helper už má handler, ale můžeme přidat i zde pro jistotu)
     const closeBtn = detailModal.querySelector('.close-btn');
     if (closeBtn) closeBtn.addEventListener('click', closeDetailModal);
     
