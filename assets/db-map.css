@@ -854,6 +854,12 @@ body.db-license-modal-open {
   transform: scale(1.05);
 }
 
+.db-topbar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .db-map-topbar-btn svg {
   width: 1.5em;
   height: 1.5em;
@@ -1659,17 +1665,19 @@ body.has-attribution #db-mobile-sheet.open {
 #db-list-header .db-map-topbar-btn { margin-left: 0; }
 .db-map-topbar-btn.active { background: #FFACC4; color: #049FE8; transform: scale(1.05); }
 
-/* Specifické aktivní stavy: Filtry a Oblíbené = brand žlutá s modrou ikonou */
+/* Specifické aktivní stavy: Filtry, DB doporučuje a Oblíbené = brand žlutá s modrou ikonou */
 #db-filter-btn.active,
+#db-recommended-btn.active,
 #db-favorites-btn.active,
 .db-map-topbar-btn.favorites-active {
   background: #FCE67D !important; /* Brand yellow */
   color: #049FE8 !important;      /* Blue icon */
   box-shadow: 0 2px 8px rgba(252, 230, 125, 0.4) !important;
 }
-/* Stejné aktivní žluté pro tlačítka v list headeru (nemají ID) */
-.db-map-topbar-btn[title="Filtry"].active,
-.db-map-topbar-btn[title="Oblíbené"].active {
+/* Stejné aktivní žluté pro tlačítka v list headeru */
+#db-list-filter-btn.active,
+#db-list-recommended-btn.active,
+#db-list-favorites-btn.active {
   background: #FCE67D !important;
   color: #049FE8 !important;
   box-shadow: 0 2px 8px rgba(252, 230, 125, 0.4) !important;
@@ -2187,6 +2195,33 @@ body.has-attribution #db-detail-modal.open { padding-bottom: 0 !important; }
   background: #ccc;
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+/* Filter groups */
+.db-filter-group {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #FCE67D;
+}
+
+.db-filter-group:last-of-type {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.db-filter-group__title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #049FE8;
+  margin-bottom: 0.5rem;
+}
+
+.db-filter-group__description {
+  font-size: 0.85rem;
+  color: #666;
+  margin-bottom: 1rem;
+  font-style: italic;
 }
 
 /* Filter sections */
