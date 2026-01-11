@@ -299,7 +299,15 @@ class REST_Map {
 
     public function handle_map( $request ) {
         // STRICT MODE: Endpoint vyžaduje lat, lng, radius_km (max 50 km)
+        // NEBO ids parametr pro načtení podle ID (pro favorites)
         // Fetch je on-demand podle středu mapy, s minimálním payloadem
+        
+        // Zkontrolovat, zda je poslán ids parametr (pro favorites)
+        $ids_param = $request->get_param('ids');
+        if ($ids_param) {
+            // IDS MODE: Načíst místa podle IDs
+            return $this->handle_map_by_ids($request);
+        }
         
         // Robustní příjem parametrů - nejprve zkusit oddělené lat/lng, pak center
         $lat = $lng = null;
@@ -333,7 +341,7 @@ class REST_Map {
         if ($lat === null || $lng === null || $radius_km <= 0) {
             return new \WP_Error(
                 'missing_required_params',
-                'Endpoint vyžaduje parametry: lat, lng, radius_km (max 50 km)',
+                'Endpoint vyžaduje parametry: lat, lng, radius_km (max 50 km) NEBO ids',
                 array( 'status' => 400 )
             );
         }
@@ -3930,6 +3938,144 @@ class REST_Map {
      * Special dataset handler - pro db_recommended/free bez radius filtru
      * S server-side cache na 5-15 minut
      */
+    /**
+     * Načte místa podle IDs (pro favorites)
+     */
+    public function handle_map_by_ids($request) {
+        $ids_param = $request->get_param('ids');
+        if (empty($ids_param)) {
+            return new \WP_Error(
+                'missing_ids',
+                'Parametr ids je povinný',
+                array( 'status' => 400 )
+            );
+        }
+        
+        // Parsovat IDs z CSV stringu
+        $ids = array_filter(array_map('intval', explode(',', $ids_param)));
+        $ids = array_filter($ids, function($id) {
+            return $id > 0;
+        });
+        
+        if (empty($ids)) {
+            return new \WP_Error(
+                'invalid_ids',
+                'Neplatné IDs',
+                array( 'status' => 400 )
+            );
+        }
+        
+        // Types parametr: charger|poi|rv (nebo charging_location,rv_spot,poi)
+        $types_param = $request->get_param('types') ?: $request->get_param('included') ?: $request->get_param('post_types');
+        $post_type_map = [
+            'charger' => 'charging_location',
+            'rv_spot' => 'rv_spot',
+            'poi'     => 'poi',
+            'charging_location' => 'charging_location',
+        ];
+        
+        $types = ['charging_location', 'rv_spot', 'poi'];
+        if ($types_param) {
+            $types = array_values(array_unique(array_map(function($t) use($post_type_map) {
+                $t = trim($t);
+                return $post_type_map[$t] ?? $t;
+            }, explode(',', $types_param))));
+        }
+        
+        // Fields parametr: minimal|full (default minimal)
+        $fields_mode = $request->get_param('fields') ?: 'minimal';
+        if (!in_array($fields_mode, ['minimal', 'full'], true)) {
+            $fields_mode = 'minimal';
+        }
+        
+        // Inicializovat favorite_assignments
+        $favorite_assignments = [];
+        $favorite_folders_index = [];
+        $current_user_id = get_current_user_id();
+        if ($current_user_id > 0 && class_exists('\\DB\\Favorites_Manager')) {
+            try {
+                $favorites_manager = \DB\Favorites_Manager::get_instance();
+                $state = $favorites_manager->get_state($current_user_id);
+                $favorite_assignments = $state['assignments'] ?? [];
+                $folders = $state['folders'] ?? [];
+                foreach ($folders as $folder) {
+                    if (isset($folder['id'])) {
+                        $favorite_folders_index[(string)$folder['id']] = $folder;
+                    }
+                }
+            } catch (\Exception $e) {
+                // Ignorovat chyby při načítání favorites
+            }
+        }
+        
+        $features = [];
+        
+        // Načíst posty podle typů
+        foreach ($types as $pt) {
+            if (!in_array($pt, ['charging_location', 'rv_spot', 'poi'], true)) {
+                continue;
+            }
+            
+            $args = [
+                'post_type' => $pt,
+                'post_status' => 'publish',
+                'post__in' => $ids,
+                'posts_per_page' => -1, // Načíst všechny
+                'no_found_rows' => true,
+                'orderby' => 'post__in', // Zachovat pořadí podle IDs
+            ];
+            
+            $query = new \WP_Query($args);
+            
+            // Batch loading meta a taxonomy
+            if (!empty($query->posts)) {
+                $post_ids = wp_list_pluck($query->posts, 'ID');
+                update_postmeta_cache($post_ids);
+                
+                if ($pt === 'charging_location') {
+                    update_object_term_cache($post_ids, 'charging_location');
+                } elseif ($pt === 'poi') {
+                    update_object_term_cache($post_ids, 'poi');
+                } elseif ($pt === 'rv_spot') {
+                    update_object_term_cache($post_ids, 'rv_spot');
+                }
+            }
+            
+            $keys = $this->get_latlng_keys_for_type($pt);
+            
+            foreach ($query->posts as $post) {
+                $lat = (float) get_post_meta($post->ID, $keys['lat'], true);
+                $lng = (float) get_post_meta($post->ID, $keys['lng'], true);
+                
+                // Normalizace čísel s čárkou
+                if (is_string($lat)) { $lat = (float) str_replace(',', '.', trim($lat)); }
+                if (is_string($lng)) { $lng = (float) str_replace(',', '.', trim($lng)); }
+                
+                if (!$lat || !$lng || (abs($lat) < 0.000001 && abs($lng) < 0.000001)) {
+                    continue;
+                }
+                
+                $properties = $this->build_minimal_properties($post, $pt, $fields_mode, $favorite_assignments, $favorite_folders_index);
+                
+                $features[] = [
+                    'type' => 'Feature',
+                    'geometry' => [
+                        'type' => 'Point',
+                        'coordinates' => [$lng, $lat]
+                    ],
+                    'properties' => $properties
+                ];
+            }
+        }
+        
+        $response_data = [
+            'type' => 'FeatureCollection',
+            'features' => $features
+        ];
+        
+        return rest_ensure_response($response_data);
+    }
+
     public function handle_map_special($request) {
         $db_recommended = $request->get_param('db_recommended'); // '1' nebo null
         $free_only = $request->get_param('free'); // '1' nebo null

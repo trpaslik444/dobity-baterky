@@ -1235,6 +1235,8 @@ body.db-license-modal-open {
 body.db-immersive { overflow: hidden !important; height: 100vh; }
 /* Zámek body při otevřeném modalu detailu */
 body.db-modal-open { overflow: hidden !important; }
+body.db-favorites-panel-open #db-manual-load-container,body.db-favorites-panel-open .db-manual-load-container,body.db-favorites-panel-open .db-manual-load-container--fixed,.favorites-panel-open #db-manual-load-container,.favorites-panel-open .db-manual-load-container,.favorites-panel-open .db-manual-load-container--fixed { display: none !important; }
+body.db-favorites-active #db-manual-load-container,body.db-favorites-active .db-manual-load-container,body.db-favorites-active .db-manual-load-container--fixed { display: none !important; }
 
 @media (max-width: 700px) {
   .db-map-topbar {

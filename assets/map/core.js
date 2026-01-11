@@ -1085,6 +1085,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     activeFeatures: [],
     fetchedOnce: false,
     isPanelOpen: false,
+    isActivating: false,
     isLoading: false,
     loadingPromise: null,
     previousLoadMode: null,
@@ -1470,6 +1471,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       const favBtn2 = document.querySelector('#db-list-header #db-list-favorites-btn');
       if (favBtn2) favBtn2.classList.toggle('active', !!favoritesState.isActive);
     } catch(_) {}
+    // Synchronizovat body class pro CSS hard-hide tlačítka
+    document.body.classList.toggle('db-favorites-active', !!favoritesState.isActive);
   }
 
   function fitMapToFeatures(list) {
@@ -1503,7 +1506,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }
 
-  function updateFavoritesBanner(folder, isEmpty = false) {
+  function updateFavoritesBanner(folder, isEmpty = false, errorMessage = null) {
     if (!favoritesState.enabled) {
       return;
     }
@@ -1521,7 +1524,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     const label = escapeHtml(folder.name || '');
     const count = folder.count || 0;
     const limit = folder.limit || 0;
-    const statusText = isEmpty ? 'Žádná místa v této složce' : `${count}${limit ? ` / ${limit}` : ''}`;
+    let statusText;
+    if (errorMessage) {
+      statusText = escapeHtml(errorMessage);
+    } else if (isEmpty) {
+      statusText = 'Žádná místa v této složce';
+    } else {
+      statusText = `${count}${limit ? ` / ${limit}` : ''}`;
+    }
     favoritesBanner.innerHTML = `
       <div class="db-favorites-banner__content">
         <span class="db-favorites-banner__icon">${icon}</span>
@@ -1882,6 +1892,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     const panel = ensureFavoritesPanel();
     if (!panel) return;
     favoritesState.isPanelOpen = true;
+    // Skrýt tlačítko "Načíst další" hned po otevření panelu
+    window.smartLoadingManager?.hideManualLoadButton?.();
+    window.smartLoadingManager?.setManualButtonHidden?.(true);
+    document.body.classList.add('db-favorites-panel-open');
     renderFavoritesPanel();
     panel.style.display = 'block';
     if (favoritesOverlay) favoritesOverlay.style.display = 'block';
@@ -1893,7 +1907,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (favoritesOverlay) favoritesOverlay.style.display = 'none';
     favoritesState.isPanelOpen = false;
     showFavoritesCreateForm(false);
+    document.body.classList.remove('db-favorites-panel-open');
     mapDiv.classList.remove('favorites-panel-open');
+    // Zobrazit tlačítko jen pokud není aktivní favorites režim
+    if (!favoritesState.isActive && loadMode !== 'favorites') {
+      window.smartLoadingManager?.setManualButtonHidden?.(false);
+      window.smartLoadingManager?.showManualLoadButton?.();
+    }
   }
 
   function resolveDefaultFavoritesFolderId() {
@@ -1980,68 +2000,124 @@ document.addEventListener('DOMContentLoaded', async function() {
       try { inFlightController.abort(); } catch (_) {}
       inFlightController = null;
     }
-    if (favoritesState.previousLoadMode === null) {
-      favoritesState.previousLoadMode = loadMode;
-    }
-    loadMode = 'favorites';
-    await fetchFavoritesState();
+    
+    // Nastavit isActivating flag na začátku
+    favoritesState.isActivating = true;
+    
+    try {
+      // 1) Force refresh vždy při aktivaci folderu
+      await fetchFavoritesState(true);
+    
+    // 2) Získat ids a folder po refreshi
     const ids = getAssignmentsForFolder(folderId);
     const folder = getFavoriteFolder(folderId);
-    favoritesState.previousFeatures = Array.isArray(features) ? features.slice(0) : [];
-    favoritesState.activeFolderId = String(folderId);
-    favoritesState.isActive = true;
-    updateFavoritesButtonState();
-    if (!ids.length) {
+    
+    // 3) Logika rozhodování
+    if (ids.length > 0) {
+      // Pokud ids.length > 0 → pokračuj fetch a zobraz výsledky
+      // Uložit previousFeatures před změnou
+      if (favoritesState.previousLoadMode === null) {
+        favoritesState.previousLoadMode = loadMode;
+      }
+      favoritesState.previousFeatures = Array.isArray(features) ? features.slice(0) : [];
+      favoritesState.activeFolderId = String(folderId);
+      
+      document.body.classList.add('db-loading');
+      try {
+        const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
+        const base = (dbData?.restUrl) || '/wp-json/db/v1/map';
+        const url = new URL(base, window.location.origin);
+        url.searchParams.set('ids', ids.join(','));
+        url.searchParams.set('included', 'charging_location,rv_spot,poi');
+        const res = await fetch(url.toString(), {
+          headers: {
+            'Accept': 'application/json',
+            'X-WP-Nonce': dbMapData?.restNonce || '',
+          },
+          credentials: 'same-origin',
+        });
+        
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+        
+        const data = await res.json();
+        const fetchedFeatures = Array.isArray(data?.features) ? data.features : [];
+        fetchedFeatures.forEach(f => {
+          const fid = f?.properties?.id;
+          if (fid != null) {
+            featureCache.set(fid, f);
+          }
+        });
+        
+        // 4) Po úspěšném fetchi teprve aktivovat favorites režim
+        favoritesState.activeFeatures = fetchedFeatures.slice(0);
+        features = fetchedFeatures;
+        window.features = features;
+        clearMarkers();
+        renderCards('', null, false);
+        await waitForMapReady();
+        fitMapToFeatures(fetchedFeatures);
+        
+        // Aktivovat favorites režim až po úspěšném fetchi
+        loadMode = 'favorites';
+        favoritesState.isActive = true;
+        document.body.classList.add('db-favorites-active');
+        updateFavoritesButtonState();
+        updateFavoritesBanner(folder);
+        
+        try {
+          localStorage.setItem(FAVORITES_LAST_FOLDER_KEY, String(folderId));
+          favoritesState.lastActivatedFolderId = String(folderId);
+        } catch (_) {}
+      } catch (err) {
+        console.error('[DB Map] favorites folder fetch failed', err);
+        // Pokud fetch selže, NEPŘEPNOUT do favorites režimu
+        // Zobrazit chybu v banneru, ale nechat mapu beze změny
+        if (folder) {
+          updateFavoritesBanner(folder, false, 'Nepodařilo se načíst oblíbené položky. Zkuste to prosím znovu.');
+        }
+      } finally {
+        document.body.classList.remove('db-loading');
+      }
+    } else if (ids.length === 0 && folder && folder.count === 0) {
+      // Pokud ids.length === 0 a folder.count === 0 → zobraz prázdnou složku
+      if (favoritesState.previousLoadMode === null) {
+        favoritesState.previousLoadMode = loadMode;
+      }
+      loadMode = 'favorites';
+      favoritesState.previousFeatures = Array.isArray(features) ? features.slice(0) : [];
+      favoritesState.activeFolderId = String(folderId);
+      favoritesState.isActive = true;
+      document.body.classList.add('db-favorites-active');
+      updateFavoritesButtonState();
+      
       features = [];
       window.features = features;
       favoritesState.activeFeatures = [];
       clearMarkers();
       renderCards('', null, false);
       updateFavoritesBanner(folder, true);
+      
       try {
         localStorage.setItem(FAVORITES_LAST_FOLDER_KEY, String(folderId));
         favoritesState.lastActivatedFolderId = String(folderId);
       } catch (_) {}
-      return;
+    } else if (ids.length === 0 && folder && folder.count > 0) {
+      // Pokud ids.length === 0 a folder.count > 0 → zobraz chybu, NEPŘEPNOUT do favorites režimu
+      console.error('[DB Map][Favorites] Inconsistency: folder.count > 0 but ids.length === 0', {
+        folderId,
+        folderCount: folder.count,
+        idsLength: ids.length,
+      });
+      
+      // Zobrazit chybu v banneru, ale NEPŘEPNOUT do favorites režimu
+      // (nechat loadMode a features beze změny)
+      updateFavoritesBanner(folder, false, 'Nepodařilo se načíst oblíbené položky. Zkuste to prosím znovu.');
     }
-    document.body.classList.add('db-loading');
-    try {
-      const dbData = typeof dbMapData !== 'undefined' ? dbMapData : (typeof window.dbMapData !== 'undefined' ? window.dbMapData : null);
-      const base = (dbData?.restUrl) || '/wp-json/db/v1/map';
-      const url = new URL(base, window.location.origin);
-      url.searchParams.set('ids', ids.join(','));
-      url.searchParams.set('included', 'charging_location,rv_spot,poi');
-      const res = await fetch(url.toString(), {
-        headers: {
-          'Accept': 'application/json',
-          'X-WP-Nonce': dbMapData?.restNonce || '',
-        },
-        credentials: 'same-origin',
-      });
-      const data = await res.json();
-      const fetchedFeatures = Array.isArray(data?.features) ? data.features : [];
-      fetchedFeatures.forEach(f => {
-        const fid = f?.properties?.id;
-        if (fid != null) {
-          featureCache.set(fid, f);
-        }
-      });
-      favoritesState.activeFeatures = fetchedFeatures.slice(0);
-      features = fetchedFeatures;
-      window.features = features;
-      clearMarkers();
-      renderCards('', null, false);
-      await waitForMapReady();
-      fitMapToFeatures(fetchedFeatures);
-      updateFavoritesBanner(folder);
-      try {
-        localStorage.setItem(FAVORITES_LAST_FOLDER_KEY, String(folderId));
-        favoritesState.lastActivatedFolderId = String(folderId);
-      } catch (_) {}
-    } catch (err) {
-      console.error('[DB Map] favorites folder fetch failed', err);
     } finally {
-      document.body.classList.remove('db-loading');
+      // Resetovat isActivating flag na konci
+      favoritesState.isActivating = false;
     }
   }
   function deactivateFavoritesMode() {
@@ -2051,6 +2127,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     favoritesState.isActive = false;
     favoritesState.activeFolderId = null;
     favoritesState.activeFeatures = [];
+    document.body.classList.remove('db-favorites-active');
     hideFavoritesBanner();
     updateFavoritesButtonState();
     if (favoritesState.previousLoadMode !== null) {
@@ -3007,8 +3084,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         const geo = await res.json();
         const incoming = Array.isArray(geo?.features) ? geo.features : [];
 
-        // DEBUG: Logovat počet features z quick fetchu
-        console.log('[DB Map Debug] Quick fetch: incoming features count:', incoming.length);
 
         // Pokud už plný fetch dokončil a zrušil mini-fetch, přeskočit render
         if (quickController.signal.aborted) {
@@ -3079,8 +3154,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         const geo = await res.json();
         const incoming = Array.isArray(geo?.features) ? geo.features : [];
 
-        // DEBUG: Logovat počet features z full fetchu
-        console.log('[DB Map Debug] Full fetch: incoming features count:', incoming.length);
 
         // Sloučit do cache
         for (let i = 0; i < incoming.length; i++) {
@@ -10765,22 +10838,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       free: filterState.free,
       showOnlyRecommended
     })) {
-      console.log('[DB Map Debug] renderCards:', {
-      featuresCount: features.length,
-      showOnlyRecommended,
-      filterState: {
-        powerMin: filterState.powerMin,
-        powerMax: filterState.powerMax,
-        connectors: filterState.connectors.size,
-        providers: filterState.providers.size,
-        poiTypes: filterState.poiTypes.size,
-        amenities: filterState.amenities.size,
-        access: filterState.access.size,
-        free: filterState.free
-      },
-      hasAnyFilter,
-      userHasInteractedWithFilters
-    });
       // Uložit stav pro příští kontrolu
       window.__db_last_logged_filter_state = JSON.stringify({
         powerMin: filterState.powerMin,
@@ -11981,7 +12038,6 @@ document.addEventListener('DOMContentLoaded', async function() {
       },
       filtersLoaded: window.__db_filters_loaded__ || false
     };
-    console.log('[DB Debug] Aktuální stav filtrů:', state);
     return state;
   };
 
@@ -12107,6 +12163,18 @@ document.addEventListener('DOMContentLoaded', async function() {
       this._watcherId = setInterval(() => {
         try {
           if (document.visibilityState && document.visibilityState !== 'visible') return;
+          // Priorita: když je otevřený panel / probíhá aktivace, tlačítko vždy schovat
+          if (favoritesState.isPanelOpen || favoritesState.isActivating) {
+            if (this.manualLoadButton) this.manualLoadButton.style.display = 'none';
+            return;
+          }
+          // V režimu favorites tlačítko neschovávat/nezobrazovat
+          if (favoritesState.isActive || loadMode === 'favorites') {
+            if (this.manualLoadButton) {
+              this.manualLoadButton.style.display = 'none';
+            }
+            return;
+          }
           if (typeof loadMode === 'undefined' || loadMode !== 'radius') return;
           if (!window.smartLoadingManager || !map) return;
           
@@ -12206,7 +12274,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             mapContainer.style.position = 'relative';
           }
           if (this.manualLoadButton.parentElement !== mapContainer) {
-            console.log('[DB Map][ManualButton] Připojuji tlačítko do .leaflet-container');
             mapContainer.appendChild(this.manualLoadButton);
             this.manualLoadButton.classList.remove('db-manual-load-container--fixed');
             this.applyManualButtonStyles('map');
@@ -12214,7 +12281,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
           return true;
         }
-        console.log('[DB Map][ManualButton] attach(): .leaflet-container nedostupná, čekám…');
         return false;
       };
       let tries = 0;
@@ -12223,9 +12289,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         tries++;
         if (attach()) {
           fallbackAttached = false;
-          if (tries > 1) {
-            console.log('[DB Map][ManualButton] Úspěšně připojeno po', tries, 'pokusech');
-          }
           clearInterval(attachInterval);
           return;
         }
@@ -12303,6 +12366,25 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     
     showManualLoadButton() {
+      // Guard: pokud je aktivní favorites režim, tlačítko vždy schovat
+      if (document.body.classList.contains('db-favorites-active')) {
+        if (this.manualLoadButton) this.manualLoadButton.style.display = 'none';
+        return;
+      }
+      // Guard: pokud je otevřený panel Oblíbené, tlačítko vždy schovat
+      if (document.body.classList.contains('db-favorites-panel-open')) {
+        if (this.manualLoadButton) {
+          this.manualLoadButton.style.display = 'none';
+        }
+        return;
+      }
+      // Pokud jsou aktivní favorites režim, panel je otevřený nebo probíhá aktivace, schovat tlačítko
+      if (favoritesState.isActive || loadMode === 'favorites' || favoritesState.isPanelOpen || favoritesState.isActivating) {
+        if (this.manualLoadButton) {
+          this.manualLoadButton.style.display = 'none';
+        }
+        return;
+      }
       // Pokud jsou aktivní speciální filtry (DB doporučuje nebo Zdarma) nebo special dataset režim,
       // schovat tlačítko protože se načítají všechna data a tlačítko není potřeba
       if (specialDatasetActive || filterState.free || showOnlyRecommended) {
@@ -12328,13 +12410,28 @@ document.addEventListener('DOMContentLoaded', async function() {
       const inLeaflet = typeof this.manualLoadButton.closest === 'function' ? this.manualLoadButton.closest('.leaflet-container') : null;
       const mode = inLeaflet ? 'map' : 'body';
       this.applyManualButtonStyles(mode);
-      console.log('[DB Map][ManualButton] show() mode:', mode, 'parent:', this.manualLoadButton.parentElement ? this.manualLoadButton.parentElement.tagName + '#' + (this.manualLoadButton.parentElement.id || '') : 'null');
       this.manualLoadButton.style.display = 'block';
       this.outsideLoadedArea = true;
       this.logManualButtonPlacement('show');
     }
     
     hideManualLoadButton() {
+      // Priorita: když je otevřený panel / probíhá aktivace, tlačítko vždy schovat
+      if (favoritesState.isPanelOpen || favoritesState.isActivating) {
+        if (this.manualLoadButton) {
+          this.manualLoadButton.style.display = 'none';
+          this.outsideLoadedArea = false;
+        }
+        return;
+      }
+      // Pokud jsou aktivní favorites režim, schovat tlačítko
+      if (favoritesState.isActive || loadMode === 'favorites') {
+        if (this.manualLoadButton) {
+          this.manualLoadButton.style.display = 'none';
+          this.outsideLoadedArea = false;
+        }
+        return;
+      }
       // Pokud jsou aktivní speciální filtry, schovat tlačítko i v trvalém režimu
       if (filterState.free || showOnlyRecommended) {
         if (this.manualLoadButton) {
@@ -12407,25 +12504,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           id: parentEl.id || null,
           className: parentEl.className || null
         } : null;
-        const buttonRect = this.manualLoadButton.getBoundingClientRect();
-        const mapContainer = document.querySelector('.leaflet-container');
-        const mapRect = mapContainer ? mapContainer.getBoundingClientRect() : null;
-
-        console.log('[DB Map][ManualButton][' + context + ']', {
-          parent: parentInfo,
-          buttonRect: {
-            top: Math.round(buttonRect.top),
-            left: Math.round(buttonRect.left),
-            width: Math.round(buttonRect.width),
-            height: Math.round(buttonRect.height)
-          },
-          mapRect: mapRect ? {
-            top: Math.round(mapRect.top),
-            left: Math.round(mapRect.left),
-            width: Math.round(mapRect.width),
-            height: Math.round(mapRect.height)
-          } : null
-        });
       } catch (e) {
         console.warn('[DB Map][ManualButton] logManualButtonPlacement failed:', e);
       }

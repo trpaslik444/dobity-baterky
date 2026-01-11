@@ -71,18 +71,36 @@
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
- .db-manual-load-container.db-manual-load-hidden,
- .db-manual-load-container--fixed.db-manual-load-hidden {
-   opacity: 0;
-   pointer-events: none;
-   transform: translate(-50%, 16px);
- }
+.db-manual-load-container.db-manual-load-hidden,
+.db-manual-load-container--fixed.db-manual-load-hidden {
+  display: none !important;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 16px);
+}
  
 body.db-modal-open .db-manual-load-container,
 body.db-modal-open .db-manual-load-container--fixed {
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, 16px);
+}
+
+/* Hard-hide tlačítko "Načíst další" když je otevřený panel Oblíbené */
+body.db-favorites-panel-open #db-manual-load-container,
+body.db-favorites-panel-open .db-manual-load-container,
+body.db-favorites-panel-open .db-manual-load-container--fixed,
+.favorites-panel-open #db-manual-load-container,
+.favorites-panel-open .db-manual-load-container,
+.favorites-panel-open .db-manual-load-container--fixed {
+  display: none !important;
+}
+
+/* Hard-hide tlačítko "Načíst další" když je aktivní favorites režim */
+body.db-favorites-active #db-manual-load-container,
+body.db-favorites-active .db-manual-load-container,
+body.db-favorites-active .db-manual-load-container--fixed {
+  display: none !important;
 }
 
 .db-manual-load-btn {
