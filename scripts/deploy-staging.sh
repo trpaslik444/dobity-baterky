@@ -32,3 +32,7 @@ fi
 
 echo "🚀 Nasazuji na staging s bezpečnou aktivací..."
 "$SCRIPT_DIR/deploy-staging-safe.expect" "$BUILD_DIR"
+
+echo ""
+echo "🔍 Ověřuji nasazení na staging..."
+"$SCRIPT_DIR/verify-deploy.sh" staging

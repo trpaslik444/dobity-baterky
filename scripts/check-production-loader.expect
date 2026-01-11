@@ -1,0 +1,37 @@
+#!/usr/bin/expect -f
+
+# Usage: PROD_PASS=heslo ./scripts/check-production-loader.expect
+
+set timeout 60
+
+if { ! [info exists env(PROD_PASS)] || $env(PROD_PASS) eq "" } {
+    puts "ERROR: Nastav proměnnou PROD_PASS s passphrase/heslem pro klíč."
+    exit 2
+}
+
+set password $env(PROD_PASS)
+
+set user "dobitybaterky.wordpress.com"
+set host "ssh.wp.com"
+set identity "~/.ssh/id_ed25519_wpcom"
+
+# Příkaz pro kontrolu loader.js a CACHE_BUST_TAG
+set check_cmd {cd /srv/htdocs/wp-content/plugins/dobity-baterky 2>/dev/null || cd ~/public_html/wp-content/plugins/dobity-baterky 2>/dev/null || pwd; if test -f assets/map/loader.js; then echo "=== Loader.js informace ==="; echo "Soubor existuje:"; ls -lh assets/map/loader.js | awk '{print "Velikost:", $5, "- Datum:", $6, $7, $8}'; size_bytes=$(stat -c "%s" assets/map/loader.js 2>/dev/null || stat -f "%z" assets/map/loader.js 2>/dev/null || echo ""); if [ -n "$size_bytes" ]; then echo "Velikost_bytes: $size_bytes"; fi; echo ""; echo "=== CACHE_BUST_TAG na produkci ==="; grep -n "CACHE_BUST_TAG" assets/map/loader.js | head -3; echo ""; echo "=== Celý řádek s CACHE_BUST_TAG ==="; grep "const CACHE_BUST_TAG" assets/map/loader.js; echo ""; echo "=== Datum modifikace loader.js ==="; stat -c "%y" assets/map/loader.js 2>/dev/null || stat -f "%Sm" assets/map/loader.js 2>/dev/null || echo "Nelze získat datum"; else echo "❌ Loader.js nenalezen na produkci"; fi}
+
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${host} $check_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    eof {
+        catch wait result
+        set exit_code [lindex $result 3]
+        exit $exit_code
+    }
+    timeout {
+        puts "❌ Timeout při připojování na produkci"
+        exit 1
+    }
+}

@@ -44,3 +44,7 @@ fi
 echo ""
 echo "🚀 Nasazuji na produkci s bezpečnou aktivací..."
 "$SCRIPT_DIR/deploy-production-safe.expect" "$BUILD_DIR"
+
+echo ""
+echo "🔍 Ověřuji nasazení na produkci..."
+"$SCRIPT_DIR/verify-deploy.sh" production

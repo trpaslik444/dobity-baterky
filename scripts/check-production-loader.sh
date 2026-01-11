@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Načti environment proměnné
+if [ -f "$PROJECT_ROOT/.env" ]; then
+  source "$SCRIPT_DIR/load-env.sh"
+fi
+
+if [ -z "${PROD_PASS:-}" ]; then
+  echo "ERROR: Nastav proměnnou PROD_PASS s passphrase/heslem pro klíč." >&2
+  echo "Buď nastav proměnnou PROD_PASS, nebo uprav .env soubor." >&2
+  exit 1
+fi
+
+echo "🔍 Kontroluji loader.js a CACHE_BUST_TAG na produkčním serveru..."
+echo ""
+
+"$SCRIPT_DIR/check-production-loader.expect"
