@@ -116,11 +116,17 @@ expect {
     }
 }
 
-# Vytvořit novou složku pouze pokud neexistuje (při prvním deployi)
-if { $backup_exists == 0 } {
-    expect "sftp>"
-    send "mkdir dobity-baterky\r"
-    expect "sftp>"
+# Vytvořit novou složku (vždy po vytvoření zálohy, nebo při prvním deployi)
+expect "sftp>"
+send "mkdir dobity-baterky\r"
+expect {
+    -re "Cannot create|already exists|exists" {
+        # Složka už existuje (nebo jiná chyba), pokračujeme
+        expect "sftp>"
+    }
+    "sftp>" {
+        # Složka byla úspěšně vytvořena
+    }
 }
 send "lcd $local_dir\r"
 
