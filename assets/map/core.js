@@ -2084,13 +2084,20 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   
   function updateRecommendedButtonState() {
-    const recommendedButton = document.getElementById('db-recommended-btn');
-    if (recommendedButton) {
-      recommendedButton.classList.toggle('active', !!showOnlyRecommended);
-    }
-    const listRecommendedButton = document.getElementById('db-list-recommended-btn');
-    if (listRecommendedButton) {
-      listRecommendedButton.classList.toggle('active', !!showOnlyRecommended);
+    try {
+      const recommendedButton = document.getElementById('db-recommended-btn');
+      if (recommendedButton) {
+        recommendedButton.classList.toggle('active', !!showOnlyRecommended);
+      }
+      const listRecommendedButton = document.getElementById('db-list-recommended-btn');
+      if (listRecommendedButton) {
+        listRecommendedButton.classList.toggle('active', !!showOnlyRecommended);
+      }
+    } catch (error) {
+      // Logování chyby pro debugging, ale nepřerušit běh aplikace
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('Failed to update recommended button state:', error);
+      }
     }
   }
 
@@ -5778,6 +5785,12 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Funkce pro aplikování nastavení na UI
   async function applyFilterSettingsToUI() {
+    // Pojistka: V režimu favorites nesahat na dataset – zůstává aktivní folder
+    if (favoritesState.isActive) {
+      // V režimu favorites nesahat na dataset – zůstává aktivní folder
+      return;
+    }
+    
     // Aplikovat power slider
     const pMinR = document.getElementById('db-power-min');
     const pMaxR = document.getElementById('db-power-max');
@@ -5864,9 +5877,10 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     }
     
-    // KRITICKÉ: Pokud jsou aktivní speciální filtry (DB doporučuje),
+    // KRITICKÉ: Pokud je aktivní DB doporučuje (special dataset),
     // načíst všechna data místo pouze v radiusu
-    if (showOnlyRecommended || favoritesState.isActive) {
+    // Favorites ne – používá svůj vlastní dataset a nesmí se měnit
+    if (showOnlyRecommended) {
       if (typeof fetchAndRenderAll === 'function') {
         await fetchAndRenderAll();
       }
@@ -9743,7 +9757,10 @@ document.addEventListener('DOMContentLoaded', async function() {
           // Geolocation není podporováno
         }
       } catch (error) {
-        // Chyba při získávání polohy
+        // Logování chyby při získávání polohy
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('Error getting location in list header:', error);
+        }
       }
     });
     
@@ -9763,16 +9780,24 @@ document.addEventListener('DOMContentLoaded', async function() {
       handleFavoritesToggle(e);
     });
 
-    // Po vytvoření headeru ihned synchronizovat vizuální stav podle aktuálních dat
-    try {
-      const isFiltersActive = hasActiveFilters && hasActiveFilters();
-      if (filterBtn2) filterBtn2.classList.toggle('active', !!isFiltersActive);
-      if (favoritesState && favoritesState.enabled) {
-        const activeFav = !!favoritesState.isActive;
-        if (favBtn2) favBtn2.classList.toggle('active', activeFav);
+    // Po vytvoření headeru synchronizovat vizuální stav podle aktuálních dat
+    // Používáme setTimeout pro zajištění, že DOM je plně připraven
+    setTimeout(() => {
+      try {
+        const isFiltersActive = hasActiveFilters && hasActiveFilters();
+        if (filterBtn2) filterBtn2.classList.toggle('active', !!isFiltersActive);
+        if (favoritesState && favoritesState.enabled) {
+          const activeFav = !!favoritesState.isActive;
+          if (favBtn2) favBtn2.classList.toggle('active', activeFav);
+        }
+        updateRecommendedButtonState();
+      } catch (error) {
+        // Logování chyby pro debugging, ale nepřerušit běh aplikace
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('Failed to sync button states in list header:', error);
+        }
       }
-      updateRecommendedButtonState();
-    } catch(_) {}
+    }, 0);
   }
   // Centralizované handlery pro search (desktop i mobil)
   let searchQuery = '';
