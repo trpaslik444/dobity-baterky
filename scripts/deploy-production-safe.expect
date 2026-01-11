@@ -128,6 +128,38 @@ expect {
         # Složka byla úspěšně vytvořena
     }
 }
+
+# Přepnout se do cílové složky na serveru
+expect "sftp>"
+send "cd dobity-baterky\r"
+expect {
+    -re "No such file|Couldn't|Failure" {
+        puts "❌ Nelze vstoupit do dobity-baterky na serveru"
+        send "exit\r"
+        exit 1
+    }
+    "sftp>" {
+        # OK
+    }
+}
+
+# Pro jistotu ověř, že jsme v cílové složce
+expect "sftp>"
+send "pwd\r"
+expect {
+    -re "dobity-baterky" {
+        # OK
+        expect "sftp>"
+    }
+    "sftp>" {
+        puts "❌ Remote cwd není dobity-baterky"
+        send "exit\r"
+        exit 1
+    }
+}
+
+# Přepnout lokální adresář
+expect "sftp>"
 send "lcd \"$local_dir\"\r"
 
 expect "sftp>"
@@ -150,12 +182,10 @@ expect {
     }
 }
 
+# Upload do current dir
 expect "sftp>"
 puts "📤 Nahrávám soubory..."
-send "cd dobity-baterky\r"
-
-expect "sftp>"
-send "put -r .\r"
+send "put -r *\r"
 
 expect "sftp>"
 puts "✅ Soubory nahrány"
