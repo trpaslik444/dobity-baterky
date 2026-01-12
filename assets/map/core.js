@@ -2664,6 +2664,8 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
   let showOnlyRecommended = false;
   let specialDatasetActive = false;
+  let specialNearbyLoading = false; // Guard proti vícenásobnému spuštění background jobu
+  let specialNearbyToken = 0; // Token pro invalidaci běžících background jobů
   
   // FIX 6: Centralizovaná funkce pro správu specialDatasetActive
   // Special dataset se aktivuje pouze pro showOnlyRecommended nebo favorites
@@ -2674,6 +2676,9 @@ document.addEventListener('DOMContentLoaded', async function() {
       specialDatasetActive = true;
     } else if (!hasSpecialFilters && specialDatasetActive) {
       specialDatasetActive = false;
+      // Resetovat flag pro background loading a invalidovat běžící joby
+      specialNearbyLoading = false;
+      specialNearbyToken++; // Invalidovat běžící background joby
     }
     return specialDatasetActive;
   }
@@ -4060,36 +4065,118 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
         });
         
-        // Dopočítat nearby POI/RV z chargers s cache optimalizací
-        const nearbyFromChargers = await buildSpecialNearbyDatasetCached(chargingFeatures, headers);
+        // OKAMŽITĚ vykreslit základní features bez čekání na nearby
+        features = [...chargingFeatures, ...poiFeatures];
+        window.features = features;
         
-        // Dopočítat nearby chargers z POI s cache optimalizací (pouze pokud jsou POI)
-        let nearbyFromPois = [];
-        if (poiFeatures.length > 0) {
-          nearbyFromPois = await buildSpecialNearbyForPoisCached(poiFeatures, headers);
+        // POZOR: Neresetovat showOnlyRecommended, pokud už byl aktivován uživatelem
+        const wasRecommendedBefore = showOnlyRecommended;
+        
+        if (typeof clearMarkers === 'function') {
+          clearMarkers();
         }
         
+        // Obnovit showOnlyRecommended, pokud byl aktivován uživatelem
+        if (wasRecommendedBefore) {
+          showOnlyRecommended = true;
+        }
         
-        // Složit všechny features: chargers + nearbyFromChargers + poiAnchors + nearbyFromPois
-        features = [
-          ...chargingFeatures,
-          ...nearbyFromChargers,
-          ...poiFeatures,
-          ...nearbyFromPois
-        ];
+        if (typeof renderCards === 'function') {
+          renderCards('', null, false);
+        }
         
-        // Deduplikovat features s mergováním nearby_of relací
-        features = dedupeFeaturesWithNearby(features);
+        document.body.classList.remove('db-loading');
         
-        // Uložit všechny features do featureCache po deduplikaci
-        features.forEach(f => {
-          if (f?.properties?.id != null && typeof featureCache !== 'undefined') {
-            featureCache.set(f.properties.id, f);
-          }
-        });
+        // Spustit background job pro nearby na pozadí (bez await)
+        // Guard proti vícenásobnému spuštění
+        if (!specialNearbyLoading) {
+          specialNearbyLoading = true;
+          
+          // Vytvořit token pro tento job a uložit aktuální stav pro kontrolu po dokončení
+          const token = ++specialNearbyToken;
+          const initialShowOnlyRecommended = showOnlyRecommended;
+          const initialFavoritesIsActive = favoritesState.isActive;
+          const initialFavoritesFolderId = favoritesState.activeFolderId;
+          
+          // Helper funkce pro validaci, že job je stále platný
+          const isJobStillValid = () => {
+            // 1. Token musí odpovídat aktuálnímu (job nebyl invalidován)
+            if (token !== specialNearbyToken) return false;
+            // 2. Special dataset musí být stále aktivní
+            if (specialDatasetActive !== true) return false;
+            // 3. Režim se nesměl změnit (DB doporučuje nebo Favorites)
+            if (showOnlyRecommended !== initialShowOnlyRecommended) return false;
+            if (initialFavoritesIsActive !== favoritesState.isActive || 
+                initialFavoritesFolderId !== favoritesState.activeFolderId) return false;
+            return true;
+          };
+          
+          // Background job pro nearby
+          (async () => {
+            try {
+              // Dopočítat nearby POI/RV z chargers s cache optimalizací
+              const nearbyFromChargers = await buildSpecialNearbyDatasetCached(chargingFeatures, headers);
+              
+              // Dopočítat nearby chargers z POI s cache optimalizací (pouze pokud jsou POI)
+              let nearbyFromPois = [];
+              if (poiFeatures.length > 0) {
+                nearbyFromPois = await buildSpecialNearbyForPoisCached(poiFeatures, headers);
+              }
+              
+              // Validace před apply výsledků
+              if (!isJobStillValid()) {
+                // Tichý návrat bez změn - job byl invalidován nebo režim se změnil
+                return;
+              }
+              
+              // Složit všechny features: chargers + nearbyFromChargers + poiAnchors + nearbyFromPois
+              const allFeaturesWithNearby = [
+                ...chargingFeatures,
+                ...nearbyFromChargers,
+                ...poiFeatures,
+                ...nearbyFromPois
+              ];
+              
+              // Deduplikovat features s mergováním nearby_of relací
+              const dedupedFeatures = dedupeFeaturesWithNearby(allFeaturesWithNearby);
+              
+              // Znovu zkontrolovat stav po deduplikaci (může trvat déle)
+              if (!isJobStillValid()) {
+                // Tichý návrat bez změn - job byl invalidován nebo režim se změnil během deduplikace
+                return;
+              }
+              
+              // Uložit všechny features do featureCache po deduplikaci
+              dedupedFeatures.forEach(f => {
+                if (f?.properties?.id != null && typeof featureCache !== 'undefined') {
+                  featureCache.set(f.properties.id, f);
+                }
+              });
+              
+              // Aktualizovat globální features
+              features = dedupedFeatures;
+              window.features = features;
+              
+              // Uložit do cache (pouze minimal payload)
+              setSpecialCache(showOnlyRecommended, false, dedupedFeatures);
+              
+              // Nedělat clearMarkers - pouze doplnit nové markery
+              // renderCards() bez clearMarkers aktualizuje pouze nové markery díky inteligentní aktualizaci
+              if (typeof renderCards === 'function') {
+                renderCards('', null, false);
+              }
+            } catch (err) {
+              if (err.name !== 'AbortError') {
+                // Silent fail - chyby se logují pouze v development módu
+              }
+            } finally {
+              specialNearbyLoading = false;
+            }
+          })();
+        }
         
-        // Uložit do cache (pouze minimal payload)
-        setSpecialCache(showOnlyRecommended, false, features);
+        // Vrátit se hned - render už proběhl výše
+        return;
         
         // Po načtení special dataset zůstává tlačítko skryté a disabled
       } else {
