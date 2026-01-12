@@ -1,0 +1,32 @@
+name: WP.com Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type PROD to confirm production deploy"
+        required: true
+        default: ""
+
+jobs:
+  build:
+    if: ${{ inputs.confirm == 'PROD' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.2"
+
+      - name: Build plugin
+        run: php build-simple.php
+
+      - name: Upload artifact (wpcom)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpcom
+          path: build/dobity-baterky
+          if-no-files-found: error
