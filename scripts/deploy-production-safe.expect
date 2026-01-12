@@ -4,12 +4,18 @@
 
 set timeout 900
 
+# Logování přímo z expectu
+if { [info exists env(DEPLOY_LOG)] && $env(DEPLOY_LOG) ne "" } {
+    log_file -a $env(DEPLOY_LOG)
+}
+
 if { [llength $argv] < 1 } {
     puts "ERROR: Musíš předat cestu k build složce (např. build/dobity-baterky)."
     exit 2
 }
 
 set local_dir [lindex $argv 0]
+set local_dir_escaped [string map {" " "\\ "} $local_dir]
 
 if { ! [file isdirectory $local_dir] } {
     puts "ERROR: Složka $local_dir neexistuje nebo není adresář."
@@ -30,10 +36,14 @@ set sftp_host "sftp.wp.com"
 set ssh_host "ssh.wp.com"
 set identity "~/.ssh/id_ed25519_wpcom"
 
+# List kandidátních cest pro wp-content/plugins
+set plugin_paths [list "/srv/htdocs/wp-content/plugins" "/wordpress/core/6.9/wp-content/plugins" "/public_html/wp-content/plugins" "/home/$user/public_html/wp-content/plugins"]
+
 puts "🔍 Krok 1: Kontroluji aktuální stav pluginu..."
 
 # Krok 1: Kontrola stavu pluginu přes SSH
-set check_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null || pwd; wp plugin list --name=dobity-baterky --format=json 2>/dev/null || echo "WP-CLI_ERROR"}
+set wp_root_cmd {for p in /srv/htdocs /wordpress/core/6.9 /public_html ~/public_html; do if [ -f "$p/wp-config.php" ]; then cd "$p"; break; fi; done; pwd}
+set check_cmd {for p in /srv/htdocs /wordpress/core/6.9 /public_html ~/public_html; do if [ -f "$p/wp-config.php" ]; then cd "$p"; break; fi; done; wp plugin list --name=dobity-baterky --format=json 2>/dev/null || echo "WP-CLI_ERROR"}
 spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $check_cmd
 
 expect {
@@ -49,7 +59,7 @@ expect {
 # Krok 2: Deaktivovat plugin přes SSH
 puts ""
 puts "🔄 Krok 2: Deaktivuji plugin (pro bezpečné nahrazení)..."
-set deactivate_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null; wp plugin deactivate dobity-baterky 2>&1 || echo "DEACTIVATE_ERROR"}
+set deactivate_cmd {for p in /srv/htdocs /wordpress/core/6.9 /public_html ~/public_html; do if [ -f "$p/wp-config.php" ]; then cd "$p"; break; fi; done; wp plugin deactivate dobity-baterky 2>&1 || echo "DEACTIVATE_ERROR"}
 spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $deactivate_cmd
 
 expect {
@@ -62,133 +72,273 @@ expect {
     }
 }
 
+# Krok 2.5: Najít správnou cestu k pluginu přes SSH
+puts ""
+puts "🔍 Krok 2.5: Zjišťuji cestu k pluginu..."
+
+set plugins_dir ""
+
+set find_plugins_cmd {if [ -f /srv/htdocs/wp-content/plugins/dobity-baterky/dobity-baterky.php ]; then echo "PLUGINS_DIR=/srv/htdocs/wp-content/plugins"; elif [ -f /wordpress/core/6.9/wp-content/plugins/dobity-baterky/dobity-baterky.php ]; then echo "PLUGINS_DIR=/wordpress/core/6.9/wp-content/plugins"; elif [ -f /public_html/wp-content/plugins/dobity-baterky/dobity-baterky.php ]; then echo "PLUGINS_DIR=/public_html/wp-content/plugins"; elif [ -f "$HOME/public_html/wp-content/plugins/dobity-baterky/dobity-baterky.php" ]; then echo "PLUGINS_DIR=$HOME/public_html/wp-content/plugins"; else echo "PLUGINS_DIR=NOT_FOUND"; fi}
+
+spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $find_plugins_cmd
+
+expect {
+    "Enter passphrase for key" {
+        send "$password\r"
+        exp_continue
+    }
+    -re "PLUGINS_DIR=(.+)\r\n" {
+        set plugins_dir $expect_out(1,string)
+        exp_continue
+    }
+    -re "PLUGINS_DIR=(.+)$" {
+        set plugins_dir $expect_out(1,string)
+        exp_continue
+    }
+    eof {
+        catch wait result
+    }
+}
+
+# Očistit plugins_dir od whitespace
+set plugins_dir [string trim $plugins_dir]
+
+if { $plugins_dir eq "" || $plugins_dir eq "NOT_FOUND" } {
+    puts "❌ Plugin dobity-baterky nebyl nalezen na serveru."
+    exit 1
+}
+
+puts "✅ Plugins dir nalezen: $plugins_dir"
+
 # Krok 3: Záloha a nahrání nové verze přes SFTP
 puts ""
 puts "💾 Krok 3: Zálohuji aktuální verzi a nahrávám novou..."
 
-spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes ${user}@${sftp_host}
+spawn sftp -oIdentityFile=$identity -oIdentitiesOnly=yes -oServerAliveInterval=30 -oServerAliveCountMax=3 ${user}@${sftp_host}
 
 expect "Enter passphrase for key"
 send "$password\r"
 
-expect "sftp>"
-send "cd wp-content/plugins\r"
-
-expect "sftp>"
-# Zkontrolovat, zda existuje aktuální verze
-puts "🔍 Kontroluji existenci aktuální verze pluginu..."
-send "ls dobity-baterky\r"
-
-set backup_exists 1
-expect {
-    -re "Cannot find|No such file|not found" {
-        puts "⚠️  Aktuální plugin složka neexistuje, vytvářím novou..."
-        expect "sftp>"
-        set backup_exists 0
-    }
-    "sftp>" {
-        # Pokud jsme dostali přímo prompt, složka pravděpodobně existuje
-        # (výpis souborů může být prázdný, ale složka je tam)
-        # Zkusíme vytvořit zálohu
-        puts "📦 Vytvářím backup: $backup_dir"
-        send "rename dobity-baterky $backup_dir\r"
-        expect {
-            -re "Cannot find|No such file|not found" {
-                puts "⚠️  Složka neexistuje, vytvářím novou..."
-                expect "sftp>"
-                set backup_exists 0
-            }
-            "sftp>" {
-                puts "✅ Záloha vytvořena: $backup_dir"
-                set backup_exists 1
-            }
-            timeout {
-                puts "⚠️  Timeout při vytváření zálohy, pokračuji s vytvořením nové..."
-                expect "sftp>"
-                set backup_exists 0
-            }
+# Helper funkce pro očekávání SFTP promptu s timeoutem
+proc expect_sftp_prompt {} {
+    expect {
+        "sftp>" { return 0 }
+        eof {
+            puts "❌ SFTP spojení bylo ukončeno."
+            return 2
+        }
+        timeout {
+            puts "❌ Timeout čekání na sftp prompt"
+            return 1
         }
     }
+}
+
+proc restore_backup_via_ssh {} {
+    global backup_dir plugins_dir user ssh_host identity password
+    if { $backup_dir eq "" || $plugins_dir eq "" } {
+        return
+    }
+    set restore_cmd [format {cd %s && if \[ -d %s \]; then rm -rf dobity-baterky; mv %s dobity-baterky; echo RESTORED; else echo NO_RESTORE; fi} $plugins_dir $backup_dir $backup_dir]
+    spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $restore_cmd
+    expect {
+        "Enter passphrase for key" {
+            send "$password\r"
+            exp_continue
+        }
+        eof {
+            catch wait result
+        }
+    }
+}
+
+proc handle_sftp_failure {} {
+    global backup_created
+    if { [info exists backup_created] && $backup_created == 1 } {
+        restore_backup_via_ssh
+    }
+    send "exit\r"
+    exit 1
+}
+
+# Přepnout se do správné plugins složky
+expect "sftp>"
+puts "➡️  sftp: cd $plugins_dir"
+send "cd $plugins_dir\r"
+expect {
+    -re "No such file|Couldn't|Failure|not found" {
+        puts "❌ Nelze vstoupit do $plugins_dir na serveru"
+        send "exit\r"
+        exit 1
+    }
+    "sftp>" {
+        # OK
+    }
     timeout {
-        puts "⚠️  Timeout při kontrole existence složky, pokračuji s vytvořením nové..."
-        expect "sftp>"
-        set backup_exists 0
+        puts "❌ Timeout při přepnutí do $plugins_dir"
+        send "exit\r"
+        exit 1
     }
 }
-
-# Vytvořit novou složku (vždy po vytvoření zálohy, nebo při prvním deployi)
-expect "sftp>"
-send "mkdir dobity-baterky\r"
+# Zkontrolovat, jestli plugin existuje
+set backup_exists 0
+set backup_created 0
+puts "🔍 Kontroluji existenci aktuální verze pluginu..."
+puts "➡️  sftp: ls dobity-baterky"
+send "ls dobity-baterky\r"
 expect {
-    -re "Cannot create|already exists|exists" {
-        # Složka už existuje (nebo jiná chyba), pokračujeme
-        expect "sftp>"
-    }
-    "sftp>" {
-        # Složka byla úspěšně vytvořena
-    }
-}
-
-# Přepnout se do cílové složky na serveru
-expect "sftp>"
-send "cd dobity-baterky\r"
-expect {
-    -re "No such file|Couldn't|Failure" {
-        puts "❌ Nelze vstoupit do dobity-baterky na serveru"
+    -re "Can't ls|not found|Cannot find|No such file" {
+        puts "❌ Plugin složka neexistuje v $plugins_dir"
         send "exit\r"
         exit 1
     }
     "sftp>" {
-        # OK
+        puts "✅ Plugin složka existuje"
+        set backup_exists 1
     }
-}
-
-# Pro jistotu ověř, že jsme v cílové složce
-expect "sftp>"
-send "pwd\r"
-expect {
-    -re "dobity-baterky" {
-        # OK
-        expect "sftp>"
-    }
-    "sftp>" {
-        puts "❌ Remote cwd není dobity-baterky"
+    timeout {
+        puts "❌ Timeout při kontrole existence pluginu"
         send "exit\r"
         exit 1
     }
 }
 
-# Přepnout lokální adresář
-expect "sftp>"
-send "lcd \"$local_dir\"\r"
-
-expect "sftp>"
-send "lpwd\r"
-expect {
-    -re {(.+)} {
-        set lpwd_output $expect_out(0,string)
-        if { [string match "*$local_dir*" $lpwd_output] } {
-            # OK
-        } else {
-            puts "❌ LCD selhalo nebo je špatná cesta: $local_dir"
+# Pokud plugin existuje, vytvoříme zálohu
+if { $backup_exists == 1 } {
+    puts "📦 Vytvářím backup: $backup_dir"
+    puts "➡️  sftp: rename dobity-baterky $backup_dir"
+    send "rename dobity-baterky $backup_dir\r"
+    expect {
+        -re "Cannot find|No such file|not found" {
+            puts "❌ Záloha selhala (složka zmizela). Přerušuju deploy."
+            send "exit\r"
+            exit 1
+        }
+        -re "Failure|Couldn't|not permitted|Permission denied" {
+            puts "❌ Záloha selhala – přerušuju deploy."
+            send "exit\r"
+            exit 1
+        }
+    "sftp>" {
+        puts "✅ Záloha vytvořena: $backup_dir"
+        set backup_exists 1
+        set backup_created 1
+    }
+        timeout {
+            puts "❌ Timeout při vytváření zálohy – přerušuju deploy."
             send "exit\r"
             exit 1
         }
     }
+}
+
+# Vytvořit novou složku po úspěšné záloze
+puts "➡️  sftp: mkdir dobity-baterky"
+send "mkdir dobity-baterky\r"
+expect {
+    -re "Cannot create|already exists|exists" {
+        # Složka už existuje (nebo jiná chyba), pokračujeme
+    }
+    "sftp>" {
+        # Složka byla úspěšně vytvořena
+    }
+    timeout {
+        puts "❌ Timeout při vytváření složky"
+        handle_sftp_failure
+    }
+}
+
+# Přepnout se do cílové složky na serveru
+puts "➡️  sftp: cd dobity-baterky"
+send "cd dobity-baterky\r"
+expect {
+    -re "No such file|Couldn't|Failure" {
+        puts "❌ Nelze vstoupit do dobity-baterky na serveru"
+        handle_sftp_failure
+    }
+    "sftp>" {
+        # OK
+    }
+    timeout {
+        puts "❌ Timeout při přepnutí do dobity-baterky"
+        handle_sftp_failure
+    }
+}
+
+# Pro jistotu ověř, že jsme v cílové složce
+puts "➡️  sftp: pwd"
+send "pwd\r"
+expect {
+    -re "dobity-baterky" {
+        # OK
+        if { [expect_sftp_prompt] != 0 } { handle_sftp_failure }
+    }
+    "sftp>" {
+        puts "❌ Remote cwd není dobity-baterky"
+        handle_sftp_failure
+    }
+    timeout {
+        puts "❌ Timeout při ověřování pwd"
+        handle_sftp_failure
+    }
+}
+
+# Přepnout lokální adresář
+puts "➡️  sftp: lcd \"$local_dir\""
+send "lcd $local_dir_escaped\r"
+
+puts "➡️  sftp: lpwd"
+send "lpwd\r"
+expect {
+    -re {Local working directory: (.+)} {
+        set lpwd_output $expect_out(1,string)
+        if { [string match "*$local_dir*" $lpwd_output] } {
+            # OK
+        } else {
+            puts "❌ LCD selhalo nebo je špatná cesta: $local_dir"
+            handle_sftp_failure
+        }
+    }
+    "sftp>" {
+        puts "❌ LCD selhalo nebo je špatná cesta: $local_dir"
+        handle_sftp_failure
+    }
     timeout {
         puts "❌ LCD timeout – nelze ověřit lpwd"
-        send "exit\r"
-        exit 1
+        handle_sftp_failure
     }
 }
 
 # Upload do current dir
-expect "sftp>"
 puts "📤 Nahrávám soubory..."
-send "put -r *\r"
+puts "📄 Lokální loader.js:"
+exec sh -c "ls -lh \"$local_dir/assets/map/loader.js\" && grep \"const CACHE_BUST_TAG\" \"$local_dir/assets/map/loader.js\" || true"
+puts ""
 
+# U put nastav delší timeout
+set old_timeout $timeout
+set timeout 1800
+puts "⬆️  sftp: put -r * (může chvíli trvat)"
+send "put -r *\r"
+expect {
+    "sftp>" {
+        puts "✅ Upload hotový"
+    }
+    timeout {
+        puts "❌ Upload timeout"
+        send "\003"
+        handle_sftp_failure
+    }
+}
+set timeout $old_timeout
+
+# Ověř, že se na serveru změnil loader.js
 expect "sftp>"
-puts "✅ Soubory nahrány"
+puts "🔍 Ověřuji loader.js po uploadu"
+puts "➡️  sftp: ls -lh dobity-baterky/assets/map/loader.js"
+send "ls -lh dobity-baterky/assets/map/loader.js\r"
+expect "sftp>"
+puts "✅ Soubory nahrány a ověřeny"
 send "exit\r"
 
 expect eof
@@ -197,7 +347,7 @@ expect eof
 puts ""
 puts "✅ Krok 4: Aktivuji plugin znovu a mažu cache..."
 
-set activate_cmd {cd /srv/htdocs 2>/dev/null || cd ~/public_html 2>/dev/null; wp plugin activate dobity-baterky 2>&1; wp cache flush 2>&1; wp rewrite flush 2>&1}
+set activate_cmd {for p in /srv/htdocs /wordpress/core/6.9 /public_html ~/public_html; do if [ -f "$p/wp-config.php" ]; then cd "$p"; break; fi; done; wp plugin activate dobity-baterky 2>&1; wp cache flush 2>&1; wp rewrite flush 2>&1}
 spawn ssh -i $identity -oIdentitiesOnly=yes ${user}@${ssh_host} $activate_cmd
 
 expect {

@@ -191,7 +191,7 @@ class PluginBuilderSimple {
                         $new_lines[] = $line;
                     } else {
                         // Jinak odstranit console.log/warn/error volání
-                        $line = preg_replace('/\bconsole\.(log|debug|warn|error)\s*\([^)]*\)\s*;?/s', '', $line);
+                        $line = preg_replace('/\bconsole\.(log|debug|warn|error)\s*\([^\n]*\)\s*;?/', '', $line);
                         $new_lines[] = $line;
                     }
                 }
@@ -255,4 +255,3 @@ class PluginBuilderSimple {
 (new PluginBuilderSimple())->build();
 
 ?>
-
