@@ -20,8 +20,14 @@ jobs:
       - name: Build plugin
         run: php build-simple.php
 
+      - name: Inspect build output
+        run: |
+          ls -la build || true
+          ls -la build/dobity-baterky || true
+          find build/dobity-baterky -maxdepth 2 -type f | head -50
+
       - name: Upload artifact (deploy)
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: deploy
           path: build/dobity-baterky
