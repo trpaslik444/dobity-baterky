@@ -20,7 +20,13 @@ jobs:
       - name: Build plugin
         run: php build-simple.php
 
-      - name: Upload artifact
+      - name: Upload artifact (deploy)
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy
+          path: build/dobity-baterky
+
+      - name: Upload artifact (wpcom-deploy)
         uses: actions/upload-artifact@v4
         with:
           name: wpcom-deploy
