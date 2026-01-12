@@ -2677,10 +2677,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     } else if (!hasSpecialFilters && specialDatasetActive) {
       specialDatasetActive = false;
       // Resetovat flag pro background loading a invalidovat běžící joby
-      specialNearbyLoading = false;
-      specialNearbyToken++; // Invalidovat běžící background joby
+      invalidateSpecialNearbyJobs();
     }
     return specialDatasetActive;
+  }
+  
+  // Helper funkce pro invalidaci běžících background jobů
+  // Volá se při novém special fetchi, aby se zabránilo přepsání novějších výsledků starým jobem
+  function invalidateSpecialNearbyJobs() {
+    specialNearbyToken++;
+    specialNearbyLoading = false;
   }
   
   // Zpřístupnit pro testování - použít getter/setter pro synchronizaci
@@ -4003,6 +4009,8 @@ document.addEventListener('DOMContentLoaded', async function() {
       // Pokud jsou aktivní speciální filtry, použít cache nebo special endpoint
       if (hasSpecialFilters) {
         updateSpecialDatasetActive(); // FIX 6: Použít centralizovanou funkci
+        // Invalidovat běžící background joby při novém special fetchi
+        invalidateSpecialNearbyJobs();
         // Schovat a disable tlačítko "Načíst další" v special dataset režimu
         if (window.smartLoadingManager) {
           window.smartLoadingManager.hideManualLoadButton();
