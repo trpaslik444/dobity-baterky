@@ -1593,12 +1593,12 @@ document.addEventListener('DOMContentLoaded', async function() {
       ${listMode || isMobile ? `<button class="db-map-topbar-btn" title="${listMode ? 'Vyhledávání' : t('map.search')}" type="button" id="${id('search-toggle')}">
         <svg fill="currentColor" width="20px" height="20px" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="m22.241 24-7.414-7.414c-1.559 1.169-3.523 1.875-5.652 1.885h-.002c-.032 0-.07.001-.108.001-5.006 0-9.065-4.058-9.065-9.065 0-.038 0-.076.001-.114v.006c0-5.135 4.163-9.298 9.298-9.298s9.298 4.163 9.298 9.298c-.031 2.129-.733 4.088-1.904 5.682l.019-.027 7.414 7.414zm-12.942-21.487c-3.72.016-6.73 3.035-6.73 6.758 0 3.732 3.025 6.758 6.758 6.758s6.758-3.025 6.758-6.758c0-1.866-.756-3.555-1.979-4.778-1.227-1.223-2.92-1.979-4.79-1.979-.006 0-.012 0-.017 0h.001z"/></svg>
       </button>` : ''}
-      ${!listMode ? `<form class="db-map-searchbox" style="margin:0;flex:1;min-width:0;${isMobile ? 'display:none;' : ''}">
+      <form class="db-map-searchbox" style="margin:0;flex:1;min-width:0;${listMode || isMobile ? 'display:none;' : ''}">
         <input type="text" id="db-map-search-input" placeholder="${t('map.search_placeholder')}" autocomplete="off" style="width:100%;min-width:320px;font-size:clamp(0.8rem, 2.5vw, 1rem);padding:0.6em 0.8em;border:none;border-radius:8px;box-sizing:border-box;background:transparent;outline:none;" />
         <button type="submit" id="db-map-search-btn" tabindex="0" style="background:none;border:none;padding:0;cursor:pointer;outline:none;display:flex;align-items:center;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </button>
-      </form>` : ''}
+      </form>
       <button class="db-map-topbar-btn" title="${listMode ? 'Mapa' : t('map.list')}" type="button" id="${id(listMode ? 'map-toggle' : 'list-toggle')}">
         ${listMode ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 9 18 15 22 23 18 23 2 15 6 9 2 1 6"/></svg>` : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1"/><circle cx="3" cy="12" r="1"/><circle cx="3" cy="18" r="1"/></svg>`}
       </button>
@@ -4727,24 +4727,31 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     switch (button.id) {
       case 'db-menu-toggle':
+      case 'db-list-menu-toggle':
         handleMenuToggle(event);
         break;
       case 'db-search-toggle':
+      case 'db-list-search-toggle':
         handleSearchToggle(event);
         break;
       case 'db-list-toggle':
+      case 'db-map-toggle':
         handleListToggle(event);
         break;
       case 'db-locate-btn':
+      case 'db-list-locate-btn':
         handleLocate(event);
         break;
       case 'db-filter-btn':
+      case 'db-list-filter-btn':
         handleFilterToggle(event);
         break;
       case 'db-favorites-btn':
+      case 'db-list-favorites-btn':
         handleFavoritesToggle(event);
         break;
       case 'db-recommended-btn':
+      case 'db-list-recommended-btn':
         handleRecommendedToggle(event);
         break;
       default:
@@ -4814,29 +4821,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     });
   }, 500); // 500ms delay před přidáním resize listeneru
   
-  // Search toggle handler - zobrazí/skryje search box na mobilu
+  // Search toggle handler - otevře search modal
   function handleSearchToggle(event) {
     event.preventDefault();
     event.stopPropagation();
-    const searchBox = topbar.querySelector('.db-map-searchbox');
-    if (searchBox) {
-      const isHidden = searchBox.style.display === 'none' || !searchBox.style.display;
-      if (isHidden) {
-        searchBox.style.display = '';
-        const searchInput = searchBox.querySelector('#db-map-search-input');
-        if (searchInput) {
-          setTimeout(() => {
-            try {
-              searchInput.focus();
-            } catch (focusError) {
-              // Ignorovat focus chyby na některých mobilních zařízeních
-            }
-          }, SEARCH_FOCUS_DELAY_MS);
-        }
-      } else {
-        searchBox.style.display = 'none';
-        removeAutocomplete();
-      }
+    
+    if (!searchModal) {
+      console.warn('[DB Map] Search modal not found');
+      return;
+    }
+
+    const isVisible = searchModal.classList.contains('open');
+    if (isVisible) {
+      closeSearchModal();
+    } else {
+      openSearchModal();
     }
   }
   
@@ -5293,6 +5292,288 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   }
   // Close button je už nastavený výše v openFilterModal/closeFilterModal
+
+  // ===== SEARCH MODAL =====
+  // Search modal (otevíraný tlačítkem lupy)
+  let searchModal = document.createElement('div');
+  searchModal.id = 'db-map-search-modal';
+  searchModal.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:10000;font-family:Montserrat,sans-serif;';
+  searchModal.innerHTML = `
+    <div class="db-search-modal__backdrop" data-close="true"></div>
+    <div class="db-search-modal__content" role="document">
+      <button type="button" class="db-search-modal__close" aria-label="${t('common.close')}">&times;</button>
+      <h2 class="db-search-modal__title">${t('map.search')}</h2>
+      <div class="db-search-modal__body">
+        <form class="db-search-modal__form" id="db-search-modal-form">
+          <div class="db-search-modal__input-wrapper">
+            <input type="text" id="db-search-modal-input" class="db-search-modal__input" placeholder="${t('map.search_placeholder')}" autocomplete="off" />
+            <button type="submit" class="db-search-modal__submit" id="db-search-modal-submit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </button>
+          </div>
+        </form>
+        <div class="db-search-modal__results" id="db-search-modal-results"></div>
+        <div class="db-search-modal__hint" id="db-search-modal-hint">Zadejte alespoň 2 znaky pro vyhledávání</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(searchModal);
+
+  function openSearchModal() {
+    openModal(searchModal, {
+      closeOnBackdrop: true,
+      stopPropagation: true,
+      onOpen: () => {
+        const input = searchModal.querySelector('#db-search-modal-input');
+        if (input) {
+          setTimeout(() => {
+            try {
+              input.focus();
+            } catch (_) {}
+          }, 100);
+        }
+      },
+      onClose: () => {
+        const input = searchModal.querySelector('#db-search-modal-input');
+        const results = searchModal.querySelector('#db-search-modal-results');
+        const hint = searchModal.querySelector('#db-search-modal-hint');
+        if (input) input.value = '';
+        if (results) results.innerHTML = '';
+        if (hint) hint.style.display = '';
+        removeAutocomplete();
+      }
+    });
+  }
+
+  function closeSearchModal() {
+    closeModal(searchModal);
+  }
+
+  // Handler pro vyhledávání v modalu
+  const searchModalForm = searchModal.querySelector('#db-search-modal-form');
+  const searchModalInput = searchModal.querySelector('#db-search-modal-input');
+  const searchModalResults = searchModal.querySelector('#db-search-modal-results');
+  const searchModalHint = searchModal.querySelector('#db-search-modal-hint');
+
+  if (searchModalForm && searchModalInput) {
+    // Debounce pro autocomplete
+    const handleModalAutocompleteInput = debounce(async (value) => {
+      if (value.length < 2) {
+        if (searchModalResults) searchModalResults.innerHTML = '';
+        if (searchModalHint) searchModalHint.style.display = '';
+        removeAutocomplete();
+        return;
+      }
+      
+      if (searchModalHint) searchModalHint.style.display = 'none';
+      
+      try {
+        await fetchAutocomplete(value, searchModalInput);
+        if (lastAutocompleteResults && lastAutocompleteResults.results) {
+          renderSearchModalResults(lastAutocompleteResults.results);
+        }
+      } catch (error) {
+        console.error('[DB Map] Search modal autocomplete error:', error);
+      }
+    }, SEARCH_DEBOUNCE_MS);
+
+    searchModalInput.addEventListener('input', function() {
+      const query = this.value.trim();
+      handleModalAutocompleteInput(query);
+    });
+
+    searchModalForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const query = searchModalInput.value.trim();
+      if (!query) return;
+
+      if (searchModalHint) searchModalHint.style.display = 'none';
+      removeAutocomplete();
+
+      try {
+        await fetchAutocomplete(query, searchModalInput);
+        if (lastAutocompleteResults && lastAutocompleteResults.results) {
+          const { internal, external } = lastAutocompleteResults.results;
+          
+          // Pokud je pouze jeden výsledek, automaticky ho vybrat
+          if (internal.length === 1 && external.length === 0) {
+            await handleInternalSelection(internal[0]);
+            closeSearchModal();
+          } else if (external.length === 1 && internal.length === 0) {
+            await handleExternalSelection(external[0]);
+            closeSearchModal();
+          } else {
+            // Zobrazit všechny výsledky v modalu
+            renderSearchModalResults(lastAutocompleteResults.results);
+          }
+        } else {
+          // Fallback: lokální vyhledávání
+          searchQuery = query.toLowerCase();
+          renderCards(searchQuery, null, true);
+          if (lastSearchResults.length === 1) {
+            const idx = features.indexOf(lastSearchResults[0]);
+            highlightMarker(idx);
+            map.setView([
+              lastSearchResults[0].geometry.coordinates[1],
+              lastSearchResults[0].geometry.coordinates[0]
+            ], 15, {animate:true});
+          }
+          closeSearchModal();
+        }
+      } catch (error) {
+        console.error('[DB Map] Search modal submit error:', error);
+      }
+    });
+  }
+
+  // Funkce pro zobrazení výsledků v modalu
+  function renderSearchModalResults(results) {
+    if (!searchModalResults) return;
+    
+    const { internal, external } = results;
+    let html = '';
+
+    // Funkce pro získání typu a ikony - používá stejnou logiku jako piny na mapě
+    function getTypeInfo(result) {
+      const postType = result.post_type || result.type || '';
+      const typeLabel = result.type_label || '';
+      
+      let typeName = '';
+      let iconHtml = '';
+      let typeColor = '#049FE8';
+      
+      // Použít stejnou logiku jako getNearbyIconAndBackground
+      const iconAndBg = getNearbyIconAndBackground(result, {
+        usePoiFallbackImage: true,
+        useMapColors: true,
+        useFeatureCache: true
+      });
+      
+      iconHtml = iconAndBg.icon;
+      typeColor = iconAndBg.background;
+      
+      // Určit název typu
+      if (postType === 'charging_location') {
+        typeName = 'Nabíječka';
+      } else if (postType === 'poi') {
+        typeName = typeLabel || 'POI';
+      } else if (postType === 'rv_spot') {
+        typeName = 'RV místo';
+      } else if (typeLabel) {
+        typeName = typeLabel;
+      }
+      
+      return { typeName, iconHtml, typeColor };
+    }
+
+    // Interní výsledky (databáze)
+    if (internal.length > 0) {
+      html += `<div class="db-search-modal__results-section db-search-modal__results-section--database">
+        <div class="db-search-modal__results-header">
+          <div class="db-search-modal__results-title">Dobitý Baterky</div>
+          <div class="db-search-modal__results-count">${internal.length}</div>
+        </div>`;
+      
+      internal.slice(0, 15).forEach((result, idx) => {
+        const title = result.title || '(bez názvu)';
+        const address = result.address || '';
+        const { typeName, iconHtml, typeColor } = getTypeInfo(result);
+        const badges = [];
+        
+        // Badge pro doporučené
+        if (result.is_recommended || result.db_recommended) {
+          badges.push(getDbRecommendedBadgeHtml(18));
+        }
+        
+        // Badge pro oblíbené (pokud je dostupné)
+        if (result.is_favorite) {
+          badges.push(getFavoriteBadgeHtml(18));
+        }
+        
+        // Určit background style - může být barva nebo gradient
+        const bgStyle = typeColor.includes('gradient') 
+          ? `background: ${typeColor};`
+          : `background-color: ${typeColor};`;
+        
+        html += `<div class="db-search-modal__result-item db-search-modal__result-item--database" data-result-type="database" data-result-index="${idx}">
+          <div class="db-search-modal__result-icon" style="${bgStyle}">
+            ${iconHtml}
+          </div>
+          <div class="db-search-modal__result-content">
+            <div class="db-search-modal__result-header">
+              <div class="db-search-modal__result-title">${escapeHtml(title)}</div>
+              ${badges.length > 0 ? `<div class="db-search-modal__result-badges">${badges.join('')}</div>` : ''}
+            </div>
+            ${address ? `<div class="db-search-modal__result-address">${escapeHtml(address)}</div>` : ''}
+            ${typeName ? `<div class="db-search-modal__result-type">${escapeHtml(typeName)}</div>` : ''}
+          </div>
+        </div>`;
+      });
+      
+      html += `</div>`;
+    }
+
+    // Externí výsledky (mapa)
+    if (external.length > 0) {
+      html += `<div class="db-search-modal__results-section db-search-modal__results-section--map">
+        <div class="db-search-modal__results-header">
+          <div class="db-search-modal__results-title">OpenStreetMap</div>
+          <div class="db-search-modal__results-count">${external.length}</div>
+        </div>`;
+      
+      external.slice(0, 15).forEach((result, idx) => {
+        const display = result.display_name || '';
+        const primary = display.split(',')[0] || display;
+        const country = result._country ? ` – ${result._country}` : '';
+        const distance = Number.isFinite(result._distance) ? ` (${Math.round(result._distance)} km)` : '';
+        
+        // Pro externí výsledky použít ikonu mapy
+        const mapIconUrl = getIconUrl('map-marker') || '';
+        const mapIconHtml = mapIconUrl 
+          ? `<img src="${mapIconUrl}" style="width:100%;height:100%;object-fit:contain;" alt="Mapa" onerror="this.style.display='none';this.nextElementSibling.style.display='block';"><span style="display:none;font-size:1.5rem;">🗺️</span>`
+          : '<span style="font-size:1.5rem;">🗺️</span>';
+        
+        html += `<div class="db-search-modal__result-item db-search-modal__result-item--map" data-result-type="map" data-result-index="${idx}">
+          <div class="db-search-modal__result-icon db-search-modal__result-icon--map" style="background-color: #10b981;">
+            ${mapIconHtml}
+          </div>
+          <div class="db-search-modal__result-content">
+            <div class="db-search-modal__result-title">${escapeHtml(primary)}</div>
+            <div class="db-search-modal__result-address">${escapeHtml(display)}${distance}${escapeHtml(country)}</div>
+          </div>
+        </div>`;
+      });
+      
+      html += `</div>`;
+    }
+
+    if (html === '') {
+      html = '<div class="db-search-modal__no-results">Žádné výsledky</div>';
+    }
+
+    searchModalResults.innerHTML = html;
+
+    // Event listenery pro kliknutí na výsledky
+    searchModalResults.querySelectorAll('.db-search-modal__result-item').forEach(item => {
+      item.addEventListener('click', async () => {
+        const resultType = item.dataset.resultType;
+        const resultIndex = parseInt(item.dataset.resultIndex);
+        const results = resultType === 'database' ? internal : external;
+        const result = results[resultIndex];
+        
+        if (result) {
+          if (resultType === 'database') {
+            await handleInternalSelection(result);
+          } else {
+            await handleExternalSelection(result);
+          }
+          closeSearchModal();
+        }
+      });
+    });
+  }
+
+  // ===== KONEC SEARCH MODAL =====
 
   // ===== KONEC PANELU FILTRŮ =====
 
